@@ -391,8 +391,14 @@ function renderHomeLogin() {
         ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessuna ASD registrata ancora.</p>`
         : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.85rem">
             ${S.allAsd.map(asd => `
-                <div class="asd-tile" onclick="window.setView('atletaSelect',{asd:${JSON.stringify(asd).replace(/"/g,'&quot;')}})">
-                    <div class="asd-logo-wrap">${logoOrInitials(asd)}</div>
+                <div class="asd-tile" onclick="window.setView('atletaSelect',{asdId:'${asd.id}'})">
+                    <div class="asd-logo-wrap">
+                        ${asd.logoBase64
+                            ? `<img src="${asd.logoBase64}" alt="logo" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+                            : asd.logoUrl
+                                ? `<img src="${asd.logoUrl}" alt="logo" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+                                : `<span style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">${(asd.nome||'?').substring(0,2).toUpperCase()}</span>`}
+                    </div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:0.95rem;color:var(--text)">${asd.nome}</div>
                     <div style="font-size:0.72rem;color:var(--muted);margin-top:0.2rem">${asd.citta||''}</div>
                 </div>
@@ -613,10 +619,16 @@ async function renderAsdAtleti() {
         ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessun atleta registrato.</p>`
         : S.atleti.map(atl => `
             <div class="session-card" style="display:flex;align-items:center;gap:0.85rem">
-                <div class="avatar">${initials(atl.nome,atl.cognome)}</div>
+                ${atl.fotoBase64
+                    ? `<img src="${atl.fotoBase64}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
+                    : `<div class="avatar">${initials(atl.nome,atl.cognome)}</div>`}
                 <div style="flex:1;min-width:0">
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem">${atl.nome} ${atl.cognome}</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">${atl.tipoArco||'Tipo arco n/d'} · Tessera: ${atl.tessera||'—'}</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">
+                        ${atl.tipoArco||'—'}
+                        ${atl.tesseraFitarco ? ` · Fitarco: ${atl.tesseraFitarco}` : ''}
+                        ${atl.tesseraAltro ? ` · ${atl.enteAltro||'Altro'}: ${atl.tesseraAltro}` : ''}
+                    </div>
                 </div>
                 <div style="display:flex;gap:0.4rem;flex-shrink:0">
                     <button class="btn btn-outline btn-sm" onclick="window.setView('asdAtletaDetail',{atletaId:'${atl.id}'})">📊</button>
@@ -637,42 +649,63 @@ async function renderAsdAtleti() {
 
 function showAddAtleta(existing=null) {
     const isEdit = !!existing;
-    const atl = existing || { nome:'', cognome:'', tessera:'', tipoArco:'Ricurvo', dataNascita:'', pwd:'' };
+    const atl = existing || { nome:'', cognome:'', tesseraFitarco:'', tesseraAltro:'', enteAltro:'', tipoArco:'Ricurvo', dataNascita:'', pwd:'', fotoBase64:'' };
     const bowTypes = ['Ricurvo','Compound','Longbow','Barebow','Arco Nudo','Altro'];
     showModal(isEdit ? '✏️ Modifica Atleta' : '➕ Nuovo Atleta', `
         <div style="display:flex;flex-direction:column;gap:0.75rem">
+
+            <div style="display:flex;align-items:center;gap:1rem">
+                <div id="foto-atleta-wrap" style="width:60px;height:60px;border-radius:50%;border:2px solid var(--gold);background:var(--dark3);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+                    ${atl.fotoBase64
+                        ? `<img id="foto-atleta-preview" src="${atl.fotoBase64}" style="width:100%;height:100%;object-fit:cover">`
+                        : `<span style="font-family:'Rajdhani';font-size:1.2rem;font-weight:700;color:var(--gold)">${initials(atl.nome||'?',atl.cognome||'?')}</span>`}
+                </div>
+                <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+                    📷 Foto profilo
+                    <input type="file" accept="image/*" style="display:none" onchange="window.previewFotoAtleta(this)">
+                </label>
+            </div>
+
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Nome *</label><input class="inp" id="atl-nome" value="${atl.nome}" placeholder="Nome"></div>
                 <div><label class="form-label">Cognome *</label><input class="inp" id="atl-cognome" value="${atl.cognome}" placeholder="Cognome"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
-                <div><label class="form-label">Tessera</label><input class="inp" id="atl-tessera" value="${atl.tessera||''}" placeholder="N. tessera"></div>
+                <div><label class="form-label">Tessera Fitarco</label><input class="inp" id="atl-tessera-fitarco" value="${atl.tesseraFitarco||''}" placeholder="N. tessera Fitarco"></div>
                 <div><label class="form-label">Data Nascita</label><input class="inp" id="atl-nascita" type="date" value="${atl.dataNascita||''}"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                <div><label class="form-label">Ente Altro</label><input class="inp" id="atl-ente-altro" value="${atl.enteAltro||''}" placeholder="Es: CSEN, AICS..."></div>
+                <div><label class="form-label">Tessera Altro Ente</label><input class="inp" id="atl-tessera-altro" value="${atl.tesseraAltro||''}" placeholder="N. tessera"></div>
             </div>
             <div><label class="form-label">Tipo Arco</label>
                 <select class="inp" id="atl-arco">${bowTypes.map(t=>`<option value="${t}" ${atl.tipoArco===t?'selected':''}>${t}</option>`).join('')}</select>
             </div>
-            <div><label class="form-label">Password Atleta *${isEdit?' (lascia vuoto per non modificare)':''}</label>
+            <div><label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
                 <input class="inp" id="atl-pwd" type="password" placeholder="${isEdit?'Nuova password (opzionale)':'Password di accesso'}"></div>
         </div>
     `, [
         { text:'Annulla', cls:'btn-ghost' },
-        { text: isEdit ? 'Salva Modifiche' : 'Crea Atleta', cls:'btn-gold', fn: () => saveAtleta(isEdit ? existing.id : null) }
+        { text: isEdit ? 'Salva Modifiche' : 'Crea Atleta', cls:'btn-gold', fn: () => saveAtleta(isEdit ? existing.id : null, existing) }
     ]);
 }
 
-async function saveAtleta(existingId=null) {
-    const nome     = $('atl-nome')?.value.trim();
-    const cognome  = $('atl-cognome')?.value.trim();
-    const tessera  = $('atl-tessera')?.value.trim();
-    const nascita  = $('atl-nascita')?.value;
-    const tipoArco = $('atl-arco')?.value;
-    const pwd      = $('atl-pwd')?.value.trim();
+async function saveAtleta(existingId=null, existingData=null) {
+    const nome            = $('atl-nome')?.value.trim();
+    const cognome         = $('atl-cognome')?.value.trim();
+    const tesseraFitarco  = $('atl-tessera-fitarco')?.value.trim();
+    const tesseraAltro    = $('atl-tessera-altro')?.value.trim();
+    const enteAltro       = $('atl-ente-altro')?.value.trim();
+    const nascita         = $('atl-nascita')?.value;
+    const tipoArco        = $('atl-arco')?.value;
+    const pwd             = $('atl-pwd')?.value.trim();
+    const wrap            = $('foto-atleta-wrap');
+    const fotoBase64      = wrap?._pendingBase64 || existingData?.fotoBase64 || '';
 
-    if (!nome || !cognome) return showModal('Errore','Nome e Cognome obbligatori.',[{text:'OK',fn:()=>showAddAtleta()}]);
-    if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta()}]);
+    if (!nome || !cognome) return showModal('Errore','Nome e Cognome obbligatori.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
-    const data = { nome, cognome, tessera, dataNascita: nascita, tipoArco, updatedAt: new Date().toISOString() };
+    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, fotoBase64, updatedAt: new Date().toISOString() };
     if (pwd) data.pwdHash = hashPwd(pwd);
 
     if (existingId) {
@@ -744,10 +777,14 @@ async function renderAsdAtletaDetail({ atletaId }) {
         <button class="btn btn-ghost btn-sm" onclick="window.setView('asdAtleti')" style="margin-bottom:1rem">← Atleti</button>
 
         <div style="display:flex;align-items:center;gap:0.85rem;margin-bottom:1rem">
-            <div class="avatar avatar-lg">${initials(atl.nome,atl.cognome)}</div>
+            ${atl.fotoBase64
+                ? `<img src="${atl.fotoBase64}" style="width:64px;height:64px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
+                : `<div class="avatar avatar-lg">${initials(atl.nome,atl.cognome)}</div>`}
             <div>
                 <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700">${atl.nome} ${atl.cognome}</div>
-                <div style="font-size:0.8rem;color:var(--muted)">${atl.tipoArco||''} · Tessera: ${atl.tessera||'—'}</div>
+                <div style="font-size:0.78rem;color:var(--muted)">${atl.tipoArco||''}</div>
+                ${atl.tesseraFitarco ? `<div style="font-size:0.75rem;color:var(--gold)">Fitarco: ${atl.tesseraFitarco}</div>` : ''}
+                ${atl.tesseraAltro ? `<div style="font-size:0.75rem;color:var(--muted)">${atl.enteAltro||'Altro'}: ${atl.tesseraAltro}</div>` : ''}
             </div>
         </div>
 
@@ -867,18 +904,33 @@ window.sendMessaggio = sendMessaggio;
 // ════════════════════════════════════════════════════════════════════════════
 function renderAsdProfilo() {
     setHeader('⚙️ Profilo ASD', '');
+    const logoPreview = S.asd?.logoBase64 || S.asd?.logoUrl || '';
     render(`
         <div class="card card-gold" style="margin-bottom:1rem">
             <h3 style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold);margin-bottom:1rem">🏆 Dati ASD</h3>
             <div style="display:flex;flex-direction:column;gap:0.75rem">
                 <div><label class="form-label">Nome ASD</label><input class="inp" id="prof-nome" value="${S.asd?.nome||''}"></div>
                 <div><label class="form-label">Città</label><input class="inp" id="prof-citta" value="${S.asd?.citta||''}"></div>
-                <div><label class="form-label">URL Logo ASD (link immagine)</label>
-                    <input class="inp" id="prof-logo" value="${S.asd?.logoUrl||''}" placeholder="https://... (URL immagine logo)">
-                    <p style="font-size:0.73rem;color:var(--muted);margin-top:0.3rem">Carica l'immagine su un servizio tipo imgur.com e incolla il link diretto</p>
+
+                <div>
+                    <label class="form-label">🖼️ Logo ASD</label>
+                    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem">
+                        <div id="logo-preview-wrap" style="width:72px;height:72px;border-radius:50%;border:2px solid var(--gold);background:var(--dark3);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+                            ${logoPreview
+                                ? `<img id="logo-preview-img" src="${logoPreview}" style="width:100%;height:100%;object-fit:cover">`
+                                : `<span style="font-family:'Rajdhani';font-size:1.4rem;font-weight:700;color:var(--gold)">${(S.asd?.nome||'?').substring(0,2).toUpperCase()}</span>`}
+                        </div>
+                        <div style="flex:1">
+                            <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.4rem">
+                                📁 Scegli file
+                                <input type="file" id="logo-file-input" accept="image/*" style="display:none" onchange="window.previewLogoFile(this)">
+                            </label>
+                            <p style="font-size:0.72rem;color:var(--muted);margin-top:0.4rem">JPG, PNG, max 1MB consigliato</p>
+                        </div>
+                    </div>
                 </div>
-                ${S.asd?.logoUrl ? `<div style="text-align:center"><img src="${S.asd.logoUrl}" style="max-height:80px;border-radius:50%;border:2px solid var(--gold)"></div>` : ''}
-                <button class="btn btn-gold btn-full" onclick="saveAsdProfilo()">💾 Salva</button>
+
+                <button class="btn btn-gold btn-full" onclick="window.saveAsdProfilo()">💾 Salva</button>
             </div>
         </div>
 
@@ -887,7 +939,7 @@ function renderAsdProfilo() {
             <div style="display:flex;flex-direction:column;gap:0.65rem">
                 <div><label class="form-label">Nuova Password</label><input class="inp" id="prof-pwd" type="password" placeholder="Nuova password"></div>
                 <div><label class="form-label">Conferma</label><input class="inp" id="prof-pwd2" type="password" placeholder="Ripeti"></div>
-                <button class="btn btn-outline btn-full" onclick="saveAsdPwd()">🔑 Aggiorna Password</button>
+                <button class="btn btn-outline btn-full" onclick="window.saveAsdPwd()">🔑 Aggiorna Password</button>
             </div>
         </div>
 
@@ -895,25 +947,53 @@ function renderAsdProfilo() {
     `);
 }
 
-async function saveAsdProfilo() {
+window.previewLogoFile = function(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) return showModal('Errore','File troppo grande. Max 2MB.',[{text:'OK'}]);
+    const reader = new FileReader();
+    reader.onload = e => {
+        const b64 = e.target.result;
+        const wrap = $('logo-preview-wrap');
+        wrap.innerHTML = `<img id="logo-preview-img" src="${b64}" style="width:100%;height:100%;object-fit:cover">`;
+        wrap._pendingBase64 = b64;
+    };
+    reader.readAsDataURL(file);
+};
+
+window.previewFotoAtleta = function(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) return showModal('Errore','File troppo grande. Max 2MB.',[{text:'OK'}]);
+    const reader = new FileReader();
+    reader.onload = e => {
+        const b64 = e.target.result;
+        const prev = $('foto-atleta-preview');
+        if (prev) { prev.src = b64; prev.style.display = 'block'; }
+        const wrap = $('foto-atleta-wrap');
+        if (wrap) wrap._pendingBase64 = b64;
+    };
+    reader.readAsDataURL(file);
+};
+
+window.saveAsdProfilo = async function() {
     const nome  = $('prof-nome')?.value.trim();
     const citta = $('prof-citta')?.value.trim();
-    const logo  = $('prof-logo')?.value.trim();
     if (!nome) return showModal('Errore','Nome ASD obbligatorio.',[{text:'OK'}]);
-    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { nome, citta, logoUrl: logo });
-    S.asd = { ...S.asd, nome, citta, logoUrl: logo };
+    const wrap = $('logo-preview-wrap');
+    const logoBase64 = wrap?._pendingBase64 || S.asd?.logoBase64 || '';
+    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { nome, citta: citta||'', logoBase64 });
+    S.asd = { ...S.asd, nome, citta, logoBase64 };
     showModal('✅ Salvato!','Profilo ASD aggiornato.',[{text:'OK',fn:()=>window.setView('asdProfilo')}]);
-}
-async function saveAsdPwd() {
+};
+window.saveAsdPwd = async function() {
     const p1 = $('prof-pwd')?.value.trim();
     const p2 = $('prof-pwd2')?.value.trim();
     if (!p1 || p1.length<6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK'}]);
     if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
     await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: hashPwd(p1) });
     showModal('✅ Password aggiornata!','',[{text:'OK'}]);
-}
-window.saveAsdProfilo = saveAsdProfilo;
-window.saveAsdPwd = saveAsdPwd;
+};
 
 function logoutAsd() {
     localStorage.removeItem('acm_asd_session');
@@ -926,19 +1006,27 @@ window.logoutAsd = logoutAsd;
 // ════════════════════════════════════════════════════════════════════════════
 // ── ATLETA: SELEZIONA (lista atleti della ASD) ───────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
-async function renderAtletaSelect({ asd }) {
+async function renderAtletaSelect({ asdId }) {
     hideHeader();
-    // Carica atleti della ASD
+    // Trova ASD
+    const asd = S.allAsd.find(a => a.id === asdId);
+    if (!asd) return window.setView('homeLogin');
+
     const snap = await getDocs(atletiCol(asd.id));
     const atleti = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Salva in stato temporaneo per uso successivo
+    S._tempAsd = asd;
+    S._tempAtleti = atleti;
 
     const list = atleti.length === 0
         ? `<p style="color:var(--muted);text-align:center;padding:2rem">Nessun atleta iscritto.</p>`
         : `<div style="display:flex;flex-direction:column;gap:0.6rem">
             ${atleti.map(atl => `
-                <div class="card card-hover" onclick="window.setView('atletaLogin',{asd:${JSON.stringify(asd).replace(/"/g,'&quot;')},atleta:${JSON.stringify(atl).replace(/"/g,'&quot;')}})"
+                <div class="card card-hover" onclick="window.selectAtleta('${atl.id}')"
                      style="display:flex;align-items:center;gap:0.85rem">
-                    <div class="avatar">${initials(atl.nome,atl.cognome)}</div>
+                    ${atl.fotoBase64
+                        ? `<img src="${atl.fotoBase64}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
+                        : `<div class="avatar">${initials(atl.nome,atl.cognome)}</div>`}
                     <div>
                         <div style="font-family:'Rajdhani',sans-serif;font-weight:700">${atl.nome} ${atl.cognome}</div>
                         <div style="font-size:0.78rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
@@ -952,7 +1040,11 @@ async function renderAtletaSelect({ asd }) {
             <button class="btn btn-ghost btn-sm" onclick="window.setView('homeLogin')" style="margin-bottom:1rem">← Indietro</button>
             <div style="display:flex;align-items:center;gap:0.85rem;margin-bottom:1.25rem">
                 <div class="asd-logo-wrap" style="width:56px;height:56px;flex-shrink:0">
-                    ${asd.logoUrl ? `<img src="${asd.logoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<span style="font-family:'Rajdhani';font-size:1.3rem;font-weight:700;color:var(--gold)">${(asd.nome||'?').substring(0,2).toUpperCase()}</span>`}
+                    ${asd.logoBase64
+                        ? `<img src="${asd.logoBase64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+                        : asd.logoUrl
+                            ? `<img src="${asd.logoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+                            : `<span style="font-family:'Rajdhani';font-size:1.3rem;font-weight:700;color:var(--gold)">${(asd.nome||'?').substring(0,2).toUpperCase()}</span>`}
                 </div>
                 <div>
                     <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text)">${asd.nome}</div>
@@ -964,31 +1056,51 @@ async function renderAtletaSelect({ asd }) {
     `);
 }
 
+window.selectAtleta = (atletaId) => {
+    const atleta = S._tempAtleti?.find(a => a.id === atletaId);
+    const asd    = S._tempAsd;
+    if (!atleta || !asd) return window.setView('homeLogin');
+    S._loginAsd    = asd;
+    S._loginAtleta = atleta;
+    window.setView('atletaLogin', {});
+};
+
 // ════════════════════════════════════════════════════════════════════════════
 // ── ATLETA: LOGIN ────────────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
-function renderAtletaLogin({ asd, atleta }) {
+function renderAtletaLogin() {
     hideHeader();
+    const asd    = S._loginAsd;
+    const atleta = S._loginAtleta;
+    if (!asd || !atleta) return window.setView('homeLogin');
+
     render(`
         <div style="max-width:380px;margin:0 auto;padding-top:1rem">
-            <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaSelect',{asd:${JSON.stringify(asd).replace(/"/g,'&quot;')}})" style="margin-bottom:1rem">← Indietro</button>
+            <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaSelect',{asdId:'${asd.id}'})" style="margin-bottom:1rem">← Indietro</button>
             <div class="card card-gold">
                 <div style="text-align:center;margin-bottom:1.2rem">
-                    <div class="avatar avatar-xl" style="margin:0 auto 0.75rem">${initials(atleta.nome,atleta.cognome)}</div>
+                    ${atleta.fotoBase64
+                        ? `<img src="${atleta.fotoBase64}" style="width:80px;height:80px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;margin:0 auto 0.75rem;display:block">`
+                        : `<div class="avatar avatar-xl" style="margin:0 auto 0.75rem">${initials(atleta.nome,atleta.cognome)}</div>`}
                     <div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700">${atleta.nome} ${atleta.cognome}</div>
                     <div style="font-size:0.78rem;color:var(--muted)">${asd.nome}</div>
                 </div>
                 <div>
                     <label class="form-label">Password</label>
-                    <input class="inp" id="atl-pwd-login" type="password" placeholder="Inserisci la tua password">
+                    <input class="inp" id="atl-pwd-login" type="password" placeholder="Inserisci la tua password"
+                           onkeydown="if(event.key==='Enter') window.doAtletaLogin()">
                 </div>
-                <button class="btn btn-gold btn-full btn-lg" style="margin-top:1rem" onclick="doAtletaLogin(${JSON.stringify(asd).replace(/"/g,'&quot;')},${JSON.stringify(atleta).replace(/"/g,'&quot;')})">Accedi</button>
+                <button class="btn btn-gold btn-full btn-lg" style="margin-top:1rem" onclick="window.doAtletaLogin()">Accedi</button>
             </div>
         </div>
     `);
 }
 
-async function doAtletaLogin(asd, atleta) {
+window.doAtletaLogin = async function() {
+    const asd    = S._loginAsd;
+    const atleta = S._loginAtleta;
+    if (!asd || !atleta) return window.setView('homeLogin');
+
     const pwd = $('atl-pwd-login')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
     if (hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
@@ -1000,8 +1112,7 @@ async function doAtletaLogin(asd, atleta) {
     buildNav();
     await loadAtletaSessioni();
     window.setView('atletaMenu');
-}
-window.doAtletaLogin = doAtletaLogin;
+};
 
 function logoutAtleta() {
     localStorage.removeItem('acm_atleta_session');
@@ -1027,7 +1138,9 @@ function renderAtletaMenu() {
     render(`
         <div style="padding-top:0.5rem">
             <div style="margin-bottom:1.25rem;display:flex;align-items:center;gap:0.75rem">
-                <div class="avatar avatar-lg">${initials(S.atleta?.nome,S.atleta?.cognome)}</div>
+                ${S.atleta?.fotoBase64
+                    ? `<img src="${S.atleta.fotoBase64}" style="width:56px;height:56px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
+                    : `<div class="avatar avatar-lg">${initials(S.atleta?.nome,S.atleta?.cognome)}</div>`}
                 <div>
                     <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700">Ciao, ${S.atleta?.nome}!</div>
                     <div style="font-size:0.78rem;color:var(--muted)">${S.asd?.nome} · ${S.atleta?.tipoArco||''}</div>
