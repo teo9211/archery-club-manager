@@ -436,14 +436,14 @@ function renderAsdLogin() {
                 <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.6rem;font-weight:700;color:var(--gold);margin-bottom:1rem">🔐 Accesso ASD</h2>
                 <div style="display:flex;flex-direction:column;gap:0.85rem">
                     <div>
-                        <label class="form-label">Email ASD</label>
-                        <input class="inp" id="asd-login-email" type="email" placeholder="email@asd.it">
+                        <label class="form-label">Nome ASD</label>
+                        <input class="inp" id="asd-login-nome" placeholder="Es: ASD Arcieri del Sole">
                     </div>
                     <div>
                         <label class="form-label">Password ASD</label>
                         <input class="inp" id="asd-login-pwd" type="password" placeholder="Password">
                     </div>
-                    <button class="btn btn-gold btn-full btn-lg" onclick="doAsdLogin()">Accedi</button>
+                    <button class="btn btn-gold btn-full btn-lg" onclick="window.doAsdLogin()">Accedi</button>
                 </div>
                 <div style="text-align:center;margin-top:1rem;font-size:0.82rem;color:var(--muted)">
                     Non hai un account? <span style="color:var(--gold);cursor:pointer" onclick="window.setView('asdRegister')">Registra ASD</span>
@@ -453,18 +453,18 @@ function renderAsdLogin() {
     `);
 }
 
-async function doAsdLogin() {
-    const email = $('asd-login-email').value.trim();
-    const pwd   = $('asd-login-pwd').value.trim();
-    if (!email || !pwd) return showModal('Errore','Inserisci email e password.',[{text:'OK'}]);
+window.doAsdLogin = async function() {
+    const nome = $('asd-login-nome')?.value.trim();
+    const pwd  = $('asd-login-pwd')?.value.trim();
+    if (!nome || !pwd) return showModal('Errore','Inserisci nome ASD e password.',[{text:'OK'}]);
 
     await loadAllAsd();
-    const asd = S.allAsd.find(a => a.email === email && a.pwdHash === hashPwd(pwd));
-    if (!asd) return showModal('Errore','Email o password errati.',[{text:'OK'}]);
+    const asd = S.allAsd.find(a => a.nome.toLowerCase() === nome.toLowerCase() && a.pwdHash === hashPwd(pwd));
+    if (!asd) return showModal('Errore','Nome ASD o password errati.',[{text:'OK'}]);
 
     S.role = 'asd';
     S.asd  = asd;
-    localStorage.setItem('acm_asd_session', JSON.stringify({ id: asd.id, email: asd.email }));
+    localStorage.setItem('acm_asd_session', JSON.stringify({ id: asd.id }));
     await loadAtleti();
     buildNav();
     window.setView('asdDashboard');
@@ -485,42 +485,50 @@ function renderAsdRegister() {
                         <input class="inp" id="reg-nome" placeholder="Es: ASD Arcieri del Sole"></div>
                     <div><label class="form-label">Città</label>
                         <input class="inp" id="reg-citta" placeholder="Es: Roma"></div>
-                    <div><label class="form-label">Email ASD (per login) *</label>
-                        <input class="inp" id="reg-email" type="email" placeholder="email@asd.it"></div>
-                    <div><label class="form-label">Password ASD *</label>
-                        <input class="inp" id="reg-pwd" type="password" placeholder="Min. 6 caratteri"></div>
+                    <div><label class="form-label">Password ASD * <span style="color:var(--muted);font-size:0.75rem">(min. 6 caratteri)</span></label>
+                        <input class="inp" id="reg-pwd" type="password" placeholder="Scegli una password sicura"></div>
                     <div><label class="form-label">Conferma Password *</label>
-                        <input class="inp" id="reg-pwd2" type="password" placeholder="Ripeti password"></div>
-                    <button class="btn btn-gold btn-full btn-lg" onclick="doAsdRegister()">Registra ASD</button>
+                        <input class="inp" id="reg-pwd2" type="password" placeholder="Ripeti la password"></div>
+                    <button class="btn btn-gold btn-full btn-lg" onclick="window.doAsdRegister()">✅ Crea Profilo ASD</button>
                 </div>
             </div>
         </div>
     `);
 }
 
-async function doAsdRegister() {
-    const nome  = $('reg-nome').value.trim();
-    const citta = $('reg-citta').value.trim();
-    const email = $('reg-email').value.trim();
-    const pwd   = $('reg-pwd').value.trim();
-    const pwd2  = $('reg-pwd2').value.trim();
-    if (!nome || !email || !pwd) return showModal('Errore','Compila tutti i campi obbligatori.',[{text:'OK'}]);
+window.doAsdRegister = async function() {
+    const nome  = $('reg-nome')?.value.trim();
+    const citta = $('reg-citta')?.value.trim();
+    const pwd   = $('reg-pwd')?.value.trim();
+    const pwd2  = $('reg-pwd2')?.value.trim();
+
+    if (!nome) return showModal('Errore','Inserisci il nome della ASD.',[{text:'OK'}]);
+    if (!pwd)  return showModal('Errore','Inserisci una password.',[{text:'OK'}]);
     if (pwd.length < 6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK'}]);
-    if (pwd !== pwd2)  return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
+    if (pwd !== pwd2)   return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
 
     await loadAllAsd();
-    if (S.allAsd.find(a => a.email === email)) return showModal('Errore','Email già registrata.',[{text:'OK'}]);
+    if (S.allAsd.find(a => a.nome.toLowerCase() === nome.toLowerCase())) {
+        return showModal('Errore','Esiste già una ASD con questo nome.',[{text:'OK'}]);
+    }
 
-    const newAsd = { nome, citta, email, pwdHash: hashPwd(pwd), logoUrl: '', createdAt: new Date().toISOString() };
-    const ref = await addDoc(asdCol(), newAsd);
-    newAsd.id = ref.id;
-    S.allAsd.push(newAsd);
-    S.role = 'asd';
-    S.asd  = newAsd;
-    S.atleti = [];
-    localStorage.setItem('acm_asd_session', JSON.stringify({ id: newAsd.id, email }));
-    buildNav();
-    showModal('✅ ASD Registrata!', `Benvenuto ${nome}! Il tuo account è stato creato.`, [{ text:'Continua', fn: () => window.setView('asdProfilo') }]);
+    try {
+        const newAsd = { nome, citta: citta||'', pwdHash: hashPwd(pwd), logoUrl: '', createdAt: new Date().toISOString() };
+        const ref = await addDoc(asdCol(), newAsd);
+        newAsd.id = ref.id;
+        S.allAsd.push(newAsd);
+        S.role   = 'asd';
+        S.asd    = newAsd;
+        S.atleti = [];
+        localStorage.setItem('acm_asd_session', JSON.stringify({ id: newAsd.id }));
+        buildNav();
+        showModal('✅ ASD Creata!', `Benvenuto <strong>${nome}</strong>!<br>Il profilo ASD è stato creato con successo.<br><br>Ora puoi aggiungere il logo e iscrivere i tuoi atleti.`, [{
+            text: 'Vai al Profilo ASD', cls: 'btn-gold', fn: () => window.setView('asdProfilo')
+        }]);
+    } catch(e) {
+        console.error(e);
+        showModal('Errore', 'Errore durante la creazione: ' + e.message, [{text:'OK'}]);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -865,7 +873,6 @@ function renderAsdProfilo() {
             <div style="display:flex;flex-direction:column;gap:0.75rem">
                 <div><label class="form-label">Nome ASD</label><input class="inp" id="prof-nome" value="${S.asd?.nome||''}"></div>
                 <div><label class="form-label">Città</label><input class="inp" id="prof-citta" value="${S.asd?.citta||''}"></div>
-                <div><label class="form-label">Email</label><input class="inp" id="prof-email" value="${S.asd?.email||''}" readonly style="opacity:0.6"></div>
                 <div><label class="form-label">URL Logo ASD (link immagine)</label>
                     <input class="inp" id="prof-logo" value="${S.asd?.logoUrl||''}" placeholder="https://... (URL immagine logo)">
                     <p style="font-size:0.73rem;color:var(--muted);margin-top:0.3rem">Carica l'immagine su un servizio tipo imgur.com e incolla il link diretto</p>
