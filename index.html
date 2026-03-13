@@ -214,8 +214,8 @@
     </div>
 </div>
 
-<!-- MAGNIFIER (bersaglio) -->
-<div id="test-magnifier" style="position:fixed;width:220px;height:220px;border:4px solid #f97316;border-radius:50%;pointer-events:none;display:none;z-index:9999;background-repeat:no-repeat;background-size:1360px 1360px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45),0 10px 40px rgba(0,0,0,0.8)">
+<!-- MAGNIFIER -->
+<div id="test-magnifier" style="position:fixed;width:220px;height:220px;border:4px solid #f97316;border-radius:50%;pointer-events:none;display:none;z-index:9999;background-repeat:no-repeat;box-shadow:0 0 0 9999px rgba(0,0,0,0.45),0 10px 40px rgba(0,0,0,0.8)">
     <div style="position:absolute;top:0;left:50%;width:2px;height:100%;background:white;mix-blend-mode:difference;transform:translateX(-50%)"></div>
     <div style="position:absolute;top:50%;left:0;width:100%;height:2px;background:white;mix-blend-mode:difference;transform:translateY(-50%)"></div>
     <div style="position:absolute;top:50%;left:50%;width:18px;height:18px;border:2px solid white;border-radius:50%;mix-blend-mode:difference;transform:translate(-50%,-50%)"></div>
@@ -224,7 +224,7 @@
 <!-- TARGET OVERLAY -->
 <div id="target-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:#0f172a;overflow-y:auto;padding:12px 12px 80px">
     <div style="position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;background:#0f172a;padding:8px 0 10px;border-bottom:1px solid #334155;margin-bottom:12px">
-        <button onclick="window.closeTargetOverlay()" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:#1e293b;color:#fff;font-weight:700;border:1px solid #475569;border-radius:10px;cursor:pointer;font-size:13px">← Segnapunti</button>
+        <button onclick="window.closeTargetOverlay()" style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:#1e293b;color:#fff;font-weight:700;border:1px solid #475569;border-radius:10px;cursor:pointer;font-size:13px">← Segnapunti</button>
         <span id="overlay-turn-info" style="color:#fdb927;font-size:14px;font-weight:700"></span>
         <span id="overlay-score-info" style="margin-left:auto;color:#fff;font-size:14px;font-weight:700"></span>
     </div>
@@ -358,6 +358,12 @@ const app = initializeApp(firebaseConfig);
 db   = getFirestore(app);
 auth = getAuth(app);
 
+onAuthStateChanged(auth, async user => {
+    if (!user) await signInAnonymously(auth);
+    await loadAllAsd();
+    window.setView('homeLogin');
+});
+
 async function loadAllAsd() {
     try {
         const snap = await getDocs(asdCol());
@@ -387,7 +393,7 @@ window.setView = async (view, params={}) => {
         // Tracker views (atleta)
         case 'registrationForm':return renderRegistrationForm(params);
         case 'trainingNotes':   return renderTrainingNotes();
-        case 'scoring':         return renderScoringView();
+        case 'scoring':         return tkRenderScoring();
         case 'quickScore':      return renderQuickScoreView();
         case 'dataSummary':     return renderAtletaDati();
         case 'detailedSummary': return renderAtletaDati();
@@ -924,7 +930,6 @@ function renderAsdProfilo() {
             <div style="display:flex;flex-direction:column;gap:0.75rem">
                 <div><label class="form-label">Nome ASD</label><input class="inp" id="prof-nome" value="${S.asd?.nome||''}"></div>
                 <div><label class="form-label">Città</label><input class="inp" id="prof-citta" value="${S.asd?.citta||''}"></div>
-
                 <div>
                     <label class="form-label">🖼️ Logo ASD</label>
                     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem">
@@ -942,7 +947,6 @@ function renderAsdProfilo() {
                         </div>
                     </div>
                 </div>
-
                 <button class="btn btn-gold btn-full" onclick="window.saveAsdProfilo()">💾 Salva Dati Base</button>
             </div>
         </div>
@@ -950,11 +954,11 @@ function renderAsdProfilo() {
         <div class="card" style="margin-bottom:1rem">
             <h3 style="font-family:'Rajdhani',sans-serif;font-size:1.1rem;font-weight:700;color:var(--gold);margin-bottom:0.85rem">📞 Contatti & Social</h3>
             <div style="display:flex;flex-direction:column;gap:0.65rem">
-                <div><label class="form-label">📞 Telefono</label><input class="inp" id="prof-telefono" type="tel" placeholder="Es: +39 345 1234567" value="${S.asd?.telefono||''}"></div>
-                <div><label class="form-label">✉️ Email</label><input class="inp" id="prof-email" type="email" placeholder="Es: info@arcieri.it" value="${S.asd?.email||''}"></div>
+                <div><label class="form-label">📞 Telefono</label><input class="inp" id="prof-telefono" type="tel" placeholder="+39 345 1234567" value="${S.asd?.telefono||''}"></div>
+                <div><label class="form-label">✉️ Email</label><input class="inp" id="prof-email" type="email" placeholder="info@asd.it" value="${S.asd?.email||''}"></div>
                 <div><label class="form-label">📘 Facebook (URL)</label><input class="inp" id="prof-facebook" placeholder="https://facebook.com/..." value="${S.asd?.facebook||''}"></div>
                 <div><label class="form-label">📸 Instagram (URL)</label><input class="inp" id="prof-instagram" placeholder="https://instagram.com/..." value="${S.asd?.instagram||''}"></div>
-                <div><label class="form-label">🌐 Sito Web (URL)</label><input class="inp" id="prof-sito" placeholder="https://www...." value="${S.asd?.sito||''}"></div>
+                <div><label class="form-label">🌐 Sito Web (URL)</label><input class="inp" id="prof-sito" placeholder="https://..." value="${S.asd?.sito||''}"></div>
                 <div><label class="form-label">🏹 Pagina FITARCO (URL)</label><input class="inp" id="prof-fitarco" placeholder="https://fitarco.it/..." value="${S.asd?.fitarco||''}"></div>
                 <button class="btn btn-gold btn-full" onclick="window.saveAsdContatti()">💾 Salva Contatti</button>
             </div>
@@ -1010,19 +1014,18 @@ window.saveAsdProfilo = async function() {
     const logoBase64 = wrap?._pendingBase64 || S.asd?.logoBase64 || '';
     await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { nome, citta: citta||'', logoBase64 });
     S.asd = { ...S.asd, nome, citta, logoBase64 };
-    showModal('✅ Salvato!','Dati base ASD aggiornati.',[{text:'OK',fn:()=>window.setView('asdProfilo')}]);
+    showModal('✅ Salvato!','Profilo ASD aggiornato.',[{text:'OK',fn:()=>window.setView('asdProfilo')}]);
 };
-
 window.saveAsdContatti = async function() {
-    const telefono = $('prof-telefono')?.value.trim();
-    const email    = $('prof-email')?.value.trim();
-    const facebook = $('prof-facebook')?.value.trim();
-    const instagram= $('prof-instagram')?.value.trim();
-    const sito     = $('prof-sito')?.value.trim();
-    const fitarco  = $('prof-fitarco')?.value.trim();
-    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { telefono, email, facebook, instagram, sito, fitarco });
+    const telefono  = document.getElementById('prof-telefono')?.value.trim() || '';
+    const email     = document.getElementById('prof-email')?.value.trim() || '';
+    const facebook  = document.getElementById('prof-facebook')?.value.trim() || '';
+    const instagram = document.getElementById('prof-instagram')?.value.trim() || '';
+    const sito      = document.getElementById('prof-sito')?.value.trim() || '';
+    const fitarco   = document.getElementById('prof-fitarco')?.value.trim() || '';
+    await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}`), { telefono, email, facebook, instagram, sito, fitarco });
     S.asd = { ...S.asd, telefono, email, facebook, instagram, sito, fitarco };
-    showModal('✅ Salvato!','Contatti e social aggiornati.',[{text:'OK',fn:()=>window.setView('asdProfilo')}]);
+    showModal('✅ Salvato!', 'Contatti e social aggiornati.', [{text:'OK', fn:()=>window.setView('asdProfilo')}]);
 };
 
 window.saveAsdPwd = async function() {
@@ -1047,13 +1050,11 @@ window.logoutAsd = logoutAsd;
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAtletaSelect({ asdId }) {
     hideHeader();
-    // Trova ASD
     const asd = S.allAsd.find(a => a.id === asdId);
     if (!asd) return window.setView('homeLogin');
 
     const snap = await getDocs(atletiCol(asd.id));
     const atleti = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    // Salva in stato temporaneo per uso successivo
     S._tempAsd = asd;
     S._tempAtleti = atleti;
 
@@ -1074,37 +1075,37 @@ async function renderAtletaSelect({ asdId }) {
             `).join('')}
         </div>`;
 
-    // Costruisci riquadro info ASD con contatti e link
-    const asdInfoHtml = `
+    const asdInfo = `
         <div class="card card-gold" style="margin-bottom:1rem">
-            <div style="display:flex;align-items:center;gap:0.85rem;margin-bottom:0.85rem">
-                <div class="asd-logo-wrap" style="width:60px;height:60px;flex-shrink:0">
-                    ${asd.logoBase64 ? `<img src="${asd.logoBase64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` 
-                    : asd.logoUrl ? `<img src="${asd.logoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
-                    : `<span style="font-family:'Rajdhani';font-size:1.3rem;font-weight:700;color:var(--gold)">${(asd.nome||'?').substring(0,2).toUpperCase()}</span>`}
+            <div style="display:flex;align-items:center;gap:0.85rem;margin-bottom:0.75rem">
+                <div class="asd-logo-wrap" style="width:56px;height:56px;flex-shrink:0">
+                    ${asd.logoBase64
+                        ? `<img src="${asd.logoBase64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+                        : asd.logoUrl
+                            ? `<img src="${asd.logoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+                            : `<span style="font-family:'Rajdhani';font-size:1.3rem;font-weight:700;color:var(--gold)">${(asd.nome||'?').substring(0,2).toUpperCase()}</span>`}
                 </div>
                 <div>
                     <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--text)">${asd.nome}</div>
-                    ${asd.citta ? `<div style="font-size:0.78rem;color:var(--muted)">📍 ${asd.citta}</div>` : ''}
+                    ${asd.citta ? `<div style="font-size:0.75rem;color:var(--muted)">📍 ${asd.citta}</div>` : ''}
                 </div>
             </div>
-            ${(asd.telefono || asd.email || asd.facebook || asd.instagram || asd.sito || asd.fitarco) ? `
-            <div style="display:flex;flex-direction:column;gap:0.45rem;font-size:0.85rem;border-top:1px solid var(--border);padding-top:0.75rem">
-                ${asd.telefono ? `<div style="display:flex;align-items:center;gap:0.5rem;color:var(--text)">📞 <a href="tel:${asd.telefono}" style="color:var(--gold);text-decoration:none">${asd.telefono}</a></div>` : ''}
-                ${asd.email ? `<div style="display:flex;align-items:center;gap:0.5rem;color:var(--text)">✉️ <a href="mailto:${asd.email}" style="color:var(--gold);text-decoration:none">${asd.email}</a></div>` : ''}
-                ${asd.facebook ? `<div style="display:flex;align-items:center;gap:0.5rem"><span>📘</span><a href="${asd.facebook}" target="_blank" style="color:var(--gold);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Facebook</a></div>` : ''}
-                ${asd.instagram ? `<div style="display:flex;align-items:center;gap:0.5rem"><span>📸</span><a href="${asd.instagram}" target="_blank" style="color:var(--gold);text-decoration:none">Instagram</a></div>` : ''}
-                ${asd.sito ? `<div style="display:flex;align-items:center;gap:0.5rem"><span>🌐</span><a href="${asd.sito}" target="_blank" style="color:var(--gold);text-decoration:none">Sito Web</a></div>` : ''}
-                ${asd.fitarco ? `<div style="display:flex;align-items:center;gap:0.5rem"><span>🏹</span><a href="${asd.fitarco}" target="_blank" style="color:var(--gold);text-decoration:none">Pagina FITARCO</a></div>` : ''}
+            ${(asd.telefono||asd.email||asd.facebook||asd.instagram||asd.sito||asd.fitarco) ? `
+            <div style="border-top:1px solid var(--border);padding-top:0.6rem;display:flex;flex-direction:column;gap:0.35rem;font-size:0.82rem">
+                ${asd.telefono ? `<div>📞 <a href="tel:${asd.telefono}" style="color:var(--gold);text-decoration:none">${asd.telefono}</a></div>` : ''}
+                ${asd.email    ? `<div>✉️ <a href="mailto:${asd.email}" style="color:var(--gold);text-decoration:none">${asd.email}</a></div>` : ''}
+                ${asd.facebook ? `<div>📘 <a href="${asd.facebook}" target="_blank" style="color:var(--gold);text-decoration:none">Facebook</a></div>` : ''}
+                ${asd.instagram? `<div>📸 <a href="${asd.instagram}" target="_blank" style="color:var(--gold);text-decoration:none">Instagram</a></div>` : ''}
+                ${asd.sito     ? `<div>🌐 <a href="${asd.sito}" target="_blank" style="color:var(--gold);text-decoration:none">Sito Web</a></div>` : ''}
+                ${asd.fitarco  ? `<div>🏹 <a href="${asd.fitarco}" target="_blank" style="color:var(--gold);text-decoration:none">Pagina FITARCO</a></div>` : ''}
             </div>` : ''}
-        </div>
-    `;
+        </div>`;
 
     render(`
         <div style="max-width:400px;margin:0 auto">
             <button class="btn btn-ghost btn-sm" onclick="window.setView('homeLogin')" style="margin-bottom:1rem">← Indietro</button>
-            ${asdInfoHtml}
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:0.9rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">👤 Seleziona il tuo profilo</div>
+            ${asdInfo}
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.6rem">👤 Seleziona il tuo profilo</div>
             ${list}
         </div>
     `);
@@ -1246,697 +1247,541 @@ function renderAtletaMenu() {
 window.startSession = (type) => window.setView('registrationForm', { type });
 
 // ════════════════════════════════════════════════════════════════════════════
-// ── TRACKER COMPLETO: COSTANTI E STATO ──────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
-const TIPO_TARGA_OPT  = ['40','60','80','120','Tripla','Tripla Vegas','Field','3D','Altro'];
-const DISTANZA_OPT    = ['18mt','25mt','40mt','50mt','60mt','70mt'];
-const TIPO_LUOGO_OPT  = ['Indoor','Outdoor'];
-const FORMATO_OPT     = ['30 frecce (3x10)','36 frecce (6x6)','72 frecce (6x12)'];
-const TIPO_ARCO_OPT   = ['Arco Nudo','Arco Olimpico','Compound'];
-const KEYPAD_VALS     = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
+// ── TRACKER COMPLETO ────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+const TK_TARGA   = ['40','60','80','120','Tripla','Tripla Vegas','Field','3D','Altro'];
+const TK_DIST    = ['18mt','25mt','40mt','50mt','60mt','70mt'];
+const TK_LUOGO   = ['Indoor','Outdoor'];
+const TK_FORMATO = ['30 frecce (3x10)','36 frecce (6x6)','72 frecce (6x12)'];
+const TK_ARCO    = ['Arco Nudo','Arco Olimpico','Compound'];
+const TK_KEYPAD  = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
 
-const TK = {   // tracker state
-    session: null,
-    turn: 1,
-    grid: null,
-    volleyNotes: {},
-    scoringRows: 0,
-    scoringCols: 3,
-    format: null,
-    activeCell: { row:1, col:1 },
-    startTime: null,
-    withoutScore: false,
-};
-const RINGS_SINGOLA = [
+const TK = { session:null, turn:1, grid:null, volleyNotes:{}, rows:0, cols:3, format:null, activeCell:{row:1,col:1} };
+const TK_RINGS_S = [
     {s:'X',r:7.4,c:'#fef08a'},{s:'10',r:17.0,c:'#fef08a'},{s:'9',r:35.9,c:'#fde047'},
     {s:'8',r:54.9,c:'#fde047'},{s:'7',r:73.8,c:'#fb923c'},{s:'6',r:92.7,c:'#fb923c'},
     {s:'5',r:111.7,c:'#60a5fa'},{s:'4',r:130.6,c:'#60a5fa'},{s:'3',r:149.5,c:'#1e1e1e'},
-    {s:'2',r:168.5,c:'#1e1e1e'},{s:'1',r:170.0,c:'#374151'},
+    {s:'2',r:168.5,c:'#1e1e1e'},{s:'1',r:170.0,c:'#374151'}
 ];
-const TR_W=164,TR_H=508,TR_GAP=12,TR_R=80,TR_CX=82;
-const TR_CY=[82, 82+TR_R*2+TR_GAP, 82+(TR_R*2+TR_GAP)*2];
-const RINGS_TRIPLA=[
+const TK_TR_W=164,TK_TR_H=508,TK_TR_R=80,TK_TR_CX=82;
+const TK_TR_CY=[82, 82+TK_TR_R*2+12, 82+(TK_TR_R*2+12)*2];
+const TK_RINGS_T=[
     {s:'X',r:3.5,c:'#fef08a'},{s:'10',r:8.0,c:'#fef08a'},{s:'9',r:16.8,c:'#fde047'},
-    {s:'8',r:25.7,c:'#ef4444'},{s:'7',r:34.6,c:'#ef4444'},{s:'6',r:43.4,c:'#3b82f6'},
+    {s:'8',r:25.7,c:'#ef4444'},{s:'7',r:34.6,c:'#ef4444'},{s:'6',r:43.4,c:'#3b82f6'}
 ];
-const overlayTK = { active: false, configType: 'singola' };
-if (!window._tkArrowPos) window._tkArrowPos = {};
+const TK_OV = { active:false, cfg:'singola' };
+if(!window._tkPos) window._tkPos={};
 
-function tkScoreFromXY(x,y,cfg) {
-    if (cfg==='tripla') {
-        let bd=Infinity,bcy=TR_CY[0];
-        TR_CY.forEach(cy=>{ const d=Math.hypot(x-TR_CX,y-cy); if(d<bd){bd=d;bcy=cy;} });
-        for(const r of RINGS_TRIPLA) if(bd<=r.r+0.5) return r.s; return 'M';
+function tkScore(x,y,cfg){
+    if(cfg==='tripla'){
+        let bd=Infinity,bcy=TK_TR_CY[0];
+        TK_TR_CY.forEach(cy=>{const d=Math.hypot(x-TK_TR_CX,y-cy);if(d<bd){bd=d;bcy=cy;}});
+        for(const r of TK_RINGS_T) if(bd<=r.r+0.5) return r.s; return 'M';
     }
-    const dist=Math.hypot(x-170,y-170);
-    for(const r of RINGS_SINGOLA) if(dist<=r.r+0.5) return r.s; return 'M';
+    const d=Math.hypot(x-170,y-170);
+    for(const r of TK_RINGS_S) if(d<=r.r+0.5) return r.s; return 'M';
 }
-function tkSortScores(arr) {
-    const ord={'X':0,'10':1,'9':2,'8':3,'7':4,'6':5,'5':6,'4':7,'3':8,'2':9,'1':10,'M':11,'m':11,'':12};
-    return arr.sort((a,b)=>(ord[a]??12)-(ord[b]??12));
+function tkSort(arr){
+    const o={'X':0,'10':1,'9':2,'8':3,'7':4,'6':5,'5':6,'4':7,'3':8,'2':9,'1':10,'M':11,'m':11,'':12};
+    return arr.sort((a,b)=>(o[a]??12)-(o[b]??12));
 }
-function tkCalcTurn(grid) {
-    if(!grid||!grid.length) return {score:0,X:0,Ten:0,Nine:0,frecceTirate:0,average:0,maxScore:0,volleys:[]};
-    let tot=0,X=0,Ten=0,Nine=0,shots=0; const volleys=[];
+function tkCalc(grid){
+    if(!grid||!grid.length) return{score:0,X:0,Ten:0,Nine:0,fired:0,avg:0,max:0,volleys:[]};
+    let tot=0,X=0,Ten=0,Nine=0,fired=0; const volleys=[];
     grid.forEach((row,i)=>{
         const v=row.filter(s=>s!==''&&s!==undefined);
         if(!v.length) return;
         let p=0,vx=0,vt=0,vn=0;
-        v.forEach(s=>{ const n=s==='X'?10:s==='M'||s==='m'?0:parseInt(s)||0; p+=n; if(s==='X')vx++; else if(s==='10')vt++; else if(n===9)vn++; });
-        tot+=p; X+=vx; Ten+=vt; Nine+=vn; shots+=v.length;
-        volleys.push({volley:i+1,scores:v,parziale:p,totale:tot,X10:`${vx}-${vt}`,nine:vn,x:vx,ten:vt});
+        v.forEach(s=>{const n=s==='X'?10:s==='M'?0:parseInt(s)||0;p+=n;if(s==='X')vx++;else if(s==='10')vt++;else if(n===9)vn++;});
+        tot+=p;X+=vx;Ten+=vt;Nine+=vn;fired+=v.length;
+        volleys.push({i,v,parz:p,tot,x10:`${vx}-${vt}`,nine:vn});
     });
-    const maxScore=(TK.scoringRows*TK.scoringCols)*10;
-    return {score:tot,X,Ten,Nine,frecceTirate:shots,average:shots>0?tot/shots:0,maxScore,volleys};
+    return{score:tot,X,Ten,Nine,fired,avg:fired>0?tot/fired:0,max:TK.rows*TK.cols*10,volleys};
 }
-function tkInitGrid() {
-    const fmt=TK.session?.formatoGara||'30 frecce (3x10)';
-    TK.format=fmt;
-    if(fmt==='72 frecce (6x12)'){TK.scoringRows=12;TK.scoringCols=6;}
-    else if(fmt==='36 frecce (6x6)'){TK.scoringRows=6;TK.scoringCols=6;}
-    else{TK.scoringRows=10;TK.scoringCols=3;}
-    TK.grid=Array.from({length:TK.scoringRows},()=>Array(TK.scoringCols).fill(''));
+function tkInitGrid(){
+    const f=TK.session?.formatoGara||'30 frecce (3x10)';
+    TK.format=f;
+    if(f==='72 frecce (6x12)'){TK.rows=12;TK.cols=6;}
+    else if(f==='36 frecce (6x6)'){TK.rows=6;TK.cols=6;}
+    else{TK.rows=10;TK.cols=3;}
+    TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));
     TK.activeCell={row:1,col:1};
 }
-function tkAutoSaveDraft() {
-    try { localStorage.setItem('tk_draft_v1',JSON.stringify({session:TK.session,turn:TK.turn,grid:TK.grid,volleyNotes:TK.volleyNotes,scoringRows:TK.scoringRows,scoringCols:TK.scoringCols,format:TK.format,activeCell:TK.activeCell,startTime:TK.startTime,withoutScore:TK.withoutScore})); } catch(e){}
-}
+function tkSave(){try{localStorage.setItem('tk_d',JSON.stringify({s:TK.session,t:TK.turn,g:TK.grid,n:TK.volleyNotes,r:TK.rows,c:TK.cols,f:TK.format,a:TK.activeCell}));}catch(e){}}
 
-window.tkHandleKeypad = (val) => {
-    const {row,col}=TK.activeCell;
-    const ri=row-1,ci=col-1;
-    if(ri<0||ri>=TK.scoringRows||ci<0||ci>=TK.scoringCols) return;
+window.tkKey=(val)=>{
+    const {row,col}=TK.activeCell,ri=row-1,ci=col-1;
+    if(ri<0||ri>=TK.rows||ci<0||ci>=TK.cols) return;
     if(val==='CANC'){
         if(TK.grid[ri][ci]!=='') TK.grid[ri][ci]='';
-        else{ let nc=ci-1,nr=ri; if(nc<0){nr=ri-1;nc=TK.scoringCols-1;} if(nr>=0) TK.activeCell={row:nr+1,col:nc+1}; }
+        else{let nc=ci-1,nr=ri;if(nc<0){nr=ri-1;nc=TK.cols-1;}if(nr>=0)TK.activeCell={row:nr+1,col:nc+1};}
     } else {
         TK.grid[ri][ci]=val.toUpperCase();
         let nc=ci+1,nr=ri;
-        if(nc>=TK.scoringCols){ nc=0; nr=ri+1;
-            const full=TK.grid[ri].filter(s=>s!==''&&s!==undefined);
-            if(full.length===TK.scoringCols) TK.grid[ri]=tkSortScores([...TK.grid[ri]]);
-        }
-        if(nr<TK.scoringRows) TK.activeCell={row:nr+1,col:nc+1};
+        if(nc>=TK.cols){nc=0;nr=ri+1;
+            if(TK.grid[ri].filter(s=>s!==''&&s!==undefined).length===TK.cols)TK.grid[ri]=tkSort([...TK.grid[ri]]);}
+        if(nr<TK.rows)TK.activeCell={row:nr+1,col:nc+1};
     }
-    tkAutoSaveDraft();
-    if(!overlayTK.active) renderScoringView();
+    tkSave();
+    if(!TK_OV.active)tkRenderScoring();
 };
-window.tkCellClick = (r,c) => { TK.activeCell={row:r,col:c}; renderScoringView(); };
+window.tkCell=(r,c)=>{TK.activeCell={row:r,col:c};tkRenderScoring();};
 
-function renderScoringView() {
+function tkRenderScoring(){
     const s=TK.session;
     if(!s) return window.setView('atletaMenu');
-    const stats=tkCalcTurn(TK.grid);
-    const completedArrows=stats.frecceTirate;
-    const totalArrows=TK.scoringRows*TK.scoringCols;
-    const pct=totalArrows>0?Math.round(completedArrows/totalArrows*100):0;
-    const remaining=totalArrows-completedArrows;
-    const proj=completedArrows>0?Math.round((stats.score/completedArrows)*totalArrows):0;
-    const isTraining=s.type==='Allenamento';
-    const fmt=TK.format||'30 frecce (3x10)';
-    const isFinal=(TK.turn===2&&fmt!=='72 frecce (6x12)')||(fmt==='72 frecce (6x12)'&&TK.turn===1);
+    const st=tkCalc(TK.grid);
+    const total=TK.rows*TK.cols,pct=total>0?Math.round(st.fired/total*100):0;
+    const rem=total-st.fired,proj=st.fired>0?Math.round((st.score/st.fired)*total):0;
+    const isT=s.type==='Allenamento';
+    const isFinal=(TK.turn===2&&TK.format!=='72 frecce (6x12)')||(TK.format==='72 frecce (6x12)'&&TK.turn===1);
+    const showTarget=['40','60','80','120','Tripla','Tripla Vegas'].includes(s.tipoTarga||'');
 
     // Table
-    let tableHtml=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:0.75rem"><table class="score-tbl w-full border-collapse" style="min-width:360px"><thead><tr>
-        <th style="width:12%">Vol.</th>
-        ${Array(TK.scoringCols).fill(0).map((_,i)=>`<th style="width:${Math.floor(50/TK.scoringCols)}%">${i+1}</th>`).join('')}
-        <th>Parz.</th><th>Tot.</th><th>X-10</th><th>9</th>${isTraining?'<th>📝</th>':''}
+    let tbl=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:0.75rem"><table class="score-tbl w-full border-collapse" style="min-width:300px"><thead><tr>
+        <th>Vol.</th>${Array(TK.cols).fill(0).map((_,i)=>`<th>${i+1}</th>`).join('')}<th>Parz</th><th>Tot</th><th>X-10</th><th>9</th>${isT?'<th>📝</th>':''}
     </tr></thead><tbody>`;
-    let cumTot=0;
-    for(let i=0;i<TK.scoringRows;i++){
-        const row=TK.grid[i];
-        const filled=row.filter(s=>s!==''&&s!==undefined);
-        let parz=0,vx=0,vt=0,vn=0;
-        filled.forEach(sc=>{const n=sc==='X'?10:sc==='M'?0:parseInt(sc)||0;parz+=n;if(sc==='X')vx++;else if(sc==='10')vt++;else if(n===9)vn++;});
-        cumTot+=parz;
-        const hasNote=!!TK.volleyNotes[i+1];
-        tableHtml+=`<tr style="background:${i%2===0?'var(--dark3)':'var(--dark2)'}">
+    let cum=0;
+    for(let i=0;i<TK.rows;i++){
+        const row=TK.grid[i],fil=row.filter(s=>s!==''&&s!==undefined);
+        let p=0,vx=0,vt=0,vn=0;
+        fil.forEach(sc=>{const n=sc==='X'?10:sc==='M'?0:parseInt(sc)||0;p+=n;if(sc==='X')vx++;else if(sc==='10')vt++;else if(n===9)vn++;});
+        cum+=p;const hn=!!TK.volleyNotes[i+1];
+        tbl+=`<tr style="background:${i%2===0?'var(--dark3)':'var(--dark2)'}">
             <td style="color:var(--gold);font-weight:700">${i+1}</td>
-            ${Array(TK.scoringCols).fill(0).map((_,ci)=>{
-                const isAct=TK.activeCell.row===i+1&&TK.activeCell.col===ci+1;
-                const sc=TK.grid[i][ci];
-                return `<td class="score-cell" onclick="window.tkCellClick(${i+1},${ci+1})" style="${isAct?'background:var(--gold);color:#000;font-weight:900;':''}${sc==='X'||sc==='10'?'color:#fbbf24;':sc==='M'?'color:#ef4444;':''}">${sc||''}</td>`;
+            ${Array(TK.cols).fill(0).map((_,ci)=>{
+                const act=TK.activeCell.row===i+1&&TK.activeCell.col===ci+1,sc=TK.grid[i][ci];
+                return `<td class="score-cell" onclick="window.tkCell(${i+1},${ci+1})" style="${act?'background:var(--gold);color:#000;font-weight:900;':''}${sc==='X'||sc==='10'?'color:#fbbf24;':sc==='M'?'color:#ef4444;':''}">${sc||''}</td>`;
             }).join('')}
-            <td style="font-weight:700">${filled.length?parz:''}</td>
-            <td style="font-weight:700">${filled.length?cumTot:''}</td>
-            <td style="color:var(--gold)">${filled.length?`${vx}-${vt}`:''}</td>
-            <td>${filled.length?vn:''}</td>
-            ${isTraining?`<td style="cursor:pointer;color:var(--gold)" onclick="window.tkAddVolleyNote(${i+1})">${hasNote?'📝✓':'📝'}</td>`:''}
+            <td style="font-weight:700">${fil.length?p:''}</td><td style="font-weight:700">${fil.length?cum:''}</td>
+            <td style="color:var(--gold)">${fil.length?`${vx}-${vt}`:''}</td><td>${fil.length?vn:''}</td>
+            ${isT?`<td style="cursor:pointer;color:var(--gold)" onclick="window.tkNote(${i+1})">${hn?'📝✓':'📝'}</td>`:''}
         </tr>`;
-        if(hasNote&&isTraining) tableHtml+=`<tr><td colspan="${TK.scoringCols+5+(isTraining?1:0)}" style="font-size:0.75rem;color:#93c5fd;font-style:italic;padding:0.2rem 0.5rem">💬 ${TK.volleyNotes[i+1]}</td></tr>`;
+        if(hn&&isT) tbl+=`<tr><td colspan="${TK.cols+5+(isT?1:0)}" style="font-size:0.75rem;color:#93c5fd;font-style:italic;padding:0.2rem 0.5rem">💬 ${TK.volleyNotes[i+1]}</td></tr>`;
     }
-    tableHtml+=`<tr style="background:var(--gold);color:#000;font-weight:900"><td colspan="${2+TK.scoringCols}" style="text-align:right;padding-right:0.5rem">Totale</td><td>${stats.score}</td><td>${stats.X}-${stats.Ten}</td><td>${stats.Nine}</td>${isTraining?'<td></td>':''}</tr>`;
-    tableHtml+=`</tbody></table></div>`;
+    tbl+=`<tr style="background:var(--gold);color:#000;font-weight:900"><td colspan="${2+TK.cols}" style="text-align:right;padding-right:0.5rem">Totale</td><td>${st.score}</td><td>${st.X}-${st.Ten}</td><td>${st.Nine}</td>${isT?'<td></td>':''}</tr>`;
+    tbl+=`</tbody></table></div>`;
 
     // Live stats
-    const liveHtml=completedArrows>0?`
-    <div style="background:linear-gradient(135deg,var(--dark3),var(--dark2));border:2px solid var(--gold);border-radius:12px;padding:0.85rem;margin-bottom:0.75rem">
-        <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">📊 Statistiche Live &nbsp;<span style="color:var(--gold)">(${pct}%)</span></div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem;margin-bottom:0.5rem">
-            <div class="stat-box"><div class="stat-num">${stats.score}</div><div class="stat-label">Punti</div></div>
-            <div class="stat-box"><div class="stat-num">${stats.average.toFixed(1)}</div><div class="stat-label">Media</div></div>
+    const live=st.fired>0?`<div style="background:linear-gradient(135deg,var(--dark3),var(--dark2));border:2px solid var(--gold);border-radius:12px;padding:0.75rem;margin-bottom:0.75rem">
+        <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.4rem">📊 Live <span style="color:var(--gold)">(${pct}%)</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.35rem;margin-bottom:0.4rem">
+            <div class="stat-box"><div class="stat-num">${st.score}</div><div class="stat-label">Punti</div></div>
+            <div class="stat-box"><div class="stat-num">${st.avg.toFixed(1)}</div><div class="stat-label">Media</div></div>
             <div class="stat-box"><div class="stat-num">${proj}</div><div class="stat-label">Proiez.</div></div>
-            <div class="stat-box"><div class="stat-num">${remaining}</div><div class="stat-label">Rimaste</div></div>
+            <div class="stat-box"><div class="stat-num">${rem}</div><div class="stat-label">Rimaste</div></div>
         </div>
-        <div style="background:var(--dark);border-radius:8px;overflow:hidden;height:5px"><div style="background:var(--gold);height:100%;width:${pct}%;transition:width 0.3s"></div></div>
+        <div style="background:var(--dark);border-radius:6px;overflow:hidden;height:4px"><div style="background:var(--gold);height:100%;width:${pct}%"></div></div>
     </div>`:'';
 
     // Keypad
-    const showTarget=['40','60','80','120','Tripla','Tripla Vegas'].includes(s.tipoTarga||'');
-    const keypadHtml=`
-    <div style="margin-bottom:0.75rem">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+    const kp=`<div style="margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
             <span style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Tastierino</span>
-            ${showTarget?`<button onclick="window.tkOpenTarget()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:2px solid #f97316;border-radius:10px;padding:0.4rem 0.85rem;font-weight:700;cursor:pointer;font-size:0.85rem">🎯 Bersaglio</button>`:''}
+            ${showTarget?`<button onclick="window.tkOvOpen()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:2px solid #f97316;border-radius:8px;padding:0.35rem 0.75rem;font-weight:700;cursor:pointer;font-size:0.82rem">🎯 Bersaglio</button>`:''}
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem">
-            ${KEYPAD_VALS.map(v=>`<button onclick="window.tkHandleKeypad('${v}')" style="min-height:48px;background:var(--dark3);border:2px solid var(--border);color:var(--text);border-radius:10px;font-size:1.1rem;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent" 
-            onmousedown="this.style.background='var(--gold)';this.style.color='#000'" onmouseup="this.style.background='var(--dark3)';this.style.color='var(--text)'" ontouchstart="this.style.background='var(--gold)';this.style.color='#000'" ontouchend="this.style.background='var(--dark3)';this.style.color='var(--text)'">${v}</button>`).join('')}
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.35rem">
+            ${TK_KEYPAD.map(v=>`<button onclick="window.tkKey('${v}')" style="min-height:46px;background:var(--dark3);border:1.5px solid var(--border);color:var(--text);border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent" ontouchstart="this.style.background='var(--gold)';this.style.color='#000'" ontouchend="this.style.background='var(--dark3)';this.style.color='var(--text)'">${v}</button>`).join('')}
         </div>
     </div>`;
 
-    // Note section
-    const noteHtml=isTraining?`
-    <div class="form-section">
-        <label class="form-label">🩺 Note Condizioni Fisiche</label>
-        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+    // Notes
+    const notes=isT?`<div class="form-section">
+        <label class="form-label">🩺 Note Fisiche</label>
+        <textarea class="inp" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
-        <textarea class="inp" id="tk-eserc-svolti" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
-    </div>`:`
-    <div class="form-section">
+        <textarea class="inp" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+    </div>`:`<div class="form-section">
         <label class="form-label">📝 Note Pre-Gara</label>
-        <textarea class="inp" id="tk-note-pre" rows="2" placeholder="Aspettative, tattica..." oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
+        <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label>
-        <textarea class="inp" id="tk-note-post" rows="2" placeholder="Com'è andata..." oninput="TK.session.notePostGara=this.value">${s.notePostGara||''}</textarea>
+        <textarea class="inp" rows="2" oninput="TK.session.notePostGara=this.value">${s.notePostGara||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
-        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Condizioni, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <textarea class="inp" rows="2" oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
     </div>`;
 
-    // Turn1 summary (during turn 2)
-    let turn1Html='';
+    // T1 summary
+    let t1sum='';
     if(TK.turn===2&&TK.session.turn1){
-        const t1=TK.session.turn1;
-        turn1Html=`<div style="margin-bottom:0.75rem;background:var(--dark2);border:1.5px solid var(--gold);border-radius:12px;padding:0.85rem">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Riepilogo Turno 1</div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem">
-                <div class="stat-box"><div class="stat-num">${t1.summary?.score||0}</div><div class="stat-label">Punti</div></div>
-                <div class="stat-box"><div class="stat-num">${t1.summary?.X||0}-${t1.summary?.Ten||0}</div><div class="stat-label">X-10</div></div>
-                <div class="stat-box"><div class="stat-num">${t1.summary?.average?.toFixed(1)||'—'}</div><div class="stat-label">Media</div></div>
+        const t1=TK.session.turn1.summary;
+        t1sum=`<div style="margin-bottom:0.75rem;background:var(--dark2);border:1.5px solid var(--gold);border-radius:10px;padding:0.75rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">📋 Turno 1</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.35rem">
+                <div class="stat-box"><div class="stat-num">${t1?.score||0}</div><div class="stat-label">Punti</div></div>
+                <div class="stat-box"><div class="stat-num">${t1?.X||0}-${t1?.Ten||0}</div><div class="stat-label">X-10</div></div>
+                <div class="stat-box"><div class="stat-num">${t1?.avg?.toFixed(1)||'—'}</div><div class="stat-label">Media</div></div>
             </div>
         </div>`;
     }
 
     render(`
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
-            <span style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold)">${s.type==='Gara'?'🏆':'🎯'} ${s.type} — Turno ${TK.turn}</span>
-            <span style="font-size:0.75rem;color:var(--muted);margin-left:auto">${s.distanza||''} ${s.tipoTarga?'· '+s.tipoTarga:''}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+            <span style="font-family:'Rajdhani',sans-serif;font-size:1.1rem;font-weight:700;color:var(--gold)">${s.type} · T${TK.turn}</span>
+            <span style="font-size:0.75rem;color:var(--muted)">${s.distanza||''} ${s.tipoTarga?'· '+s.tipoTarga:''}</span>
         </div>
-        ${turn1Html}
-        ${tableHtml}
-        ${liveHtml}
-        ${keypadHtml}
-        ${noteHtml}
-        <button class="btn btn-gold btn-full btn-lg" style="margin-top:0.75rem" onclick="window.tkSaveTurn(${isFinal})">${isFinal?`✅ Fine ${s.type} — Salva`:'💾 Salva Turno → 2°'}</button>
+        ${t1sum}${tbl}${live}${kp}${notes}
+        <button class="btn btn-gold btn-full btn-lg" style="margin-top:0.75rem" onclick="window.tkFineTurno(${isFinal})">${isFinal?`✅ Fine ${s.type} — Salva`:'💾 Fine Turno 1 → continua'}</button>
     `);
 }
 
-window.tkAddVolleyNote = (volley) => {
+window.tkNote=(volley)=>{
     const cur=TK.volleyNotes[volley]||'';
-    showModal(`📝 Nota Volée ${volley}`,`<textarea class="inp" id="tk-note-input" rows="3" placeholder="Note tecnica su questa volée...">${cur}</textarea>`,[
-        {text:'Salva',cls:'btn-gold',fn:()=>{TK.volleyNotes[volley]=$('tk-note-input')?.value||'';renderScoringView();}},
+    showModal(`📝 Nota Volée ${volley}`,`<textarea class="inp" id="tk-n-in" rows="3" placeholder="Note tecnica...">${cur}</textarea>`,[
+        {text:'Salva',cls:'btn-gold',fn:()=>{TK.volleyNotes[volley]=document.getElementById('tk-n-in')?.value||'';tkRenderScoring();}},
         {text:'Annulla',cls:'btn-ghost'}
     ]);
 };
 
-window.tkSaveTurn = async (isFinal) => {
-    const s=TK.session;
-    const stats=tkCalcTurn(TK.grid);
-    const turnKey=`turn${TK.turn}`;
-    s[turnKey]={
-        summary:{score:stats.score,X:stats.X,Ten:stats.Ten,Nine:stats.Nine,frecceTirate:stats.frecceTirate,average:stats.average},
-        grid:TK.grid.map(r=>[...r]),
-        volleyNotes:{...TK.volleyNotes}
-    };
-    if(isFinal) {
-        showModal('🪃 Frecce aggiuntive',`
-            <p style="color:var(--text);margin-bottom:0.75rem;font-size:0.9rem">Frecce tirate extra (warm-up, prove…)?</p>
-            <div style="background:var(--dark3);padding:0.75rem;border-radius:10px;border:1px solid var(--gold);text-align:center">
-                <div style="font-size:1.8rem;font-weight:900;color:var(--gold-light)">${stats.score}</div>
-                <div style="font-size:0.72rem;color:var(--muted)">punteggio turno</div>
-            </div>
-            <input class="inp" id="tk-extra-frecce" type="number" min="0" placeholder="0" value="0" style="margin-top:0.75rem;text-align:center;font-size:1.2rem">
-        `,[
-            {text:'💾 Salva e Chiudi',cls:'btn-gold',fn:async()=>{
-                s.frecceAggiuntive=(parseInt($('tk-extra-frecce')?.value)||0);
-                const t1=s.turn1?.summary||{score:0,X:0,Ten:0,Nine:0,frecceTirate:0,average:0};
-                const t2=s.turn2?.summary||{score:0,X:0,Ten:0,Nine:0,frecceTirate:0,average:0};
-                const totalScore=t1.score+t2.score;
-                const totalShots=t1.frecceTirate+t2.frecceTirate;
-                const docData={
-                    archerId:S.atleta.id,
-                    arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
-                    type:s.type,
-                    data:s.data,
-                    luogo:s.luogo||'',
-                    tipoLuogo:s.tipoLuogo||'',
-                    distanza:s.distanza||'',
-                    tipoTarga:s.tipoTarga||'',
-                    formatoGara:s.formatoGara||'',
+window.tkFineTurno=async(isFinal)=>{
+    const s=TK.session,st=tkCalc(TK.grid);
+    const tk=`turn${TK.turn}`;
+    s[tk]={summary:{score:st.score,X:st.X,Ten:st.Ten,Nine:st.Nine,fired:st.fired,avg:st.avg},grid:TK.grid.map(r=>[...r]),volleyNotes:{...TK.volleyNotes}};
+    if(isFinal){
+        showModal('🪃 Frecce extra',`
+            <div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold)">${st.score}</div>
+            <div style="text-align:center;color:var(--muted);font-size:0.8rem;margin-bottom:0.75rem">punteggio turno ${TK.turn}</div>
+            <label class="form-label">Frecce tirate extra (warm-up, prove...)</label>
+            <input class="inp" id="tk-extra" type="number" min="0" value="0" style="text-align:center;font-size:1.2rem">
+        `,[{text:'💾 Salva',cls:'btn-gold',fn:async()=>{
+            s.frecceAggiuntive=parseInt(document.getElementById('tk-extra')?.value)||0;
+            const t1=s.turn1?.summary||{score:0,X:0,Ten:0,Nine:0};
+            const t2=s.turn2?.summary||{score:0,X:0,Ten:0,Nine:0};
+            const totalScore=t1.score+t2.score;
+            const t1f=s.turn1?.summary?.fired||0,t2f=s.turn2?.summary?.fired||0;
+            const totShots=t1f+t2f;
+            try{
+                await addDoc(sessioniCol(S.asd.id),{
+                    archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
+                    type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',
+                    distanza:s.distanza||'',tipoTarga:s.tipoTarga||'',formatoGara:s.formatoGara||'',
                     tipoArco:s.tipoArco||'',
-                    totalScore,
-                    totalX:t1.X+t2.X,
-                    totalTen:t1.Ten+t2.Ten,
-                    totalNine:t1.Nine+t2.Nine,
-                    totalAverage:totalShots>0?totalScore/totalShots:0,
-                    turn1Score:t1.score,
-                    turn2Score:t2.score,
-                    frecceAggiuntive:s.frecceAggiuntive,
-                    frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                    esercizConsigliati:s.esercizConsigliati||'',
-                    esercizSvolti:s.esercizSvolti||'',
-                    noteCondizioniFisiche:s.noteCondizioniFisiche||'',
-                    notePreGara:s.notePreGara||'',
-                    notePostGara:s.notePostGara||'',
-                    trainingWithoutScore:false,
-                    quickScore:false,
-                    timestamp:serverTimestamp(),
-                    createdAt:new Date().toISOString(),
-                };
-                try {
-                    await addDoc(sessioniCol(S.asd.id), docData);
-                    localStorage.removeItem('tk_draft_v1');
-                    TK.session=null; TK.turn=1; TK.grid=null; TK.volleyNotes={};
-                    await loadAtletaSessioni();
-                    showModal('✅ Salvato!',`${s.type} salvat${s.type==='Gara'?'a':'o'} con successo! Punteggio: ${totalScore} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
-                } catch(e) {
-                    showModal('Errore','Impossibile salvare: '+e.message,[{text:'OK'}]);
-                }
-            }}
-        ]);
+                    totalScore,totalX:t1.X+t2.X,totalTen:t1.Ten+t2.Ten,totalNine:t1.Nine+t2.Nine,
+                    totalAverage:totShots>0?totalScore/totShots:0,
+                    turn1Score:t1.score,turn2Score:t2.score,
+                    frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
+                    esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
+                    noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                    notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
+                    timestamp:serverTimestamp(),createdAt:new Date().toISOString()
+                });
+                localStorage.removeItem('tk_d');
+                TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
+                await loadAtletaSessioni();
+                showModal('✅ Salvato!',`Punteggio: ${totalScore} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
+            }catch(e){showModal('Errore','Salvataggio fallito: '+e.message,[{text:'OK'}]);}
+        }}]);
     } else {
-        TK.turn=2; TK.grid=Array.from({length:TK.scoringRows},()=>Array(TK.scoringCols).fill('')); TK.activeCell={row:1,col:1}; TK.volleyNotes={};
-        tkAutoSaveDraft();
-        showModal('✅ Turno 1 Salvato!',`<div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold)">${stats.score}</div><div style="text-align:center;color:var(--muted);font-size:0.85rem">Pronti per il Turno 2</div>`,[{text:'Inizia Turno 2',cls:'btn-gold',fn:()=>renderScoringView()}]);
+        TK.turn=2;TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));TK.activeCell={row:1,col:1};TK.volleyNotes={};
+        tkSave();
+        showModal('✅ Turno 1 Salvato!',`<div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold)">${st.score}</div><div style="text-align:center;color:var(--muted)">Pronti per il Turno 2</div>`,[{text:'Inizia Turno 2',cls:'btn-gold',fn:()=>tkRenderScoring()}]);
     }
 };
 
-// ── TARGET OVERLAY (bersaglio touch) ─────────────────────────────────────────
-window.tkOpenTarget = () => {
+// ── TARGET OVERLAY ────────────────────────────────────────────────────────────
+window.tkOvOpen=()=>{
     if(!TK.session||!TK.grid) return;
-    const cfg=TK.session.tipoTarga?.toLowerCase().includes('tripla')?'tripla':'singola';
-    overlayTK.active=true; overlayTK.configType=cfg;
-    const ti=document.getElementById('overlay-turn-info');
-    if(ti) ti.textContent=`${TK.session.type} · Turno ${TK.turn}`;
-    tkOverlayRender();
+    TK_OV.cfg=TK.session.tipoTarga?.toLowerCase().includes('tripla')?'tripla':'singola';
+    TK_OV.active=true;
+    document.getElementById('overlay-turn-info').textContent=`${TK.session.type} · T${TK.turn}`;
+    tkOvRender();
     document.getElementById('target-overlay').style.display='block';
 };
-window.closeTargetOverlay = () => {
-    overlayTK.active=false;
+window.closeTargetOverlay=()=>{
+    TK_OV.active=false;
     document.getElementById('target-overlay').style.display='none';
-    const mag=document.getElementById('test-magnifier');
-    if(mag) mag.style.display='none';
-    renderScoringView();
+    const m=document.getElementById('test-magnifier');if(m)m.style.display='none';
+    tkRenderScoring();
 };
-function tkOverlayRender() {
-    const cfg=overlayTK.configType;
-    const isTripla=cfg==='tripla';
-    const stats=tkCalcTurn(TK.grid);
-    const totalArrows=TK.scoringRows*TK.scoringCols;
-    const remaining=totalArrows-stats.frecceTirate;
-    const pct=totalArrows>0?Math.round(stats.frecceTirate/totalArrows*100):0;
-    const ri=TK.activeCell.row-1, ci=TK.activeCell.col-1;
-    const rowData=TK.grid[ri]||[];
-    const sorted=[...rowData.filter(s=>s!==''&&s!==undefined)].sort((a,b)=>{const o={'X':11,'M':0};const av=o[a]??parseInt(a)??0;const bv=o[b]??parseInt(b)??0;return bv-av;});
-    const cols=TK.scoringCols;
-    const leftCol=`<div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:44px">
-        <p style="font-size:9px;color:#6b7280;text-transform:uppercase;writing-mode:vertical-lr;transform:rotate(180deg)">Vol.${ri+1}</p>
-        ${Array(cols).fill(0).map((_,i)=>{const sc=sorted[i];
-            if(sc){const st=sc==='X'||sc==='10'?'background:#eab308;color:#000':sc==='M'?'background:#dc2626;color:#fff':parseInt(sc)>=7?'background:#ef4444;color:#fff':parseInt(sc)>=5?'background:#3b82f6;color:#fff':'background:#4b5563;color:#fff';
-                return `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:900;font-size:16px;${st}">${sc}</div>`;}
-            return `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#1f2937;border:1px solid #374151;color:#6b7280;font-size:13px;">·</div>`;
+function tkOvRender(){
+    const cfg=TK_OV.cfg,isTr=cfg==='tripla';
+    const st=tkCalc(TK.grid),total=TK.rows*TK.cols,rem=total-st.fired;
+    const pct=total>0?Math.round(st.fired/total*100):0;
+    const ri=TK.activeCell.row-1,ci=TK.activeCell.col-1;
+    const row=TK.grid[ri]||[],cur=[...row.filter(s=>s!==''&&s!==undefined)];
+    const sorted=[...cur].sort((a,b)=>{const o={'X':11,'M':0};return(o[b]??parseInt(b)??0)-(o[a]??parseInt(a)??0);});
+    const lc=`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:44px">
+        <p style="font-size:9px;color:#6b7280;text-transform:uppercase;writing-mode:vertical-lr;transform:rotate(180deg)">V.${ri+1}</p>
+        ${Array(TK.cols).fill(0).map((_,i)=>{const sc=sorted[i];
+            if(sc){const st2=sc==='X'||sc==='10'?'background:#eab308;color:#000':sc==='M'?'background:#dc2626;color:#fff':parseInt(sc)>=7?'background:#ef4444;color:#fff':parseInt(sc)>=5?'background:#3b82f6;color:#fff':'background:#4b5563;color:#fff';
+                return `<div style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:900;font-size:15px;${st2}">${sc}</div>`;}
+            return `<div style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#1f2937;border:1px solid #374151;color:#6b7280;font-size:12px">·</div>`;
         }).join('')}
-        <div style="font-size:11px;color:#fdb927;font-weight:bold">${stats.score}</div>
+        <div style="font-size:11px;color:#fdb927;font-weight:bold">${st.score}</div>
     </div>`;
-    const canvasStyle=isTripla?`width:${TR_W}px;height:${TR_H}px;border-radius:12px`:`width:340px;height:340px;border-radius:50%`;
-    const isComplete=stats.frecceTirate>=totalArrows;
+    const cS=isTr?`width:${TK_TR_W}px;height:${TK_TR_H}px;border-radius:12px`:`width:340px;height:340px;border-radius:50%`;
+    const done=st.fired>=total;
     const cont=document.getElementById('target-overlay-content');
-    if(!cont) return;
+    if(!cont)return;
     cont.innerHTML=`
         <div style="display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:12px">
-            ${leftCol}
-            <div id="tk-overlay-canvas" style="position:relative;border:2px solid #334155;touch-action:none;flex-shrink:0;overflow:hidden;${canvasStyle}"></div>
+            ${lc}
+            <div id="tk-ov-canvas" style="position:relative;border:2px solid #334155;touch-action:none;flex-shrink:0;overflow:hidden;${cS}"></div>
             <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:44px">
-                <p style="font-size:9px;color:#6b7280;text-transform:uppercase">Mirino</p>
-                <div id="tk-overlay-live" style="font-size:2rem;font-weight:900;color:#fff">—</div>
-                <p style="font-size:9px;color:#6b7280;margin-top:8px">Rimaste</p>
-                <div style="font-size:1.1rem;font-weight:700;color:#fdb927">${remaining>0?remaining:isComplete?'✓':'—'}</div>
+                <p style="font-size:9px;color:#6b7280">Mirino</p>
+                <div id="tk-ov-live" style="font-size:2rem;font-weight:900;color:#fff">—</div>
+                <p style="font-size:9px;color:#6b7280;margin-top:6px">Rimaste</p>
+                <div style="font-size:1rem;font-weight:700;color:#fdb927">${rem>0?rem:done?'✓':'—'}</div>
             </div>
         </div>
-        ${pct>0?`<div style="background:#1f2937;border-radius:8px;overflow:hidden;height:6px;margin-bottom:8px"><div style="background:#fdb927;height:100%;width:${pct}%;transition:width 0.3s"></div></div><div style="text-align:center;font-size:11px;color:#fdb927;margin-bottom:8px">${stats.frecceTirate}/${totalArrows} frecce · Media: ${stats.frecceTirate>0?stats.average.toFixed(2):'—'}</div>`:''}
+        ${pct>0?`<div style="background:#1f2937;border-radius:6px;overflow:hidden;height:5px;margin-bottom:6px"><div style="background:#fdb927;height:100%;width:${pct}%"></div></div><div style="text-align:center;font-size:11px;color:#fdb927;margin-bottom:6px">${st.fired}/${total} · Media: ${st.fired>0?st.avg.toFixed(2):'—'}</div>`:''}
         <div style="display:flex;gap:8px;margin-bottom:8px">
-            <button onclick="window.tkOverlayMiss()" style="flex:1;padding:10px;background:#374151;color:#fff;font-weight:700;border-radius:12px;font-size:13px;cursor:pointer">M Mancata</button>
-            <button onclick="window.tkOverlayUndo()" style="flex:1;padding:10px;background:#374151;color:#fff;font-weight:700;border-radius:12px;font-size:13px;cursor:pointer">↩ Annulla</button>
+            <button onclick="window.tkOvMiss()" style="flex:1;padding:10px;background:#374151;color:#fff;font-weight:700;border-radius:10px;cursor:pointer">M Mancata</button>
+            <button onclick="window.tkOvUndo()" style="flex:1;padding:10px;background:#374151;color:#fff;font-weight:700;border-radius:10px;cursor:pointer">↩ Annulla</button>
         </div>
-        ${isComplete?`<div style="background:#064e3b;border:2px solid #10b981;border-radius:12px;padding:12px;text-align:center">
-            <p style="color:#10b981;font-weight:700;font-size:14px;margin-bottom:4px">✅ Turno completato! Punteggio: ${stats.score}</p>
-            <button onclick="window.closeTargetOverlay()" style="background:#10b981;color:#000;font-weight:700;padding:8px 24px;border-radius:8px;font-size:13px;cursor:pointer">← Torna al Segnapunti</button>
+        ${done?`<div style="background:#064e3b;border:2px solid #10b981;border-radius:10px;padding:10px;text-align:center">
+            <p style="color:#10b981;font-weight:700;margin-bottom:4px">✅ Turno completato! (${st.score} pt)</p>
+            <button onclick="window.closeTargetOverlay()" style="background:#10b981;color:#000;font-weight:700;padding:8px 20px;border-radius:8px;cursor:pointer">← Torna al Segnapunti</button>
         </div>`:''}
     `;
     requestAnimationFrame(()=>{
-        const cv=document.getElementById('tk-overlay-canvas');
-        if(!cv) return;
-        tkDrawTarget(cv,cfg);
-        tkSetupPointer(cv);
-        tkBuildMagBg(cfg);
+        const cv=document.getElementById('tk-ov-canvas');
+        if(!cv)return;
+        tkOvDrawTarget(cv,cfg);
+        tkOvSetupPtr(cv);
+        tkOvBuildMag(cfg);
     });
     const si=document.getElementById('overlay-score-info');
-    if(si) si.textContent=`Totale: ${stats.score}`;
+    if(si)si.textContent=`Tot: ${st.score}`;
 }
-function tkDrawTarget(canvas,cfg) {
-    const isTripla=cfg==='tripla';
-    canvas.querySelectorAll('.tk-ring,.tk-arrow-dot,.tk-tripla-bg').forEach(d=>d.remove());
-    if(isTripla){
-        const bg=document.createElement('div');bg.className='tk-tripla-bg';bg.style.cssText='position:absolute;inset:0;background:#1e293b;border-radius:10px';canvas.appendChild(bg);
-        TR_CY.forEach(cy=>{[...RINGS_TRIPLA].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-ring';el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.8px solid rgba(0,0,0,0.4);left:${TR_CX-r.r}px;top:${cy-r.r}px`;canvas.appendChild(el);});});
+function tkOvDrawTarget(canvas,cfg){
+    const isTr=cfg==='tripla';
+    canvas.querySelectorAll('.tk-r,.tk-d,.tk-bg').forEach(d=>d.remove());
+    if(isTr){
+        const bg=document.createElement('div');bg.className='tk-bg';bg.style.cssText='position:absolute;inset:0;background:#1e293b;border-radius:10px';canvas.appendChild(bg);
+        TK_TR_CY.forEach(cy=>[...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-r';el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.8px solid rgba(0,0,0,0.4);left:${TK_TR_CX-r.r}px;top:${cy-r.r}px`;canvas.appendChild(el);}));
     } else {
-        [...RINGS_SINGOLA].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-ring';el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.5px solid rgba(0,0,0,0.3)`;canvas.appendChild(el);});
+        [...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-r';el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.5px solid rgba(0,0,0,0.3)`;canvas.appendChild(el);});
     }
     const ri=TK.activeCell.row-1;
     TK.grid.forEach((row,r)=>row.forEach((sc,c)=>{
-        if(!sc) return;
-        const pos=window._tkArrowPos[`${r}_${c}`];
-        if(pos&&(pos.x||pos.y)){const dot=document.createElement('div');dot.style.cssText=`position:absolute;width:7px;height:7px;background:${r<ri?'#94a3b8':'#ff4500'};border:1.5px solid rgba(255,255,255,0.9);border-radius:50%;transform:translate(-50%,-50%);left:${pos.x}px;top:${pos.y}px;pointer-events:none`;canvas.appendChild(dot);}
+        if(!sc)return;
+        const pos=window._tkPos[`${r}_${c}`];
+        if(pos&&(pos.x||pos.y)){const d=document.createElement('div');d.className='tk-d';d.style.cssText=`position:absolute;width:7px;height:7px;background:${r<ri?'#94a3b8':'#ff4500'};border:1.5px solid rgba(255,255,255,0.9);border-radius:50%;transform:translate(-50%,-50%);left:${pos.x}px;top:${pos.y}px;pointer-events:none`;canvas.appendChild(d);}
     }));
 }
-function tkBuildMagBg(cfg) {
-    const isTripla=cfg==='tripla';
-    const W=isTripla?TR_W:340,H=isTripla?TR_H:340;
+function tkOvBuildMag(cfg){
+    const isTr=cfg==='tripla',W=isTr?TK_TR_W:340,H=isTr?TK_TR_H:340;
     const off=document.createElement('canvas');off.width=W;off.height=H;
     const ctx=off.getContext('2d');
-    const rings=isTripla?RINGS_TRIPLA:RINGS_SINGOLA;
-    const drawT=(cx,cy)=>{[...rings].reverse().forEach(r=>{ctx.beginPath();ctx.arc(cx,cy,r.r,0,Math.PI*2);ctx.fillStyle=r.c;ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.stroke();});};
-    if(isTripla){ctx.fillStyle='#1e293b';ctx.fillRect(0,0,W,H);TR_CY.forEach(cy=>drawT(TR_CX,cy));}
-    else{ctx.fillStyle='#374151';ctx.beginPath();ctx.arc(170,170,170,0,Math.PI*2);ctx.fill();drawT(170,170);}
+    const rings=isTr?TK_RINGS_T:TK_RINGS_S;
+    const dT=(cx,cy)=>[...rings].reverse().forEach(r=>{ctx.beginPath();ctx.arc(cx,cy,r.r,0,Math.PI*2);ctx.fillStyle=r.c;ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.stroke();});
+    if(isTr){ctx.fillStyle='#1e293b';ctx.fillRect(0,0,W,H);TK_TR_CY.forEach(cy=>dT(TK_TR_CX,cy));}
+    else{ctx.fillStyle='#374151';ctx.beginPath();ctx.arc(170,170,170,0,Math.PI*2);ctx.fill();dT(170,170);}
     const mag=document.getElementById('test-magnifier');
-    if(mag) mag.style.backgroundImage=`url('${off.toDataURL()}')`;
+    if(mag)mag.style.backgroundImage=`url('${off.toDataURL()}')`;
 }
-let _tkIsPointing=false,_tkLastScore=null,_tkLastX=0,_tkLastY=0;
-function tkSetupPointer(canvas){
-    if(canvas._tkAttached) return;
-    canvas._tkAttached=true;
-    canvas.addEventListener('pointerdown',e=>{
-        if(!overlayTK.active) return;
-        e.preventDefault();_tkIsPointing=true;_tkLastScore=null;
-        tkHandlePointerMove(e,canvas);
-    },{passive:false});
+let _tkPt=false,_tkSc=null,_tkX=0,_tkY=0;
+function tkOvSetupPtr(canvas){
+    if(canvas._tkA)return;canvas._tkA=true;
+    canvas.addEventListener('pointerdown',e=>{if(!TK_OV.active)return;e.preventDefault();_tkPt=true;_tkSc=null;tkOvMove(e,canvas);},{passive:false});
 }
-if(!window._tkPointerListeners){
-    window._tkPointerListeners=true;
-    window.addEventListener('pointermove',e=>{if(!_tkIsPointing||!overlayTK.active) return;const cv=document.getElementById('tk-overlay-canvas');if(cv) tkHandlePointerMove(e,cv);});
+if(!window._tkPL){
+    window._tkPL=true;
+    window.addEventListener('pointermove',e=>{if(!_tkPt||!TK_OV.active)return;const cv=document.getElementById('tk-ov-canvas');if(cv)tkOvMove(e,cv);});
     window.addEventListener('pointerup',e=>{
-        if(!_tkIsPointing||!overlayTK.active) return;
-        _tkIsPointing=false;
-        const mag=document.getElementById('test-magnifier');if(mag) mag.style.display='none';
-        if(!_tkLastScore) return;
+        if(!_tkPt||!TK_OV.active)return;_tkPt=false;
+        const m=document.getElementById('test-magnifier');if(m)m.style.display='none';
+        if(!_tkSc)return;
         const ri=TK.activeCell.row-1,ci=TK.activeCell.col-1;
-        window._tkArrowPos[`${ri}_${ci}`]={x:_tkLastX,y:_tkLastY};
-        window.tkHandleKeypad(_tkLastScore);
-        tkOverlayRender();
+        window._tkPos[`${ri}_${ci}`]={x:_tkX,y:_tkY};
+        window.tkKey(_tkSc);tkOvRender();
     });
 }
-function tkHandlePointerMove(e,canvas){
+function tkOvMove(e,canvas){
     const rect=canvas.getBoundingClientRect();
-    const cx=e.clientX??e.touches?.[0]?.clientX;const cy=e.clientY??e.touches?.[0]?.clientY;
-    if(cx==null) return;
-    const cfg=overlayTK.configType;
-    const isTripla=cfg==='tripla';
-    const cW=isTripla?TR_W:340,cH=isTripla?TR_H:340;
-    const x=Math.max(0,Math.min(cW,cx-rect.left-2));
-    const y=Math.max(0,Math.min(cH,cy-rect.top-2));
-    _tkLastX=x;_tkLastY=y;
-    const score=tkScoreFromXY(x,y,cfg);
-    _tkLastScore=score;
-    const ZOOM=4,MAG_R=110,LIFT=270;
+    const cx=e.clientX,cy=e.clientY;
+    const cfg=TK_OV.cfg,isTr=cfg==='tripla';
+    const cW=isTr?TK_TR_W:340,cH=isTr?TK_TR_H:340;
+    const x=Math.max(0,Math.min(cW,cx-rect.left-2)),y=Math.max(0,Math.min(cH,cy-rect.top-2));
+    _tkX=x;_tkY=y;_tkSc=tkScore(x,y,cfg);
+    const Z=4,MR=110,LF=270;
     const mag=document.getElementById('test-magnifier');
-    if(mag){mag.style.display='block';mag.style.left=(cx-MAG_R)+'px';mag.style.top=(cy-LIFT)+'px';mag.style.backgroundSize=`${cW*ZOOM}px ${cH*ZOOM}px`;mag.style.backgroundPosition=`${MAG_R-x*ZOOM}px ${MAG_R-y*ZOOM}px`;}
-    const liveEl=document.getElementById('tk-overlay-live');
-    if(liveEl){liveEl.textContent=score;liveEl.style.color=score==='X'||score==='10'?'#fbbf24':score==='M'?'#ef4444':'#ffffff';}
+    if(mag){mag.style.display='block';mag.style.left=(cx-MR)+'px';mag.style.top=(cy-LF)+'px';mag.style.backgroundSize=`${cW*Z}px ${cH*Z}px`;mag.style.backgroundPosition=`${MR-x*Z}px ${MR-y*Z}px`;}
+    const lv=document.getElementById('tk-ov-live');
+    if(lv){lv.textContent=_tkSc;lv.style.color=_tkSc==='X'||_tkSc==='10'?'#fbbf24':_tkSc==='M'?'#ef4444':'#ffffff';}
 }
-window.tkOverlayMiss=()=>{const ri=TK.activeCell.row-1,ci=TK.activeCell.col-1;window._tkArrowPos[`${ri}_${ci}`]={x:0,y:0};window.tkHandleKeypad('M');tkOverlayRender();};
-window.tkOverlayUndo=()=>{window.tkHandleKeypad('CANC');tkOverlayRender();};
+window.tkOvMiss=()=>{const ri=TK.activeCell.row-1,ci=TK.activeCell.col-1;window._tkPos[`${ri}_${ci}`]={x:0,y:0};window.tkKey('M');tkOvRender();};
+window.tkOvUndo=()=>{window.tkKey('CANC');tkOvRender();};
 
-// ════════════════════════════════════════════════════════════════════════════
-// ── REGISTRA SESSIONE: FORM SETUP ────────────────────────────────────────────
-// ════════════════════════════════════════════════════════════════════════════
+// ── REGISTRA SESSIONE: FORM ───────────────────────────────────────────────────
 function renderRegistrationForm({ type='Allenamento' }) {
     setHeader(`${type==='Gara'?'🏆':'🎯'} Nuov${type==='Gara'?'a':'o'} ${type}`, S.asd?.nome||'');
-    const today = new Date().toISOString().split('T')[0];
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2,'0');
-    const mm = String(now.getMinutes()).padStart(2,'0');
-    const nowTime = `${hh}:${mm}`;
-
+    const today=new Date().toISOString().split('T')[0];
+    const now=new Date(),hh=String(now.getHours()).padStart(2,'0'),mm=String(now.getMinutes()).padStart(2,'0');
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
-        <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold);margin-bottom:1rem">${type==='Gara'?'🏆':'🎯'} Nuov${type==='Gara'?'a':'o'} ${type}</h2>
-
-        ${type==='Allenamento'?`<div class="form-section">
-            <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer">
-                <input type="checkbox" id="tk-no-score" onchange="window.tkToggleNoScore(this.checked)" style="width:20px;height:20px">
-                <span style="font-weight:700;color:var(--text)">Allenamento Tecnico (senza punteggio)</span>
-            </label>
-            <p style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem;margin-left:1.6rem">Seleziona per esercizi senza segnapunti</p>
-        </div>`:''}
-
+        <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold);margin-bottom:1rem">${type==='Gara'?'🏆':'🎯'} Nuov${type==='Gara'?'a':'o'} ${type}</h2>
+        ${type==='Allenamento'?`<div class="form-section"><label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+            <input type="checkbox" id="tk-noscore" onchange="window.tkToggle(this.checked)" style="width:18px;height:18px">
+            <span style="font-weight:700">Allenamento Tecnico (senza punteggio)</span>
+        </label></div>`:''}
         <div class="form-section">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Data *</label><input class="inp" id="tk-data" type="date" value="${today}"></div>
-                <div><label class="form-label">Ora *</label><input class="inp" id="tk-ora" type="time" value="${nowTime}"></div>
+                <div><label class="form-label">Ora</label><input class="inp" id="tk-ora" type="time" value="${hh}:${mm}"></div>
             </div>
-            <div style="margin-top:0.65rem"><label class="form-label">Luogo *</label><input class="inp" id="tk-luogo" placeholder="Es: Campo ASD"></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;margin-top:0.65rem">
+            <div style="margin-top:0.6rem"><label class="form-label">Luogo *</label><input class="inp" id="tk-luogo" placeholder="Es: Campo ASD"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-top:0.6rem">
                 <div><label class="form-label">Indoor/Outdoor</label>
-                    <select class="inp" id="tk-tipoLuogo">${TIPO_LUOGO_OPT.map(o=>`<option>${o}</option>`).join('')}</select></div>
+                    <select class="inp" id="tk-tipoLuogo">${TK_LUOGO.map(o=>`<option>${o}</option>`).join('')}</select></div>
                 <div><label class="form-label">Tipo Arco</label>
-                    <select class="inp" id="tk-tipoArco">${TIPO_ARCO_OPT.map(o=>`<option>${o}</option>`).join('')}</select></div>
+                    <select class="inp" id="tk-tipoArco">${TK_ARCO.map(o=>`<option>${o}</option>`).join('')}</select></div>
             </div>
         </div>
-
-        <div id="tk-score-fields" class="form-section">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem">
+        <div id="tk-sfields" class="form-section">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Distanza *</label>
-                    <select class="inp" id="tk-distanza">${DISTANZA_OPT.map(o=>`<option>${o}</option>`).join('')}</select></div>
+                    <select class="inp" id="tk-dist">${TK_DIST.map(o=>`<option>${o}</option>`).join('')}</select></div>
                 <div><label class="form-label">Tipo Targa *</label>
-                    <select class="inp" id="tk-targa">${TIPO_TARGA_OPT.map(o=>`<option>${o}</option>`).join('')}</select></div>
+                    <select class="inp" id="tk-targa">${TK_TARGA.map(o=>`<option>${o}</option>`).join('')}</select></div>
             </div>
-            ${type==='Allenamento'||type==='Gara'?`<div style="margin-top:0.65rem"><label class="form-label">Formato Frecce *</label>
-                <select class="inp" id="tk-formato">${FORMATO_OPT.map(o=>`<option>${o}</option>`).join('')}</select></div>`:''}
-            <div style="margin-top:0.65rem"><label class="form-label">🪃 Frecce Programmate <span style="color:var(--muted);font-size:0.75rem">(opzionale)</span></label>
-                <input class="inp" id="tk-frecce-prog" type="number" min="0" max="500" placeholder="Es: 72"></div>
+            <div style="margin-top:0.6rem"><label class="form-label">Formato Frecce *</label>
+                <select class="inp" id="tk-formato">${TK_FORMATO.map(o=>`<option>${o}</option>`).join('')}</select></div>
         </div>
-
-        ${type==='Allenamento'?`<div class="form-section">
-            <label class="form-label">🎯 Esercizi Consigliati <span style="color:var(--muted);font-size:0.75rem">(opzionale)</span></label>
-            <textarea class="inp" id="tk-eserc-cons" rows="2" placeholder="Esercizi consigliati dal coach..."></textarea>
-        </div>`:''}
-
-        <div class="form-section">
-            <label class="form-label">📝 Note</label>
-            <textarea class="inp" id="tk-note" rows="2" placeholder="Dettagli aggiuntivi..."></textarea>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:0.65rem;margin-top:0.5rem">
-            <button class="btn btn-gold btn-full btn-lg" id="tk-start-btn" onclick="window.tkStartSession('${type}')">▶ Inizia Segnapunti</button>
-            <button class="btn btn-outline btn-full" onclick="window.tkStartQuickMode('${type}')">⚡ Quick Score (inserimento rapido)</button>
+        ${type==='Allenamento'?`<div class="form-section"><label class="form-label">🎯 Esercizi Consigliati</label>
+            <textarea class="inp" id="tk-eserc" rows="2" placeholder="Dal coach..."></textarea></div>`:''}
+        <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem">
+            <button class="btn btn-gold btn-full btn-lg" id="tk-startbtn" onclick="window.tkStart('${type}')">▶ Inizia Segnapunti</button>
+            <button class="btn btn-outline btn-full" onclick="window.tkStartQS('${type}')">⚡ Quick Score</button>
         </div>
     `);
 }
 
-window.tkToggleNoScore = (checked) => {
-    const scoreFields = document.getElementById('tk-score-fields');
-    const startBtn = document.getElementById('tk-start-btn');
-    if(scoreFields) scoreFields.style.display = checked ? 'none' : 'block';
-    if(startBtn) startBtn.textContent = checked ? '▶ Continua (solo note)' : '▶ Inizia Segnapunti';
+window.tkToggle=(checked)=>{
+    const sf=document.getElementById('tk-sfields'),btn=document.getElementById('tk-startbtn');
+    if(sf)sf.style.display=checked?'none':'block';
+    if(btn)btn.textContent=checked?'▶ Continua (solo note)':'▶ Inizia Segnapunti';
 };
 
-window.tkStartSession = (type) => {
-    const noScore = document.getElementById('tk-no-score')?.checked || false;
-    const luogo = $('tk-luogo')?.value.trim();
-    if(!luogo) return showModal('Errore','Inserisci il luogo della sessione.',[{text:'OK'}]);
-    if(!noScore && !$('tk-formato')?.value) return showModal('Errore','Seleziona il formato frecce.',[{text:'OK'}]);
-
-    TK.session = {
-        type,
-        data: $('tk-data')?.value || new Date().toISOString().split('T')[0],
-        ora: $('tk-ora')?.value || '00:00',
-        luogo,
-        tipoLuogo: $('tk-tipoLuogo')?.value||'',
-        tipoArco: $('tk-tipoArco')?.value||'',
-        distanza: noScore?'':$('tk-distanza')?.value||'',
-        tipoTarga: noScore?'':$('tk-targa')?.value||'',
-        formatoGara: noScore?'':$('tk-formato')?.value||'30 frecce (3x10)',
-        frecceProgrammate: $('tk-frecce-prog')?.value||'',
-        esercizConsigliati: $('tk-eserc-cons')?.value||'',
-        note: $('tk-note')?.value||'',
-        noteCondizioniFisiche: '',
-        esercizSvolti: '',
-        notePreGara: '',
-        notePostGara: '',
-        trainingWithoutScore: noScore,
-        quickScore: false,
-        id: Date.now(),
+window.tkStart=(type)=>{
+    const ns=document.getElementById('tk-noscore')?.checked||false;
+    const luogo=document.getElementById('tk-luogo')?.value.trim();
+    if(!luogo)return showModal('Errore','Inserisci il luogo.',[{text:'OK'}]);
+    if(!ns&&!document.getElementById('tk-formato')?.value)return showModal('Errore','Seleziona il formato frecce.',[{text:'OK'}]);
+    TK.session={
+        type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
+        luogo,tipoLuogo:document.getElementById('tk-tipoLuogo')?.value||'',
+        tipoArco:document.getElementById('tk-tipoArco')?.value||'',
+        distanza:ns?'':document.getElementById('tk-dist')?.value||'',
+        tipoTarga:ns?'':document.getElementById('tk-targa')?.value||'',
+        formatoGara:ns?'':document.getElementById('tk-formato')?.value||'30 frecce (3x10)',
+        esercizConsigliati:document.getElementById('tk-eserc')?.value||'',
+        trainingWithoutScore:ns,
+        noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
-    TK.startTime = $('tk-ora')?.value||'00:00';
-    TK.turn = 1;
-    TK.volleyNotes = {};
-    window._tkArrowPos = {};
-    if(noScore){
-        window.setView('trainingNotes');
-    } else {
-        tkInitGrid();
-        tkAutoSaveDraft();
-        renderScoringView();
-        // Replace main-view directly instead of using setView to avoid re-init
-        setHeader(`${type==='Gara'?'🏆':'🎯'} ${type} · T${TK.turn}`, S.asd?.nome||'');
-    }
+    TK.turn=1;TK.volleyNotes={};window._tkPos={};
+    if(ns){renderTrainingNotes();}
+    else{tkInitGrid();tkSave();setHeader(`${type==='Gara'?'🏆':'🎯'} ${type} · T1`,S.asd?.nome||'');tkRenderScoring();}
 };
 
-window.tkStartQuickMode = (type) => {
-    const luogo = $('tk-luogo')?.value.trim();
-    if(!luogo) return showModal('Errore','Inserisci il luogo della sessione.',[{text:'OK'}]);
-    if(!$('tk-formato')?.value) return showModal('Errore','Seleziona il formato frecce.',[{text:'OK'}]);
-    TK.session = {
-        type, quickScore:true,
-        data: $('tk-data')?.value||new Date().toISOString().split('T')[0],
-        luogo,
-        tipoLuogo: $('tk-tipoLuogo')?.value||'',
-        tipoArco: $('tk-tipoArco')?.value||'',
-        distanza: $('tk-distanza')?.value||'',
-        tipoTarga: $('tk-targa')?.value||'',
-        formatoGara: $('tk-formato')?.value||'',
-        esercizConsigliati: $('tk-eserc-cons')?.value||'',
-        note: $('tk-note')?.value||'',
-        noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',
-        id: Date.now(),
+window.tkStartQS=(type)=>{
+    const luogo=document.getElementById('tk-luogo')?.value.trim();
+    if(!luogo)return showModal('Errore','Inserisci il luogo.',[{text:'OK'}]);
+    TK.session={
+        type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
+        luogo,tipoLuogo:document.getElementById('tk-tipoLuogo')?.value||'',
+        tipoArco:document.getElementById('tk-tipoArco')?.value||'',
+        distanza:document.getElementById('tk-dist')?.value||'',
+        tipoTarga:document.getElementById('tk-targa')?.value||'',
+        formatoGara:document.getElementById('tk-formato')?.value||'',
+        esercizConsigliati:document.getElementById('tk-eserc')?.value||'',
+        noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
     renderQuickScoreView();
 };
 
 function renderQuickScoreView(){
     const s=TK.session;
-    setHeader('⚡ Quick Score', S.asd?.nome||'');
+    setHeader('⚡ Quick Score',S.asd?.nome||'');
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
-        <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold);margin-bottom:0.5rem">⚡ Quick Score</h2>
-        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">${s.distanza} · ${s.tipoTarga} · ${s.formatoGara}</p>
+        <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold);margin-bottom:0.5rem">⚡ Quick Score</h2>
+        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:1rem">${s.distanza} · ${s.tipoTarga} · ${s.formatoGara}</p>
         <div class="form-section">
             <label class="form-label">Punteggio Turno 1 *</label>
-            <input class="inp" id="qs-t1" type="number" min="0" max="600" placeholder="Es: 285" style="font-size:1.4rem;text-align:center;font-weight:700">
-            ${s.formatoGara!=='72 frecce (6x12)'?`
-            <label class="form-label" style="margin-top:0.65rem">Punteggio Turno 2 <span style="color:var(--muted);font-size:0.75rem">(opzionale)</span></label>
-            <input class="inp" id="qs-t2" type="number" min="0" max="600" placeholder="Es: 290" style="font-size:1.4rem;text-align:center;font-weight:700">`:''}
+            <input class="inp" id="qs-t1" type="number" min="0" max="600" placeholder="Es: 285" style="font-size:1.3rem;text-align:center;font-weight:700">
+            ${s.formatoGara!=='72 frecce (6x12)'?`<label class="form-label" style="margin-top:0.6rem">Punteggio Turno 2</label>
+            <input class="inp" id="qs-t2" type="number" min="0" max="600" placeholder="Es: 290" style="font-size:1.3rem;text-align:center;font-weight:700">`:''}
         </div>
-        ${s.type==='Gara'?`
-        <div class="form-section">
-            <label class="form-label">📝 Note Pre-Gara</label>
-            <textarea class="inp" id="qs-note-pre" rows="2" placeholder="Aspettative, tattica..."></textarea>
-            <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label>
-            <textarea class="inp" id="qs-note-post" rows="2" placeholder="Com'è andata..."></textarea>
-            <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
-            <textarea class="inp" id="qs-note-fisiche" rows="2" placeholder="Condizioni, meteo..."></textarea>
-        </div>`:`
-        <div class="form-section">
-            <label class="form-label">🎯 Esercizi Consigliati</label>
-            <textarea class="inp" id="qs-eserc-cons" rows="2" placeholder="Dal coach...">${s.esercizConsigliati||''}</textarea>
-            <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
-            <textarea class="inp" id="qs-eserc-svolti" rows="2" placeholder="Cosa hai fatto..."></textarea>
-            <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
-            <textarea class="inp" id="qs-note-fisiche" rows="2" placeholder="Condizioni, stanchezza..."></textarea>
+        ${s.type==='Gara'?`<div class="form-section">
+            <label class="form-label">📝 Note Pre-Gara</label><textarea class="inp" id="qs-pre" rows="2" placeholder="Aspettative..."></textarea>
+            <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label><textarea class="inp" id="qs-post" rows="2" placeholder="Com'è andata..."></textarea>
+            <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label><textarea class="inp" id="qs-fis" rows="2"></textarea>
+        </div>`:`<div class="form-section">
+            <label class="form-label">🎯 Esercizi Consigliati</label><textarea class="inp" id="qs-ec" rows="2">${s.esercizConsigliati||''}</textarea>
+            <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label><textarea class="inp" id="qs-es" rows="2"></textarea>
+            <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label><textarea class="inp" id="qs-fis" rows="2"></textarea>
         </div>`}
-        <button class="btn btn-gold btn-full btn-lg" onclick="window.tkSaveQuickScore()">💾 Salva Quick Score</button>
+        <button class="btn btn-gold btn-full btn-lg" onclick="window.tkSaveQS()">💾 Salva Quick Score</button>
     `);
 }
 
-window.tkSaveQuickScore = async () => {
-    const t1=parseInt($('qs-t1')?.value)||0;
-    const t2=parseInt($('qs-t2')?.value)||0;
-    if(!t1) return showModal('Errore','Inserisci punteggio Turno 1.',[{text:'OK'}]);
+window.tkSaveQS=async()=>{
+    const t1=parseInt(document.getElementById('qs-t1')?.value)||0;
+    const t2=parseInt(document.getElementById('qs-t2')?.value)||0;
+    if(!t1)return showModal('Errore','Inserisci punteggio Turno 1.',[{text:'OK'}]);
     const s=TK.session;
-    const docData={
-        archerId:S.atleta.id,
-        arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
-        type:s.type,data:s.data,luogo:s.luogo||'',
-        tipoLuogo:s.tipoLuogo||'',distanza:s.distanza||'',tipoTarga:s.tipoTarga||'',
-        formatoGara:s.formatoGara||'',tipoArco:s.tipoArco||'',
-        totalScore:t1+t2,turn1Score:t1,turn2Score:t2,
-        totalX:0,totalTen:0,totalNine:0,totalAverage:0,
-        frecceAggiuntive:0,frecceProgrammate:0,
-        esercizConsigliati:$('qs-eserc-cons')?.value||s.esercizConsigliati||'',
-        esercizSvolti:$('qs-eserc-svolti')?.value||'',
-        noteCondizioniFisiche:$('qs-note-fisiche')?.value||'',
-        notePreGara:$('qs-note-pre')?.value||'',
-        notePostGara:$('qs-note-post')?.value||'',
-        quickScore:true,trainingWithoutScore:false,
-        timestamp:serverTimestamp(),createdAt:new Date().toISOString(),
-    };
-    try {
-        await addDoc(sessioniCol(S.asd.id), docData);
+    try{
+        await addDoc(sessioniCol(S.asd.id),{
+            archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
+            type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',
+            distanza:s.distanza||'',tipoTarga:s.tipoTarga||'',formatoGara:s.formatoGara||'',tipoArco:s.tipoArco||'',
+            totalScore:t1+t2,turn1Score:t1,turn2Score:t2,totalX:0,totalTen:0,totalNine:0,totalAverage:0,
+            frecceAggiuntive:0,frecceProgrammate:0,
+            esercizConsigliati:document.getElementById('qs-ec')?.value||s.esercizConsigliati||'',
+            esercizSvolti:document.getElementById('qs-es')?.value||'',
+            noteCondizioniFisiche:document.getElementById('qs-fis')?.value||'',
+            notePreGara:document.getElementById('qs-pre')?.value||'',
+            notePostGara:document.getElementById('qs-post')?.value||'',
+            quickScore:true,trainingWithoutScore:false,
+            timestamp:serverTimestamp(),createdAt:new Date().toISOString()
+        });
         TK.session=null;
         await loadAtletaSessioni();
-        showModal('✅ Quick Score Salvato!',`Punteggio totale: ${t1+t2} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
-    } catch(e){ showModal('Errore','Impossibile salvare: '+e.message,[{text:'OK'}]); }
+        showModal('✅ Salvato!',`Punteggio: ${t1+t2} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
+    }catch(e){showModal('Errore',e.message,[{text:'OK'}]);}
 };
 
-// ── ALLENAMENTO TECNICO (senza punteggio) ────────────────────────────────────
 function renderTrainingNotes(){
     const s=TK.session;
-    if(!s) return window.setView('atletaMenu');
-    setHeader('📝 Note Allenamento', S.asd?.nome||'');
+    if(!s)return window.setView('atletaMenu');
+    setHeader('📝 Allenamento',S.asd?.nome||'');
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
-        <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold);margin-bottom:1rem">📝 Allenamento Tecnico — ${s.data}</h2>
+        <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold);margin-bottom:1rem">📝 Allenamento Tecnico</h2>
         <div class="form-section">
-            <label class="form-label">🎯 Esercizi Consigliati</label>
-            <textarea class="inp" id="tn-eserc-cons" rows="3" placeholder="Esercizi dal coach...">${s.esercizConsigliati||''}</textarea>
-            <label class="form-label" style="margin-top:0.65rem">✅ Esercizi Svolti</label>
-            <textarea class="inp" id="tn-eserc-svolti" rows="3" placeholder="Cosa hai praticato..."></textarea>
-            <label class="form-label" style="margin-top:0.65rem">🩺 Note Condizioni Fisiche</label>
-            <textarea class="inp" id="tn-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..."></textarea>
-            <label class="form-label" style="margin-top:0.65rem">🪃 Frecce Tirate</label>
-            <input class="inp" id="tn-frecce" type="number" min="0" placeholder="Quante frecce hai tirato?">
+            <label class="form-label">🎯 Esercizi Consigliati</label><textarea class="inp" id="tn-ec" rows="3" placeholder="Dal coach...">${s.esercizConsigliati||''}</textarea>
+            <label class="form-label" style="margin-top:0.6rem">✅ Esercizi Svolti</label><textarea class="inp" id="tn-es" rows="3" placeholder="Cosa hai praticato..."></textarea>
+            <label class="form-label" style="margin-top:0.6rem">🩺 Note Fisiche</label><textarea class="inp" id="tn-fis" rows="2" placeholder="Stanchezza, dolori..."></textarea>
+            <label class="form-label" style="margin-top:0.6rem">🪃 Frecce Tirate</label><input class="inp" id="tn-fr" type="number" min="0" placeholder="Quante frecce?">
         </div>
-        <button class="btn btn-gold btn-full btn-lg" onclick="window.tkSaveTrainingNotes()">💾 Salva Allenamento</button>
+        <button class="btn btn-gold btn-full btn-lg" onclick="window.tkSaveTN()">💾 Salva Allenamento</button>
     `);
 }
 
-window.tkSaveTrainingNotes = async () => {
+window.tkSaveTN=async()=>{
     const s=TK.session;
-    const docData={
-        archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
-        type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',
-        tipoArco:s.tipoArco||'',distanza:'',tipoTarga:'',formatoGara:'',
-        totalScore:0,totalX:0,totalTen:0,totalNine:0,totalAverage:0,
-        frecceAggiuntive:parseInt($('tn-frecce')?.value)||0,frecceProgrammate:0,
-        esercizConsigliati:$('tn-eserc-cons')?.value||'',
-        esercizSvolti:$('tn-eserc-svolti')?.value||'',
-        noteCondizioniFisiche:$('tn-note-fisiche')?.value||'',
-        notePreGara:'',notePostGara:'',
-        trainingWithoutScore:true,quickScore:false,
-        timestamp:serverTimestamp(),createdAt:new Date().toISOString(),
-    };
-    try {
-        await addDoc(sessioniCol(S.asd.id), docData);
+    try{
+        await addDoc(sessioniCol(S.asd.id),{
+            archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
+            type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',tipoArco:s.tipoArco||'',
+            distanza:'',tipoTarga:'',formatoGara:'',
+            totalScore:0,totalX:0,totalTen:0,totalNine:0,totalAverage:0,
+            frecceAggiuntive:parseInt(document.getElementById('tn-fr')?.value)||0,frecceProgrammate:0,
+            esercizConsigliati:document.getElementById('tn-ec')?.value||'',
+            esercizSvolti:document.getElementById('tn-es')?.value||'',
+            noteCondizioniFisiche:document.getElementById('tn-fis')?.value||'',
+            notePreGara:'',notePostGara:'',trainingWithoutScore:true,quickScore:false,
+            timestamp:serverTimestamp(),createdAt:new Date().toISOString()
+        });
         TK.session=null;
         await loadAtletaSessioni();
-        showModal('✅ Allenamento Salvato!','',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaMenu')}]);
-    } catch(e){ showModal('Errore','Impossibile salvare: '+e.message,[{text:'OK'}]); }
+        showModal('✅ Salvato!','',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaMenu')}]);
+    }catch(e){showModal('Errore',e.message,[{text:'OK'}]);}
 };
 
-async function saveSession(type) {
-    // kept for backward compatibility, unused
-}
-window.saveSession = saveSession;
-
+window.saveSession = async function() {};
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1946,46 +1791,35 @@ async function renderAtletaDati() {
     setHeader('📊 I Miei Dati', S.atleta ? `${S.atleta.nome} ${S.atleta.cognome}` : '');
     await loadAtletaSessioni();
 
-    const garaList   = S.sessioni.filter(s => s.type === 'Gara' && s.totalScore > 0);
-    const allSnap    = S.sessioni.filter(s => !s.trainingWithoutScore && s.totalScore > 0);
-    const bestScore  = garaList.length > 0 ? Math.max(...garaList.map(s => s.totalScore||0)) : 0;
-    const totalFrecce= S.sessioni.reduce((acc, s) => acc + (s.frecceAggiuntive||0) + (s.frecceTirate||0), 0);
-    const avgScore   = allSnap.length > 0 ? Math.round(allSnap.reduce((a,s)=>a+(s.totalScore||0),0)/allSnap.length) : 0;
+    const totalScore = S.sessioni.reduce((s,x)=>s+(x.totalScore||0),0);
+    const totalFrecce= S.sessioni.reduce((s,x)=>s+(x.frecceAggiuntive||0),0);
+    const garaList = S.sessioni.filter(s=>s.type==='Gara');
+    const bestScore = garaList.length > 0 ? Math.max(...garaList.map(s=>s.totalScore||0)) : 0;
 
     const sessList = S.sessioni.length === 0
         ? `<p style="text-align:center;color:var(--muted);padding:2rem">Nessuna sessione registrata.</p>`
         : S.sessioni.map(s => `
             <div class="session-card" onclick="showAtletaSessionDetail('${s.id}')" style="cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                    <div style="flex:1;min-width:0">
-                        <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem">
-                            <span class="badge ${s.type==='Gara'?'badge-gold':s.trainingWithoutScore?'badge-green':'badge-blue'}">${s.trainingWithoutScore?'Tecnico':s.type||'Allenamento'}</span>
-                            ${s.quickScore?`<span class="badge" style="background:rgba(128,0,128,0.15);color:#c084fc;border:1px solid rgba(128,0,128,0.3);font-size:0.65rem">Quick</span>`:''}
-                        </div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700">${fmtDate(s.data)}</div>
-                        <div style="font-size:0.75rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''} ${s.tipoArco?'· '+s.tipoArco:''}</div>
+                    <div>
+                        <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}</span>
+                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.3rem">${fmtDate(s.data)}</div>
+                        <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''}</div>
                     </div>
-                    <div style="text-align:right;flex-shrink:0">
-                        ${s.totalScore > 0
-                            ? `<div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.7rem;color:var(--muted)">${s.totalX>0?`X:${s.totalX} `:''} ${s.totalAverage>0?`~ ${s.totalAverage.toFixed(1)}`:''}</div>`
-                            : `<div style="font-size:0.78rem;color:var(--muted)">${s.trainingWithoutScore?'Solo note':'Senza pt'}</div>`}
-                    </div>
+                    ${s.totalScore > 0 ? `<div style="text-align:right"><div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.72rem;color:var(--muted)">punti</div></div>` : `<div style="font-size:0.78rem;color:var(--muted)">Solo tecnico</div>`}
                 </div>
             </div>
         `).join('');
 
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.6rem;margin-bottom:0.6rem">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem">
             <div class="stat-box"><div class="stat-num">${S.sessioni.length}</div><div class="stat-label">Sessioni</div></div>
-            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best Score</div></div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.6rem;margin-bottom:1.25rem">
-            <div class="stat-box"><div class="stat-num">${avgScore||'—'}</div><div class="stat-label">Media Gare</div></div>
-            <div class="stat-box"><div class="stat-num">${totalFrecce||0}</div><div class="stat-label">Frecce Tot.</div></div>
+            <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce</div></div>
+            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best</div></div>
         </div>
         <div class="gold-line"></div>
-        <h3 style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">📋 Sessioni (${S.sessioni.length})</h3>
+        <h3 style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">📋 Sessioni</h3>
         ${sessList}
     `);
 }
