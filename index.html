@@ -199,6 +199,7 @@
 
 <!-- APP HEADER -->
 <div class="app-header" id="app-header" style="display:none">
+    <button id="back-btn" onclick="window._navGoBack()" style="background:none;border:none;color:var(--gold);cursor:pointer;padding:2px;font-size:1.2rem;display:none;margin-right:2px" title="Torna indietro">◀</button>
     <button onclick="toggleNav()" style="background:none;border:none;color:var(--gold);cursor:pointer;padding:2px;font-size:1.4rem">☰</button>
     <div style="flex:1">
         <div class="logo-text" id="header-title">Archery Club Manager</div>
@@ -321,8 +322,15 @@ function setHeader(title, sub='', rightHtml='') {
     $('header-title').textContent = title;
     $('header-sub').textContent = sub;
     $('header-right').innerHTML = rightHtml;
+    // Mostra freccia indietro se c'è storia di navigazione
+    const backBtn = $('back-btn');
+    if (backBtn) backBtn.style.display = (window._navHistory&&window._navHistory.length>1)?'inline-block':'none';
 }
-function hideHeader() { $('app-header').style.display = 'none'; }
+function hideHeader() {
+    $('app-header').style.display = 'none';
+    const backBtn = $('back-btn');
+    if (backBtn) backBtn.style.display = 'none';
+}
 
 function buildNav() {
     let items = '', userName = '';
@@ -342,7 +350,7 @@ function buildNav() {
         userName = `${S.atleta?.nome||''} ${S.atleta?.cognome||''}`;
         items = [
             { icon:'🏠', label:'Menu',              fn:"window.setView('atletaMenu')" },
-            { icon:'📊', label:'I Miei Dati',       fn:"window.setView('atletaDati')" },
+
             { icon:'🎯', label:'Stat. Bersaglio',   fn:"window.setView('targetStats')" },
             { icon:'🏅', label:'Obiettivi',         fn:"window.setView('atletaObiettivi')" },
             { icon:'⚖️', label:'Confronta',         fn:"window.setView('confrontaSessioni')" },
@@ -380,8 +388,29 @@ async function loadAllAsd() {
 }
 
 // ── VIEWS ROUTER ────────────────────────────────────────────────────────────
+// Stack di navigazione per il tasto indietro
+window._navHistory = [];
+window._navGoBack = () => {
+    if (window._navHistory.length > 1) {
+        window._navHistory.pop(); // rimuovi corrente
+        const prev = window._navHistory.pop(); // prendi precedente
+        window.setView(prev.view, prev.params);
+    } else {
+        // fallback intelligente
+        if (S.role === 'atleta') window.setView('atletaMenu');
+        else if (S.role === 'asd') window.setView('asdDashboard');
+        else window.setView('homeLogin');
+    }
+};
+
 window.setView = async (view, params={}) => {
     S.view = view;
+    // Aggiungi allo stack (evita duplicati consecutivi)
+    const last = window._navHistory[window._navHistory.length-1];
+    if (!last || last.view !== view) {
+        window._navHistory.push({view, params});
+        if (window._navHistory.length > 20) window._navHistory.shift();
+    }
     closeNav();
     switch(view) {
         case 'homeLogin':       return renderHomeLogin();
@@ -576,6 +605,7 @@ window.doAsdRegister = async function() {
 // ── ASD DASHBOARD ───────────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdDashboard() {
+    window._navHistory = [{view:'asdDashboard',params:{}}];
     setHeader('Dashboard ASD', S.asd?.nome || '');
     await loadAtleti();
     // Conta sessioni totali
@@ -1183,6 +1213,8 @@ window.doAtletaLogin = async function() {
     buildNav();
     await loadAtletaSessioni();
     window.setView('atletaMenu');
+    // Controlla se c'è una bozza di sessione salvata
+    setTimeout(checkDraftSession, 400);
 };
 
 function logoutAtleta() {
@@ -1199,10 +1231,39 @@ async function loadAtletaSessioni() {
     S.sessioni = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
 }
 
+function checkDraftSession() {
+    const dk = `tk_d_${S.atleta?.id||''}`;
+    const draft = localStorage.getItem(dk) || localStorage.getItem('tk_d');
+    if (!draft) return;
+    try {
+        const sv = JSON.parse(draft);
+        if (!sv.s) return;
+        showModal('⏸️ Sessione in pausa',
+            `<p style="color:var(--text);margin-bottom:0.75rem">Hai una sessione interrotta:</p>
+            <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;font-size:0.85rem">
+                <strong style="color:var(--gold)">${sv.s.type||'Sessione'}</strong> · ${sv.s.data||''}
+                <br><span style="color:var(--muted)">${sv.s.luogo||''} · Turno ${sv.t||1}</span>
+            </div>`,
+            [
+                {text:'🗑️ Scarta', cls:'btn-ghost', fn:()=>{ localStorage.removeItem(dk); tkClearDraft(); }},
+                {text:'▶ Riprendi', cls:'btn-gold', fn:()=>{
+                    TK.session = sv.s; TK.turn = sv.t||1; TK.grid = sv.g;
+                    TK.volleyNotes = sv.n||{}; TK.rows = sv.r||10; TK.cols = sv.c||3;
+                    TK.format = sv.f; TK.activeCell = sv.a||{row:1,col:1};
+                    setHeader(`${TK.session.type==='Gara'?'🏆':'🎯'} ${TK.session.type} · T${TK.turn}`,S.asd?.nome||'');
+                    tkRenderScoring();
+                }}
+            ]
+        );
+    } catch(e) { localStorage.removeItem(dk); tkClearDraft(); }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ── ATLETA: MENU PRINCIPALE (replica webapp originale) ───────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 function renderAtletaMenu() {
+    // Reset dello stack di navigazione: il menu principale è il punto base
+    window._navHistory = [{view:'atletaMenu',params:{}}];
     setHeader(S.atleta?.nome || 'Atleta', S.asd?.nome || '', `<div class="avatar" style="width:34px;height:34px;font-size:0.9rem">${initials(S.atleta?.nome,S.atleta?.cognome)}</div>`);
     buildNav();
     const lastSession = S.sessioni[0];
@@ -1251,15 +1312,11 @@ function renderAtletaMenu() {
             </div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem">
-                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaDati')">
-                    <div style="font-size:1.6rem;margin-bottom:0.3rem">📊</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">I Miei Dati</div>
-                    <div style="font-size:0.75rem;color:var(--muted)">${S.sessioni.length} sessioni</div>
-                </button>
-                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaMessaggi')">
+
+                <button class="card card-hover" id="menu-msg-btn" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaMessaggi')">
                     <div style="font-size:1.6rem;margin-bottom:0.3rem">📨</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Messaggi</div>
-                    <div style="font-size:0.75rem;color:var(--muted)">Dal tuo coach</div>
+                    <div id="menu-msg-sub" style="font-size:0.75rem;color:var(--muted)">Dal tuo coach</div>
                 </button>
                 <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaCalendario')">
                     <div style="font-size:1.6rem;margin-bottom:0.3rem">📅</div>
@@ -1304,8 +1361,29 @@ function renderAtletaMenu() {
             </div>
         </div>
     `);
+    // Controlla messaggi nuovi dopo il render (asincrono)
+    setTimeout(checkNuoviMessaggi, 300);
 }
 window.startSession = (type) => window.setView('registrationForm', { type });
+
+// Controlla messaggi nuovi e colora il bottone di verde
+async function checkNuoviMessaggi() {
+    if (!S.asd || !S.atleta) return;
+    try {
+        const snap = await getDocs(msgCol(S.asd.id));
+        const msgs = snap.docs.map(d=>({id:d.id,...d.data()}))
+            .filter(m=>m.destinatari==='tutti'||m.destinatari===S.atleta.id);
+        const lastSeen = parseInt(localStorage.getItem(`msg_last_${S.atleta.id}`)||'0');
+        const nuovi = msgs.filter(m=>(m.createdAt?.seconds||0)*1000 > lastSeen);
+        const btn = document.getElementById('menu-msg-btn');
+        const sub = document.getElementById('menu-msg-sub');
+        if (btn && nuovi.length > 0) {
+            btn.style.borderColor = '#3d9970';
+            btn.style.background = 'rgba(61,153,112,0.08)';
+            if (sub) sub.innerHTML = `<span style="color:#5dba94;font-weight:700">${nuovi.length} nuovo/i messaggio/i</span>`;
+        }
+    } catch(e) {}
+}
 window.resetFiltri = () => { window._filtroTipo = ''; window._filtroAnno = ''; };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1370,7 +1448,8 @@ function tkInitGrid(){
     TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));
     TK.activeCell={row:1,col:1};
 }
-function tkSave(){try{localStorage.setItem('tk_d',JSON.stringify({s:TK.session,t:TK.turn,g:TK.grid,n:TK.volleyNotes,r:TK.rows,c:TK.cols,f:TK.format,a:TK.activeCell}));}catch(e){}}
+function tkSave(){try{const dk=`tk_d_${S.atleta?.id||''}`;const d=JSON.stringify({s:TK.session,t:TK.turn,g:TK.grid,n:TK.volleyNotes,r:TK.rows,c:TK.cols,f:TK.format,a:TK.activeCell});localStorage.setItem(dk,d);localStorage.setItem('tk_d',d);}catch(e){}}
+function tkClearDraft(){try{localStorage.removeItem(`tk_d_${S.atleta?.id||''}`);tkClearDraft();}catch(e){}}
 
 window.tkKey=(val)=>{
     const {row,col}=TK.activeCell,ri=row-1,ci=col-1;
@@ -1531,7 +1610,7 @@ window.tkFineTurno=async(isFinal)=>{
                     turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{}}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                 });
-                localStorage.removeItem('tk_d');
+                tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
                 await loadAtletaSessioni();
                 showModal('✅ Salvato!',`Punteggio: ${totalScore} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
@@ -1573,7 +1652,7 @@ window.tkFineTurno=async(isFinal)=>{
                                grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{}},
                         timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                     });
-                    localStorage.removeItem('tk_d');
+                    tkClearDraft();
                     TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
                     await loadAtletaSessioni();
                     showModal('✅ Salvato!',`Turno 1: ${t1.score} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
@@ -1905,13 +1984,21 @@ async function renderAtletaDati() {
     const garaCount = garaList.length;
     const allCount = S.sessioni.filter(s=>s.type==='Allenamento').length;
 
+    // Filtro sessioni
+    const filtroTipo = window._filtroTipo || '';
+    const filtroAnno = window._filtroAnno || '';
+    let sessioniFiltrate = S.sessioni;
+    if (filtroTipo) sessioniFiltrate = sessioniFiltrate.filter(s => filtroTipo==='tecnico'?s.trainingWithoutScore:s.type===filtroTipo&&!s.trainingWithoutScore);
+    if (filtroAnno) sessioniFiltrate = sessioniFiltrate.filter(s => s.data && s.data.startsWith(filtroAnno));
+    const anni = [...new Set(S.sessioni.map(s=>s.data?.substring(0,4)).filter(Boolean))].sort().reverse();
+
     const sessList = sessioniFiltrate.length === 0
         ? `<p style="text-align:center;color:var(--muted);padding:2rem">Nessuna sessione registrata.</p>`
         : sessioniFiltrate.map(s => `
-            <div class=session-card" onclick="window.apriDettaglio('${s.id||s.docId||''}')" style="cursor:pointer">
+            <div class="session-card" onclick="window.apriDettaglio('${s.id||s.docId||''}')" style="cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start">
                     <div>
-                        <span class="badge ${s.type==='Gara'?'badge-gold':s.trainingWithoutScore?'badge-blue':'badge-blue'}">${s.type||'Allenamento'}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</span>
+                        <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</span>
                         <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.3rem">${fmtDate(s.data)}</div>
                         <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
                     </div>
@@ -1919,14 +2006,6 @@ async function renderAtletaDati() {
                 </div>
             </div>
         `).join('');
-
-    // Filtro
-    const filtroTipo = window._filtroTipo || '';
-    const filtroAnno = window._filtroAnno || '';
-    let sessioniFiltrate = S.sessioni;
-    if (filtroTipo) sessioniFiltrate = sessioniFiltrate.filter(s => filtroTipo==='tecnico'?s.trainingWithoutScore:s.type===filtroTipo&&!s.trainingWithoutScore);
-    if (filtroAnno) sessioniFiltrate = sessioniFiltrate.filter(s => s.data && s.data.startsWith(filtroAnno));
-    const anni = [...new Set(S.sessioni.map(s=>s.data?.substring(0,4)).filter(Boolean))].sort().reverse();
 
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
@@ -1982,6 +2061,8 @@ window.showAtletaSessionDetail = showAtletaSessionDetail;
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAtletaMessaggi() {
     setHeader('📨 Messaggi', 'Dal tuo Coach');
+    // Segna i messaggi come letti (salva timestamp attuale)
+    if (S.atleta?.id) localStorage.setItem(`msg_last_${S.atleta.id}`, Date.now().toString());
     const snap = await getDocs(msgCol(S.asd.id));
     const msgs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)))
         .filter(m => m.destinatari === 'tutti' || m.destinatari === S.atleta.id);
@@ -2467,13 +2548,23 @@ window.eqSave = () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // ── HELPER: conteggio frecce per sessione ───────────────────────────────────
 function countArrowsForSession(s) {
-    if (s.trainingWithoutScore) return parseInt(s.frecceAggiuntive)||0;
+    const extra = parseInt(s.frecceAggiuntive)||0;
+    if (s.trainingWithoutScore) return extra;
+    // Frecce dal formato (turni standard) se non c'è griglia dettagliata
+    const fmtMap = {'30 frecce (3x10)':30,'36 frecce (6x6)':36,'72 frecce (6x12)':72};
+    const fmtArrows = fmtMap[s.formatoGara] || 0;
     if (s.quickScore) {
-        const fm={'30 frecce (3x10)':30,'36 frecce (6x6)':36,'72 frecce (6x12)':72};
-        return (fm[s.formatoGara]||30) + (parseInt(s.frecceAggiuntive)||0);
+        // Quick score: usa il formato per calcolare le frecce per turno
+        const turni = s.turn2Score>0 ? 2 : 1;
+        return fmtArrows * turni + extra;
     }
-    const t1=(s.turn1?.summary?.fired)||0, t2=(s.turn2?.summary?.fired)||0;
-    return t1+t2+(parseInt(s.frecceAggiuntive)||0);
+    // Con segnapunti: usa le frecce realmente tirate dai turni
+    const t1 = s.turn1?.summary?.fired || 0;
+    const t2 = s.turn2?.summary?.fired || 0;
+    if (t1 > 0 || t2 > 0) return t1 + t2 + extra;
+    // Fallback: calcola dal formato (turni effettuati)
+    const turni = s.turn2Score>0 ? 2 : (s.totalScore>0 ? 1 : 0);
+    return fmtArrows * turni + extra;
 }
 function fmtDuration(min) {
     if (!min) return '—';
@@ -2754,7 +2845,10 @@ window.eseguiConfronto = () => {
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">💡 Insights</div>
             ${insights.map(i=>`<div style="font-size:0.82rem;color:var(--text);margin-bottom:0.25rem">• ${i}</div>`).join('')}
         </div>
-        <button class="btn btn-outline btn-full btn-sm" style="margin-top:0.75rem" onclick="window.setView('confrontaSessioni')">🔄 Nuovo Confronto</button>
+        <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+            <button class="btn btn-outline btn-full btn-sm" onclick="window.setView('confrontaSessioni')">🔄 Nuovo Confronto</button>
+            <button class="btn btn-ghost btn-full btn-sm" onclick="window.setView('atletaCalendario')">📅 Calendario</button>
+        </div>
     </div>`;
 };
 
