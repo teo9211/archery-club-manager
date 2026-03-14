@@ -341,9 +341,17 @@ function buildNav() {
     } else if (S.role === 'atleta') {
         userName = `${S.atleta?.nome||''} ${S.atleta?.cognome||''}`;
         items = [
-            { icon:'🏠', label:'Menu Principale', fn:"window.setView('atletaMenu')" },
-            { icon:'📊', label:'I Miei Dati',     fn:"window.setView('atletaDati')" },
-            { icon:'📨', label:'Messaggi',         fn:"window.setView('atletaMessaggi')" },
+            { icon:'🏠', label:'Menu',              fn:"window.setView('atletaMenu')" },
+            { icon:'📊', label:'I Miei Dati',       fn:"window.setView('atletaDati')" },
+            { icon:'🎯', label:'Stat. Bersaglio',   fn:"window.setView('targetStats')" },
+            { icon:'🏅', label:'Obiettivi',         fn:"window.setView('atletaObiettivi')" },
+            { icon:'⚖️', label:'Confronta',         fn:"window.setView('confrontaSessioni')" },
+            { icon:'🪃', label:'Contatore Frecce',  fn:"window.setView('contatoreFrecce')" },
+            { icon:'📅', label:'Calendario',        fn:"window.setView('atletaCalendario')" },
+            { icon:'🏹', label:'Materiale',         fn:"window.setView('atletaMateriale')" },
+            { icon:'📥', label:'Esporta & Backup',  fn:"window.setView('esportaDati')" },
+            { icon:'⚙️', label:'Impostazioni',      fn:"window.setView('impostazioni')" },
+            { icon:'📨', label:'Messaggi',          fn:"window.setView('atletaMessaggi')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
         items += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
             <div class="nav-item" style="color:var(--danger)" onclick="logoutAtleta()">🚪 Logout</div>
@@ -395,8 +403,16 @@ window.setView = async (view, params={}) => {
         case 'trainingNotes':   return renderTrainingNotes();
         case 'scoring':         return tkRenderScoring();
         case 'quickScore':      return renderQuickScoreView();
-        case 'dataSummary':     return renderAtletaDati();
-        case 'detailedSummary': return renderAtletaDati();
+        case 'dataSummary':        return renderAtletaDati();
+        case 'detailedSummary':    return renderDettaglioSessione(params);
+        case 'atletaCalendario':   return renderAtletaCalendario();
+        case 'atletaMateriale':    return renderAtletaMateriale();
+        case 'targetStats':        return renderTargetStats();
+        case 'atletaObiettivi':    return renderAtletaObiettivi();
+        case 'confrontaSessioni':  return renderConfronta();
+        case 'contatoreFrecce':    return renderContatoreFrecce();
+        case 'esportaDati':        return renderEsportaDati();
+        case 'impostazioni':       return renderImpostazioni();
         default: renderHomeLogin();
     }
 };
@@ -1202,6 +1218,11 @@ function renderAtletaMenu() {
                 </div>
             </div>
 
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:1rem">
+                <div class="stat-box"><div class="stat-num">${S.sessioni.length}</div><div class="stat-label">Sessioni</div></div>
+                <div class="stat-box"><div class="stat-num">${S.sessioni.filter(x=>x.type==='Gara').length}</div><div class="stat-label">Gare</div></div>
+                <div class="stat-box"><div class="stat-num">${(()=>{const g=S.sessioni.filter(x=>x.totalScore>0);return g.length?Math.max(...g.map(x=>x.totalScore)):'—';})()}</div><div class="stat-label">Best</div></div>
+            </div>
             ${lastSession ? `
             <div class="card" style="margin-bottom:1.25rem;border-color:rgba(201,162,39,0.3)">
                 <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem">Ultima sessione</div>
@@ -1240,11 +1261,52 @@ function renderAtletaMenu() {
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Messaggi</div>
                     <div style="font-size:0.75rem;color:var(--muted)">Dal tuo coach</div>
                 </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaCalendario')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">📅</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Calendario</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Sessioni del mese</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaMateriale')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">🏹</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Materiale</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Arco, frecce, setup</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('targetStats')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">🎯</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Stat. Bersaglio</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Distribuzione colpi</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaObiettivi')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">🏅</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Obiettivi</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Traguardi e progressi</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('confrontaSessioni')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">⚖️</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Confronta</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Compara sessioni</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('contatoreFrecce')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">🪃</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Frecce</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Contatore frecce</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('esportaDati')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">📥</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Esporta</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">CSV, JSON, PDF</div>
+                </button>
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('impostazioni')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">⚙️</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Impostazioni</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Modifica massiva, dati</div>
+                </button>
             </div>
         </div>
     `);
 }
 window.startSession = (type) => window.setView('registrationForm', { type });
+window.resetFiltri = () => { window._filtroTipo = ''; window._filtroAnno = ''; };
 
 // ════════════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════════════
@@ -1463,6 +1525,8 @@ window.tkFineTurno=async(isFinal)=>{
                     esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
                     noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                     notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
+                    turn1:s.turn1?{summary:s.turn1.summary,grid:s.turn1.grid||[],volleyNotes:s.turn1.volleyNotes||{}}:null,
+                    turn2:s.turn2?{summary:s.turn2.summary,grid:s.turn2.grid||[],volleyNotes:s.turn2.volleyNotes||{}}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                 });
                 localStorage.removeItem('tk_d');
@@ -1472,9 +1536,48 @@ window.tkFineTurno=async(isFinal)=>{
             }catch(e){showModal('Errore','Salvataggio fallito: '+e.message,[{text:'OK'}]);}
         }}]);
     } else {
-        TK.turn=2;TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));TK.activeCell={row:1,col:1};TK.volleyNotes={};
-        tkSave();
-        showModal('✅ Turno 1 Salvato!',`<div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold)">${st.score}</div><div style="text-align:center;color:var(--muted)">Pronti per il Turno 2</div>`,[{text:'Inizia Turno 2',cls:'btn-gold',fn:()=>tkRenderScoring()}]);
+        // Fine Turno 1: scelta tra 2° turno o salva solo T1
+        const scoreT1 = st.score;
+        showModal('✅ Turno 1 Completato!',`
+            <div style="text-align:center;font-size:2.5rem;font-weight:900;color:var(--gold-light)">${scoreT1}</div>
+            <div style="text-align:center;color:var(--muted);font-size:0.82rem;margin-bottom:1rem">punteggio turno 1</div>
+            <label class="form-label">🪃 Frecce extra (warm-up...)</label>
+            <input class="inp" id="tk-extra-t1" type="number" min="0" value="0" style="text-align:center;font-size:1.1rem;margin-bottom:0.5rem">
+            <p style="font-size:0.78rem;color:var(--muted);text-align:center">Scegli se continuare con il 2° turno oppure salvare qui</p>
+        `,[
+            {text:'▶ Turno 2', cls:'btn-gold', fn:()=>{
+                TK.turn=2;TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));TK.activeCell={row:1,col:1};TK.volleyNotes={};
+                tkSave();
+                tkRenderScoring();
+            }},
+            {text:'💾 Salva solo T1', cls:'btn-outline', fn:async()=>{
+                s.frecceAggiuntive=parseInt(document.getElementById('tk-extra-t1')?.value)||0;
+                const t1=s.turn1?.summary||{score:0,X:0,Ten:0,Nine:0,fired:0};
+                const totShots=t1.fired||0;
+                try{
+                    await addDoc(sessioniCol(S.asd.id),{
+                        archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
+                        type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',
+                        distanza:s.distanza||'',tipoTarga:s.tipoTarga||'',formatoGara:s.formatoGara||'',
+                        tipoArco:s.tipoArco||'',
+                        totalScore:t1.score,totalX:t1.X||0,totalTen:t1.Ten||0,totalNine:t1.Nine||0,
+                        totalAverage:totShots>0?t1.score/totShots:0,
+                        turn1Score:t1.score,turn2Score:0,
+                        frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
+                        esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
+                        noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                        notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
+                        turn1:{summary:{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
+                               grid:s.turn1?.grid||[],volleyNotes:s.turn1?.volleyNotes||{}},
+                        timestamp:serverTimestamp(),createdAt:new Date().toISOString()
+                    });
+                    localStorage.removeItem('tk_d');
+                    TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
+                    await loadAtletaSessioni();
+                    showModal('✅ Salvato!',`Turno 1: ${t1.score} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
+                }catch(e){showModal('Errore','Salvataggio fallito: '+e.message,[{text:'OK'}]);}
+            }}
+        ]);
     }
 };
 
@@ -1792,31 +1895,60 @@ async function renderAtletaDati() {
     await loadAtletaSessioni();
 
     const totalScore = S.sessioni.reduce((s,x)=>s+(x.totalScore||0),0);
-    const totalFrecce= S.sessioni.reduce((s,x)=>s+(x.frecceAggiuntive||0),0);
-    const garaList = S.sessioni.filter(s=>s.type==='Gara');
-    const bestScore = garaList.length > 0 ? Math.max(...garaList.map(s=>s.totalScore||0)) : 0;
+    const totalFrecce= S.sessioni.reduce((s,x)=>s+(parseInt(x.frecceAggiuntive)||0),0);
+    const garaList = S.sessioni.filter(s=>s.type==='Gara'&&(s.totalScore||0)>0);
+    const allList = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
+    const bestScore = allList.length > 0 ? Math.max(...allList.map(s=>s.totalScore||0)) : 0;
+    const sessCount = S.sessioni.length;
+    const garaCount = garaList.length;
+    const allCount = S.sessioni.filter(s=>s.type==='Allenamento').length;
 
-    const sessList = S.sessioni.length === 0
+    const sessList = sessioniFiltrate.length === 0
         ? `<p style="text-align:center;color:var(--muted);padding:2rem">Nessuna sessione registrata.</p>`
-        : S.sessioni.map(s => `
-            <div class="session-card" onclick="showAtletaSessionDetail('${s.id}')" style="cursor:pointer">
+        : sessioniFiltrate.map(s => `
+            <div class=session-card" onclick="window.apriDettaglio('${s.id||s.docId||''}')" style="cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start">
                     <div>
-                        <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}</span>
+                        <span class="badge ${s.type==='Gara'?'badge-gold':s.trainingWithoutScore?'badge-blue':'badge-blue'}">${s.type||'Allenamento'}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</span>
                         <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.3rem">${fmtDate(s.data)}</div>
-                        <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''}</div>
+                        <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
                     </div>
-                    ${s.totalScore > 0 ? `<div style="text-align:right"><div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.72rem;color:var(--muted)">punti</div></div>` : `<div style="font-size:0.78rem;color:var(--muted)">Solo tecnico</div>`}
+                    ${s.totalScore > 0 ? `<div style="text-align:right"><div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.72rem;color:var(--muted)">${s.turn1Score?'T1:'+s.turn1Score+(s.turn2Score?' T2:'+s.turn2Score:''):''}</div></div>` : `<div style="font-size:0.78rem;color:var(--muted)">${s.trainingWithoutScore?'Tecnico':'Solo note'}</div>`}
                 </div>
             </div>
         `).join('');
 
+    // Filtro
+    const filtroTipo = window._filtroTipo || '';
+    const filtroAnno = window._filtroAnno || '';
+    let sessioniFiltrate = S.sessioni;
+    if (filtroTipo) sessioniFiltrate = sessioniFiltrate.filter(s => filtroTipo==='tecnico'?s.trainingWithoutScore:s.type===filtroTipo&&!s.trainingWithoutScore);
+    if (filtroAnno) sessioniFiltrate = sessioniFiltrate.filter(s => s.data && s.data.startsWith(filtroAnno));
+    const anni = [...new Set(S.sessioni.map(s=>s.data?.substring(0,4)).filter(Boolean))].sort().reverse();
+
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem">
-            <div class="stat-box"><div class="stat-num">${S.sessioni.length}</div><div class="stat-label">Sessioni</div></div>
-            <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce</div></div>
-            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best</div></div>
+        <div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <select class="inp" style="flex:1;min-width:100px" onchange="window._filtroTipo=this.value;renderAtletaDati()">
+                <option value="" ${!filtroTipo?'selected':''}>Tutti i tipi</option>
+                <option value="Allenamento" ${filtroTipo==='Allenamento'?'selected':''}>Allenamento</option>
+                <option value="Gara" ${filtroTipo==='Gara'?'selected':''}>Gara</option>
+                <option value="tecnico" ${filtroTipo==='tecnico'?'selected':''}>Tecnico 🎓</option>
+            </select>
+            <select class="inp" style="flex:1;min-width:80px" onchange="window._filtroAnno=this.value;renderAtletaDati()">
+                <option value="" ${!filtroAnno?'selected':''}>Tutti gli anni</option>
+                ${anni.map(a=>`<option value="${a}" ${filtroAnno===a?'selected':''}>${a}</option>`).join('')}
+            </select>
+            ${filtroTipo||filtroAnno?`<button class="btn btn-ghost btn-sm" onclick="window._filtroTipo='';window._filtroAnno='';renderAtletaDati()">✕</button>`:''}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1rem">
+            <div class="stat-box"><div class="stat-num">${sessCount}</div><div class="stat-label">Sessioni</div></div>
+            <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenim.</div></div>
+            <div class="stat-box"><div class="stat-num">${garaCount}</div><div class="stat-label">Gare</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;margin-bottom:1.25rem">
+            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best Score</div></div>
+            <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce Tot.</div></div>
         </div>
         <div class="gold-line"></div>
         <h3 style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">📋 Sessioni</h3>
@@ -1917,6 +2049,1108 @@ onAuthStateChanged(auth, async user => {
     const restored = await tryRestoreSession();
     if (!restored) window.setView('homeLogin');
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── HELPER: apri dettaglio sessione per ID ──────────────────────────────────
+window.apriDettaglio = (id) => {
+    const s = S.sessioni.find(x => (x.id||x.docId||'') === id);
+    if (s) window.setView('detailedSummary', { sessione: s });
+    else showModal('Errore', 'Sessione non trovata.', [{text:'OK'}]);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── DETTAGLIO SESSIONE ──────────────────────────────────────────────────────
+async function renderDettaglioSessione(params) {
+    const s = params?.sessione || S._detailSession;
+    if (!s) return window.setView('atletaDati');
+    S._detailSession = s;
+    setHeader(s.type === 'Gara' ? '🏆 Gara' : '🎯 Allenamento', fmtDate(s.data));
+
+    const isTec = !!s.trainingWithoutScore;
+    const isQS  = !!s.quickScore && !isTec;
+
+    function deserializeGrid(turn) {
+        if (!turn || !turn.grid) return [];
+        return turn.grid.map(r => Array.isArray(r) ? r : (() => { try { return JSON.parse(r); } catch(e) { return []; } })());
+    }
+    function calcVolley(row, cumTot) {
+        const v = row.filter(sc => sc !== '' && sc !== undefined);
+        let p = 0, vx = 0, vt = 0, vn = 0;
+        v.forEach(sc => { const n = sc==='X'?10:sc==='M'?0:parseInt(sc)||0; p+=n; if(sc==='X')vx++; else if(sc==='10')vt++; else if(n===9)vn++; });
+        return { scores: v, parz: p, tot: cumTot+p, x10:`${vx}-${vt}`, nine: vn };
+    }
+    function renderGrid(turn, titolo) {
+        if (!turn) return '';
+        const grid = deserializeGrid(turn);
+        const filled = grid.filter(r => r && r.some(sc => sc !== '' && sc !== undefined));
+        if (!filled.length) return '';
+        const notes = turn.volleyNotes || {};
+        let cum = 0;
+        const volleys = filled.map(r => { const v = calcVolley(r, cum); cum = v.tot; return v; });
+        const numCols = Math.max(...volleys.map(v => v.scores.length), 1);
+        let html = `<div style="margin-top:1rem"><div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">${titolo}</div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table class="score-tbl w-full border-collapse" style="min-width:300px"><thead><tr>
+            <th>Vol.</th>${Array(numCols).fill(0).map((_,i)=>`<th>${i+1}</th>`).join('')}
+            <th>Parz</th><th>Tot</th><th>X-10</th><th>9</th>
+        </tr></thead><tbody>`;
+        volleys.forEach((v, i) => {
+            const padded = [...v.scores]; while(padded.length < numCols) padded.push('');
+            const hasNote = notes[i+1];
+            html += `<tr style="background:${i%2===0?'var(--dark3)':'var(--dark2)'}">
+                <td style="color:var(--gold);font-weight:700">${i+1}${hasNote?' 📝':''}</td>
+                ${padded.map(sc=>`<td style="${sc==='X'||sc==='10'?'color:#fbbf24;font-weight:700':sc==='M'?'color:#ef4444':''}">${sc||''}</td>`).join('')}
+                <td style="font-weight:700">${v.parz}</td><td style="font-weight:700">${v.tot}</td>
+                <td style="color:var(--gold)">${v.x10}</td><td>${v.nine}</td>
+            </tr>`;
+            if (hasNote) html += `<tr><td colspan="${numCols+5}" style="font-size:0.75rem;color:#93c5fd;font-style:italic;padding:0.2rem 0.5rem">💬 ${notes[i+1]}</td></tr>`;
+        });
+        const sm = turn.summary || {};
+        html += `<tr style="background:var(--gold);color:#000;font-weight:900">
+            <td colspan="${1+numCols+1}" style="text-align:right;padding-right:0.4rem">Totale</td>
+            <td>${sm.score||0}</td><td>${sm.X||0}-${sm.Ten||0}</td><td>${sm.Nine||0}</td>
+        </tr></tbody></table></div></div>`;
+        return html;
+    }
+
+    const infoItem = (label, val) => val ? `<div><strong style="color:var(--gold)">${label}</strong> <span style="color:var(--text)">${val}</span></div>` : '';
+    const noteBlock = (emoji, color, label, text) => !text ? '' : `
+        <div class="form-section" style="border-left:4px solid ${color}">
+            <div style="font-weight:700;color:${color};margin-bottom:0.35rem">${emoji} ${label}</div>
+            <div style="color:var(--text);white-space:pre-wrap;font-size:0.88rem">${text}</div>
+        </div>`;
+
+    const hasTurn2 = s.turn2 && s.turn2.summary && (s.turn2.summary.score > 0 || s.turn2.summary.fired > 0);
+    const sid = s.id || s.docId || '';
+
+    render(`
+        <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaDati')" style="margin-bottom:1rem">← I Miei Dati</button>
+
+        <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap">
+            <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type}${isTec?' 🎓':isQS?' ⚡':''}</span>
+            <span style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700">${fmtDate(s.data)}</span>
+            <span style="font-size:0.78rem;color:var(--muted)">${s.luogo||''}</span>
+        </div>
+
+        ${!isTec&&s.totalScore>0 ? `
+        <div style="text-align:center;background:linear-gradient(135deg,var(--dark3),var(--dark2));border:2px solid var(--gold);border-radius:14px;padding:1.2rem;margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:3rem;font-weight:900;color:var(--gold-light)">${s.totalScore}</div>
+            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">PUNTEGGIO TOTALE</div>
+            ${(s.turn1Score||s.turn2Score) ? `<div style="font-size:0.85rem;color:var(--text)">T1: <strong>${s.turn1Score||0}</strong>${s.turn2Score?' · T2: <strong>'+s.turn2Score+'</strong>':''}</div>` : ''}
+            ${s.totalX!=null ? `<div style="font-size:0.82rem;color:var(--gold);margin-top:0.2rem">X: ${s.totalX} · 10: ${s.totalTen||0} · 9: ${s.totalNine||0}${s.totalAverage?' · Media: '+parseFloat(s.totalAverage).toFixed(2):''}</div>` : ''}
+        </div>` : ''}
+
+        <div class="form-section">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">ℹ️ Informazioni</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;font-size:0.84rem">
+                ${infoItem('📍 Luogo:', s.luogo)}
+                ${infoItem('🏠', s.tipoLuogo)}
+                ${infoItem('📏 Distanza:', s.distanza)}
+                ${infoItem('🎯 Targa:', s.tipoTarga)}
+                ${infoItem('📋 Formato:', s.formatoGara)}
+                ${infoItem('🏹 Arco:', s.tipoArco)}
+                ${s.frecceAggiuntive>0 ? infoItem('🪃 Frecce tirate:', s.frecceAggiuntive) : ''}
+                ${s.frecceProgrammate>0 ? infoItem('🪃 Programmate:', s.frecceProgrammate) : ''}
+            </div>
+        </div>
+
+        ${noteBlock('🎯','var(--gold)','Esercizi Consigliati', s.esercizConsigliati)}
+        ${noteBlock('✅','#3d9970','Esercizi Svolti', s.esercizSvolti||s.trainingContent)}
+        ${noteBlock('🩺','#2980b9','Note e Condizioni Fisiche', s.noteCondizioniFisiche)}
+        ${noteBlock('📝','#e5a400','Note Pre-Gara', s.notePreGara)}
+        ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
+        ${s.note && !s.noteCondizioniFisiche ? noteBlock('📝','var(--muted)','Note', s.note) : ''}
+
+        ${!isTec && !isQS && (s.turn1||s.turn2) ? `
+        <div class="gold-line"></div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Segnapunti Dettagliato</div>
+        ${renderGrid(s.turn1, 'Primo Turno')}
+        ${hasTurn2 ? renderGrid(s.turn2, 'Secondo Turno') : ''}
+        ` : ''}
+
+        <div style="margin-top:1.5rem">
+            <button class="btn btn-danger btn-full" onclick="window.eliminaSessione('${sid}','${fmtDate(s.data)}')">🗑️ Elimina Sessione</button>
+        </div>
+    `);
+}
+
+window.eliminaSessione = async (sessionId, dataStr) => {
+    showModal('🗑️ Elimina Sessione', `Eliminare la sessione del <strong>${dataStr}</strong>?<br><br>⚠️ Azione irreversibile.`, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'Elimina', cls:'btn-danger', fn: async () => {
+            try {
+                await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni/${sessionId}`));
+                S.sessioni = S.sessioni.filter(x => (x.id||x.docId||'') !== sessionId);
+                showModal('✅ Eliminata!', '', [{text:'OK', cls:'btn-gold', fn:()=>window.setView('atletaDati')}]);
+            } catch(e) { showModal('Errore', e.message, [{text:'OK'}]); }
+        }}
+    ]);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── CALENDARIO ATLETA ───────────────────────────────────────────────────────
+async function renderAtletaCalendario() {
+    setHeader('📅 Calendario', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+    const now = new Date();
+    window._calState = { m: now.getMonth(), y: now.getFullYear() };
+    render(`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <button class="btn btn-ghost btn-sm" onclick="window._calNav(-1)">◀ Prec.</button>
+            <span id="cal-title" style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem"></span>
+            <button class="btn btn-ghost btn-sm" onclick="window._calNav(1)">Succ. ▶</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px">
+            ${['Dom','Lun','Mar','Mer','Gio','Ven','Sab'].map(d=>`<div style="text-align:center;font-size:0.7rem;color:var(--gold);font-weight:700;padding:3px">${d}</div>`).join('')}
+        </div>
+        <div id="cal-grid"></div>
+        <div id="cal-stats" style="margin-top:1rem"></div>
+        <div id="cal-sessions" style="margin-top:0.75rem"></div>
+    `);
+    window._calRender();
+}
+window._calNav = (d) => {
+    window._calState.m += d;
+    if (window._calState.m > 11) { window._calState.m = 0; window._calState.y++; }
+    if (window._calState.m < 0)  { window._calState.m = 11; window._calState.y--; }
+    window._calRender();
+};
+const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+window._calRender = () => {
+    const { m, y } = window._calState;
+    const titleEl = document.getElementById('cal-title');
+    if (titleEl) titleEl.textContent = `${MESI[m]} ${y}`;
+    const firstDay = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const byDay = {};
+    S.sessioni.forEach(s => {
+        const dd = new Date(s.data + 'T00:00');
+        if (dd.getMonth() === m && dd.getFullYear() === y) {
+            const day = dd.getDate();
+            if (!byDay[day]) byDay[day] = [];
+            byDay[day].push(s);
+        }
+    });
+    let grid = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">`;
+    for (let i = 0; i < firstDay; i++) grid += `<div style="min-height:56px;background:var(--dark3);border-radius:6px;opacity:0.3"></div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const isToday = dateStr === todayStr;
+        const sessions = byDay[d] || [];
+        const dots = sessions.slice(0,3).map(ss => {
+            const col = ss.type==='Gara'?'#f97316':ss.trainingWithoutScore?'#a78bfa':'#3b82f6';
+            return `<div style="height:4px;border-radius:2px;background:${col};margin-bottom:1px"></div>`;
+        }).join('');
+        const frecce = sessions.reduce((sum,ss) => sum+(parseInt(ss.frecceAggiuntive)||0), 0);
+        grid += `<div onclick="${sessions.length>0?`window._calDay('${dateStr}')`:''}" style="min-height:56px;background:${isToday?'rgba(201,162,39,0.15)':'var(--dark3)'};border:${isToday?'2px solid var(--gold)':'1px solid var(--border)'};border-radius:6px;padding:4px;cursor:${sessions.length>0?'pointer':'default'};transition:border-color 0.15s" ${sessions.length>0?'onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'var(--border)\'"':''}>
+            <div style="font-size:0.78rem;font-weight:700;color:${isToday?'var(--gold)':'var(--text)'}">${d}</div>
+            ${dots}${frecce>0?`<div style="font-size:0.62rem;color:#4ade80">${frecce}🪃</div>`:''}
+        </div>`;
+    }
+    grid += `</div>`;
+    const gridEl = document.getElementById('cal-grid');
+    if (gridEl) gridEl.innerHTML = grid;
+    const mSess = S.sessioni.filter(ss => { const dd=new Date(ss.data+'T00:00'); return dd.getMonth()===m&&dd.getFullYear()===y; });
+    const gare = mSess.filter(ss=>ss.type==='Gara');
+    const bestScore = gare.length > 0 ? Math.max(...gare.map(ss=>ss.totalScore||0)) : 0;
+    const totFrecce = mSess.reduce((sum,ss)=>sum+(parseInt(ss.frecceAggiuntive)||0),0);
+    const statsEl = document.getElementById('cal-stats');
+    if (statsEl) statsEl.innerHTML = mSess.length > 0 ? `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem">
+            <div class="stat-box"><div class="stat-num">${mSess.length}</div><div class="stat-label">Sessioni</div></div>
+            <div class="stat-box"><div class="stat-num">${gare.length}</div><div class="stat-label">Gare</div></div>
+            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best</div></div>
+            <div class="stat-box"><div class="stat-num">${totFrecce}</div><div class="stat-label">Frecce</div></div>
+        </div>` : `<p style="text-align:center;color:var(--muted);font-size:0.85rem">Nessuna sessione in ${MESI[m]} ${y}</p>`;
+    const sessEl = document.getElementById('cal-sessions');
+    if (sessEl && mSess.length > 0) {
+        const sorted = [...mSess].sort((a,b)=>b.data.localeCompare(a.data));
+        sessEl.innerHTML = `<div class="gold-line"></div>
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Sessioni di ${MESI[m]}</div>
+            ${sorted.map(ss=>`<div class="session-card" onclick="window.apriDettaglio('${ss.id||ss.docId||''}')" style="cursor:pointer;margin-bottom:0.5rem">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span class="badge ${ss.type==='Gara'?'badge-gold':'badge-blue'}" style="font-size:0.68rem">${ss.type}${ss.trainingWithoutScore?' 🎓':ss.quickScore?' ⚡':''}</span>
+                        <span style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-left:0.4rem">${fmtDate(ss.data)}</span>
+                        <div style="font-size:0.73rem;color:var(--muted)">${ss.luogo||''} ${ss.distanza?'· '+ss.distanza:''}</div>
+                    </div>
+                    ${ss.totalScore>0?`<div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold-light)">${ss.totalScore}</div>`:
+                    ss.trainingWithoutScore?`<div style="font-size:0.73rem;color:var(--muted)">Tecnico</div>`:''}
+                </div>
+            </div>`).join('')}`;
+    } else if (sessEl) sessEl.innerHTML = '';
+};
+window._calDay = (dateStr) => {
+    const daySess = S.sessioni.filter(ss => ss.data === dateStr);
+    if (!daySess.length) return;
+    const dd = new Date(dateStr+'T00:00');
+    showModal(`📅 ${dd.getDate()} ${MESI[dd.getMonth()]} ${dd.getFullYear()}`,
+        `<div style="display:flex;flex-direction:column;gap:0.5rem">
+        ${daySess.map(ss=>`<div onclick="window.apriDettaglio('${ss.id||ss.docId||''}');closeModal()" style="background:var(--dark3);border:1px solid var(--border);border-radius:8px;padding:0.6rem;cursor:pointer">
+            <div style="font-weight:700;color:var(--text)">${ss.type}${ss.trainingWithoutScore?' 🎓':ss.quickScore?' ⚡':''}</div>
+            <div style="font-size:0.8rem;color:var(--gold)">${ss.trainingWithoutScore?'Tecnico':ss.totalScore+' pt'} · ${ss.distanza||'-'} · ${ss.tipoTarga||'-'}</div>
+            <div style="font-size:0.73rem;color:var(--muted)">${ss.luogo||''}</div>
+        </div>`).join('')}
+        </div>`, [{text:'Chiudi', cls:'btn-ghost'}]);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── MATERIALE ATLETA ────────────────────────────────────────────────────────
+function getEquipmentKey() { return `archery_equip_${S.atleta?.id||'default'}`; }
+function getEquipment() { try { return JSON.parse(localStorage.getItem(getEquipmentKey()))||{}; } catch(e) { return {}; } }
+function arrowCardHtml(a,i,isActive) {
+    return `<div onclick="window.eqSelectArrow(${i})" style="background:var(--dark3);border:2px solid ${isActive?'var(--gold)':'var(--border)'};border-radius:10px;padding:0.75rem;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+            <span style="font-weight:700;color:var(--text);font-size:0.88rem">${a.nome||'Freccia '+(i+1)}</span>
+            <div style="display:flex;gap:4px;align-items:center">
+                ${isActive?`<span style="font-size:0.62rem;background:var(--gold);color:#000;padding:1px 6px;border-radius:10px;font-weight:700">Attiva</span>`:''}
+                <button onclick="event.stopPropagation();window.eqDeleteArrow(${i})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0">✕</button>
+            </div>
+        </div>
+        <div style="font-size:0.73rem;color:var(--gold)">${a.modello||'-'} | Spine: ${a.spine||'-'}</div>
+        <div style="font-size:0.7rem;color:var(--muted)">Punta: ${a.pesoPunta||'-'}gr · Ø${a.diametro||'-'}</div>
+    </div>`;
+}
+function arrowDetailHtml(a,i) {
+    if (!a) return '';
+    return `<div id="arrow-detail-${i}" style="background:var(--dark3);border:1px solid var(--gold);border-radius:10px;padding:1rem;margin-top:0.75rem">
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">✏️ ${a.nome||'Freccia '+(i+1)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
+            <div><label class="form-label">Nome</label><input class="inp" id="arr-nome-${i}" value="${a.nome||''}" placeholder="Es: Gara"></div>
+            <div><label class="form-label">Modello</label><input class="inp" id="arr-modello-${i}" value="${a.modello||''}" placeholder="Easton X10"></div>
+            <div><label class="form-label">Spine</label><input class="inp" id="arr-spine-${i}" value="${a.spine||''}" placeholder="Es: 500"></div>
+            <div><label class="form-label">Lunghezza (")</label><input class="inp" id="arr-lunghezza-${i}" value="${a.lunghezza||''}" placeholder='29"'></div>
+            <div><label class="form-label">Diametro (mm)</label><input class="inp" id="arr-diametro-${i}" value="${a.diametro||''}" placeholder="5.5"></div>
+            <div><label class="form-label">Punta (grani)</label><input class="inp" type="number" id="arr-pesoPunta-${i}" value="${a.pesoPunta||''}" placeholder="100"></div>
+            <div><label class="form-label">Cocche</label><input class="inp" id="arr-cocca-${i}" value="${a.cocca||''}"></div>
+            <div><label class="form-label">Note</label><input class="inp" id="arr-note-${i}" value="${a.note||''}"></div>
+        </div>
+        <button class="btn btn-gold btn-full" style="margin-top:0.6rem" onclick="window.eqSaveArrow(${i})">💾 Salva Freccia</button>
+    </div>`;
+}
+function renderAtletaMateriale() {
+    setHeader('🏹 Materiale', S.atleta?.nome||'');
+    const eq = getEquipment();
+    const arrows = eq.arrows || [];
+    const activeArrow = eq.activeArrowIdx || 0;
+    const bowTypes = ['Ricurvo','Compound','Longbow','Barebow','Altro'];
+    render(`
+        <div class="card card-gold" style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🏹 Arco</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
+                <div><label class="form-label">Tipo Arco</label>
+                    <select class="inp" id="eq-tipoArco">${bowTypes.map(t=>`<option ${eq.tipoArco===t?'selected':''}>${t}</option>`).join('')}</select></div>
+                <div><label class="form-label">Riser</label><input class="inp" id="eq-braccetto" value="${eq.braccetto||''}" placeholder="Hoyt Xceed"></div>
+                <div><label class="form-label">Flettenti</label><input class="inp" id="eq-marcaArco" value="${eq.marcaArco||''}" placeholder="Uukha VX+"></div>
+                <div><label class="form-label">Misura</label><input class="inp" id="eq-misuraArco" value="${eq.misuraArco||''}" placeholder='25"'></div>
+                <div><label class="form-label">Libbre (lb)</label><input class="inp" type="number" id="eq-peso" value="${eq.peso||''}" placeholder="40"></div>
+                <div><label class="form-label">Allungo (poll.)</label><input class="inp" type="number" id="eq-allungo" value="${eq.allungo||''}" placeholder="28.5" step="0.5"></div>
+            </div>
+        </div>
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold)">🪃 Frecce</div>
+                <button class="btn btn-gold btn-sm" onclick="window.eqAddArrow()">+ Aggiungi</button>
+            </div>
+            ${arrows.length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:1rem">Nessuna freccia configurata.</p>`:''}
+            <div id="arrows-list" style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
+                ${arrows.map((a,i)=>arrowCardHtml(a,i,i===activeArrow)).join('')}
+            </div>
+            <div id="arrow-detail-container">${arrows.length>0?arrowDetailHtml(arrows[activeArrow],activeArrow):''}</div>
+        </div>
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🔭 Mirino & Accessori</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
+                <div><label class="form-label">Mirino</label><input class="inp" id="eq-mirino" value="${eq.mirino||''}" placeholder="Marca/modello"></div>
+                <div><label class="form-label">Stabilizzatori</label><input class="inp" id="eq-stabilizzatori" value="${eq.stabilizzatori||''}" placeholder="Es: Cartel"></div>
+                <div><label class="form-label">Corda</label><input class="inp" id="eq-corda" value="${eq.corda||''}" placeholder="Marca/materiale"></div>
+                <div><label class="form-label">Peso Totale (g)</label><input class="inp" type="number" id="eq-pesoTotale" value="${eq.pesoTotale||''}" placeholder="Con accessori"></div>
+            </div>
+            <div style="margin-top:0.45rem"><label class="form-label">Note Tecniche / Setup</label>
+                <textarea class="inp" id="eq-note" rows="3" placeholder="Regolazioni, impostazioni...">${eq.note||''}</textarea></div>
+        </div>
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold);margin-bottom:0.6rem">⚙️ Impostazioni Tecniche</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.45rem">
+                <div><label class="form-label">Tiller (mm)</label><input class="inp" id="eq-tiller" value="${eq.tiller||''}" placeholder="+2"></div>
+                <div><label class="form-label">Brace Height</label><input class="inp" id="eq-braceHeight" value="${eq.braceHeight||''}" placeholder="230"></div>
+                <div><label class="form-label">Bottone</label><input class="inp" id="eq-plung" value="${eq.plung||''}" placeholder="0.5"></div>
+            </div>
+            <div style="margin-top:0.6rem">
+                <label class="form-label">📏 Scala Mirino per Distanza (mm)</label>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.35rem;margin-top:0.3rem">
+                    ${['18','25','40','50','60','70'].map(d=>`<div>
+                        <label class="form-label">${d}m</label>
+                        <input class="inp" id="eq-mirino-${d}" value="${(eq.scalaMirino&&eq.scalaMirino[d])||''}" placeholder="mm" style="text-align:center">
+                    </div>`).join('')}
+                </div>
+            </div>
+            <div style="margin-top:0.5rem"><label class="form-label">Ultimo aggiornamento setup</label>
+                <input class="inp" type="date" id="eq-dataSetup" value="${eq.dataSetup||''}"></div>
+        </div>
+        <button class="btn btn-gold btn-full btn-lg" onclick="window.eqSave()">💾 Salva Configurazione</button>
+    `);
+}
+window.eqSelectArrow = (idx) => {
+    const eq=getEquipment(); eq.activeArrowIdx=idx; localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const al=document.getElementById('arrows-list'); if(al) al.innerHTML=eq.arrows.map((a,i)=>arrowCardHtml(a,i,i===idx)).join('');
+    const dc=document.getElementById('arrow-detail-container'); if(dc) dc.innerHTML=arrowDetailHtml(eq.arrows[idx],idx);
+};
+window.eqAddArrow = () => {
+    const eq=getEquipment(); if(!eq.arrows)eq.arrows=[];
+    eq.arrows.push({nome:'',modello:'',spine:'',lunghezza:'',diametro:'',pesoPunta:'',cocca:'',note:''});
+    const ni=eq.arrows.length-1; eq.activeArrowIdx=ni;
+    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const al=document.getElementById('arrows-list'); if(al) al.innerHTML=eq.arrows.map((a,i)=>arrowCardHtml(a,i,i===ni)).join('');
+    const dc=document.getElementById('arrow-detail-container'); if(dc) dc.innerHTML=arrowDetailHtml(eq.arrows[ni],ni);
+};
+window.eqSaveArrow = (idx) => {
+    const eq=getEquipment(); if(!eq.arrows)eq.arrows=[];
+    eq.arrows[idx]={
+        nome:document.getElementById(`arr-nome-${idx}`)?.value||'',
+        modello:document.getElementById(`arr-modello-${idx}`)?.value||'',
+        spine:document.getElementById(`arr-spine-${idx}`)?.value||'',
+        lunghezza:document.getElementById(`arr-lunghezza-${idx}`)?.value||'',
+        diametro:document.getElementById(`arr-diametro-${idx}`)?.value||'',
+        pesoPunta:document.getElementById(`arr-pesoPunta-${idx}`)?.value||'',
+        cocca:document.getElementById(`arr-cocca-${idx}`)?.value||'',
+        note:document.getElementById(`arr-note-${idx}`)?.value||'',
+    };
+    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const al=document.getElementById('arrows-list'); if(al) al.innerHTML=eq.arrows.map((a,i)=>arrowCardHtml(a,i,i===idx)).join('');
+    showModal('✅ Salvato!',`Freccia "${eq.arrows[idx].nome||'Tipologia '+(idx+1)}" salvata.`,[{text:'OK'}]);
+};
+window.eqDeleteArrow = (idx) => {
+    showModal('Elimina Freccia','Sei sicuro di voler eliminare questa tipologia?',[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Elimina',cls:'btn-danger',fn:()=>{
+            const eq=getEquipment(); eq.arrows.splice(idx,1);
+            eq.activeArrowIdx=Math.max(0,(eq.activeArrowIdx||0)-(idx<=(eq.activeArrowIdx||0)?1:0));
+            localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+            const arrows=eq.arrows; const act=eq.activeArrowIdx;
+            const al=document.getElementById('arrows-list'); if(al) al.innerHTML=arrows.map((a,i)=>arrowCardHtml(a,i,i===act)).join('');
+            const dc=document.getElementById('arrow-detail-container'); if(dc) dc.innerHTML=arrows.length>0?arrowDetailHtml(arrows[act]||arrows[0],act):'';
+        }}
+    ]);
+};
+window.eqSave = () => {
+    const existing=getEquipment();
+    const scalaMirino={};
+    ['18','25','40','50','60','70'].forEach(d=>{scalaMirino[d]=document.getElementById(`eq-mirino-${d}`)?.value||'';});
+    const eq={...existing,
+        tipoArco:document.getElementById('eq-tipoArco')?.value||'',
+        braccetto:document.getElementById('eq-braccetto')?.value||'',
+        marcaArco:document.getElementById('eq-marcaArco')?.value||'',
+        misuraArco:document.getElementById('eq-misuraArco')?.value||'',
+        peso:document.getElementById('eq-peso')?.value||'',
+        allungo:document.getElementById('eq-allungo')?.value||'',
+        mirino:document.getElementById('eq-mirino')?.value||'',
+        stabilizzatori:document.getElementById('eq-stabilizzatori')?.value||'',
+        corda:document.getElementById('eq-corda')?.value||'',
+        pesoTotale:document.getElementById('eq-pesoTotale')?.value||'',
+        note:document.getElementById('eq-note')?.value||'',
+        tiller:document.getElementById('eq-tiller')?.value||'',
+        braceHeight:document.getElementById('eq-braceHeight')?.value||'',
+        plung:document.getElementById('eq-plung')?.value||'',
+        dataSetup:document.getElementById('eq-dataSetup')?.value||'',
+        scalaMirino, updatedAt: new Date().toISOString().split('T')[0]
+    };
+    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    showModal('✅ Salvato!','Configurazione materiale salvata!',[{text:'OK'}]);
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── HELPER: conteggio frecce per sessione ───────────────────────────────────
+function countArrowsForSession(s) {
+    if (s.trainingWithoutScore) return parseInt(s.frecceAggiuntive)||0;
+    if (s.quickScore) {
+        const fm={'30 frecce (3x10)':30,'36 frecce (6x6)':36,'72 frecce (6x12)':72};
+        return (fm[s.formatoGara]||30) + (parseInt(s.frecceAggiuntive)||0);
+    }
+    const t1=(s.turn1?.summary?.fired)||0, t2=(s.turn2?.summary?.fired)||0;
+    return t1+t2+(parseInt(s.frecceAggiuntive)||0);
+}
+function fmtDuration(min) {
+    if (!min) return '—';
+    const h=Math.floor(min/60), m=Math.round(min%60);
+    return h>0?`${h}h ${m}min`:`${m} min`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── OBIETTIVI ───────────────────────────────────────────────────────────────
+const goalsCol = () => collection(db, `${APP_NS}/data/asd/${S.asd?.id}/atleti/${S.atleta?.id}/goals`);
+
+async function loadObiettivi() {
+    try {
+        const snap = await getDocs(goalsCol());
+        return snap.docs.map(d => ({id:d.id,...d.data()}));
+    } catch(e) { return []; }
+}
+
+function calcGoalProgress(goal, sessioni) {
+    const now = new Date();
+    let start, end;
+    if (goal.period === 'weekly') {
+        const dow = now.getDay();
+        start = new Date(now); start.setDate(now.getDate() - (dow===0?6:dow-1)); start.setHours(0,0,0,0);
+        end = new Date(start); end.setDate(start.getDate()+6); end.setHours(23,59,59,999);
+    } else {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth()+1, 0, 23,59,59,999);
+    }
+    const ss = start.toISOString().split('T')[0], se = end.toISOString().split('T')[0];
+    const rel = sessioni.filter(s => s.data >= ss && s.data <= se);
+    let current = 0;
+    if (goal.type==='score') {
+        const match = rel.filter(s=>s.distanza===goal.distanza&&s.tipoTarga===goal.tipoTarga&&!s.trainingWithoutScore);
+        current = match.length>0?Math.max(...match.map(s=>s.totalScore||0)):0;
+    } else if (goal.type==='arrows') {
+        current = rel.reduce((sum,s)=>sum+countArrowsForSession(s),0);
+    } else if (goal.type==='sessions') {
+        current = rel.length;
+    } else if (goal.type==='training') {
+        current = rel.filter(s=>s.type==='Allenamento').length;
+    }
+    return {current, target:goal.targetValue};
+}
+
+async function renderAtletaObiettivi() {
+    setHeader('🏅 Obiettivi', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+    const goals = await loadObiettivi();
+
+    const goalCard = (g) => {
+        const prog = calcGoalProgress(g, S.sessioni);
+        const pct = Math.min(100, Math.round((prog.current/prog.target)*100));
+        const done = g.completed;
+        return `<div class="card" style="margin-bottom:0.75rem;border-color:${done?'#3d9970':'var(--border)'}">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem">
+                <div style="flex:1">
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem;color:${done?'#3d9970':'var(--text)'};${done?'text-decoration:line-through':''}">${g.title}</div>
+                    ${g.description?`<div style="font-size:0.78rem;color:var(--muted)">${g.description}</div>`:''}
+                </div>
+                <div style="display:flex;gap:4px;align-items:center">
+                    <span style="font-size:0.68rem;background:${done?'rgba(61,153,112,0.2)':'rgba(201,162,39,0.15)'};color:${done?'#5dba94':'var(--gold)'};border:1px solid ${done?'rgba(61,153,112,0.3)':'rgba(201,162,39,0.3)'};padding:2px 6px;border-radius:10px">${g.period==='weekly'?'Sett.':'Mens.'}</span>
+                    ${!done?`<button onclick="window.deleteObiettivo('${g.id}')" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:1rem">🗑️</button>`:''}
+                </div>
+            </div>
+            ${g.type==='score'?`<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.35rem">📏 ${g.distanza} | 🎯 ${g.tipoTarga}</div>`:''}
+            <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:0.3rem">
+                <span style="color:var(--muted)">${prog.current} / ${prog.target} ${g.type==='arrows'?'frecce':g.type==='score'?'pt':'sessioni'}</span>
+                <span style="color:${done?'#5dba94':'var(--gold)'};font-weight:700">${pct}%</span>
+            </div>
+            <div style="background:var(--dark);border-radius:8px;overflow:hidden;height:8px">
+                <div style="background:${done?'#3d9970':'var(--gold)'};height:100%;width:${pct}%;transition:width 0.3s;border-radius:8px"></div>
+            </div>
+            ${!done&&pct>=100?`<button class="btn btn-success btn-sm btn-full" style="margin-top:0.5rem" onclick="window.completeObiettivo('${g.id}')">✅ Segna come Completato</button>`:''}
+            ${done&&g.completedAt?`<div style="font-size:0.72rem;color:#5dba94;text-align:center;margin-top:0.35rem">Completato il ${fmtDate(g.completedAt)}</div>`:''}
+        </div>`;
+    };
+
+    render(`
+        <button class="btn btn-gold btn-full" style="margin-bottom:1rem" onclick="window.newObiettivo()">➕ Nuovo Obiettivo</button>
+        ${goals.length===0?`<p style="text-align:center;color:var(--muted);padding:2rem">Nessun obiettivo ancora. Creane uno!</p>`:goals.map(goalCard).join('')}
+    `);
+}
+
+window.newObiettivo = () => {
+    showModal('🏅 Nuovo Obiettivo', `
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
+            <div><label class="form-label">Titolo *</label><input class="inp" id="ob-title" placeholder="Es: Raggiungere 540/600"></div>
+            <div><label class="form-label">Descrizione</label><textarea class="inp" id="ob-desc" rows="2" placeholder="Dettagli (opzionale)"></textarea></div>
+            <div><label class="form-label">Tipo Obiettivo *</label>
+                <select class="inp" id="ob-type" onchange="window.toggleObFields()">
+                    <option value="">Seleziona tipo</option>
+                    <option value="score">🎯 Punteggio Target</option>
+                    <option value="sessions">📅 Numero Sessioni</option>
+                    <option value="training">🎓 Allenamenti</option>
+                    <option value="arrows">🪃 Frecce da Tirare</option>
+                </select>
+            </div>
+            <div id="ob-score-fields" style="display:none;display:flex;flex-direction:column;gap:0.4rem">
+                <div><label class="form-label">Distanza</label>
+                    <select class="inp" id="ob-dist"><option value="">Seleziona</option>${TK_DIST.map(d=>`<option>${d}</option>`).join('')}</select></div>
+                <div><label class="form-label">Tipo Targa</label>
+                    <select class="inp" id="ob-targa"><option value="">Seleziona</option>${TK_TARGA.map(t=>`<option>${t}</option>`).join('')}</select></div>
+            </div>
+            <div><label class="form-label">Valore Target *</label><input class="inp" type="number" id="ob-target" min="1" placeholder="Es: 540"></div>
+            <div><label class="form-label">Periodo *</label>
+                <select class="inp" id="ob-period">
+                    <option value="">Seleziona periodo</option>
+                    <option value="weekly">📅 Settimanale</option>
+                    <option value="monthly">📆 Mensile</option>
+                </select>
+            </div>
+        </div>
+    `, [{text:'Annulla',cls:'btn-ghost'},{text:'Crea',cls:'btn-gold',fn:window.saveObiettivo}]);
+    // hide score fields initially
+    const sf = document.getElementById('ob-score-fields');
+    if (sf) sf.style.display = 'none';
+};
+
+window.toggleObFields = () => {
+    const t = document.getElementById('ob-type')?.value;
+    const sf = document.getElementById('ob-score-fields');
+    if (sf) sf.style.display = t==='score'?'flex':'none';
+};
+
+window.saveObiettivo = async () => {
+    const title = document.getElementById('ob-title')?.value.trim();
+    const type = document.getElementById('ob-type')?.value;
+    const target = parseInt(document.getElementById('ob-target')?.value)||0;
+    const period = document.getElementById('ob-period')?.value;
+    if (!title||!type||!target||!period) return showModal('Errore','Compila tutti i campi obbligatori.',[{text:'OK'}]);
+    const goal = {title,description:document.getElementById('ob-desc')?.value.trim()||'',type,targetValue:target,period,completed:false,createdAt:new Date().toISOString()};
+    if (type==='score') {
+        const dist=document.getElementById('ob-dist')?.value, targa=document.getElementById('ob-targa')?.value;
+        if (!dist||!targa) return showModal('Errore','Seleziona distanza e targa.',[{text:'OK'}]);
+        goal.distanza=dist; goal.tipoTarga=targa;
+    }
+    await addDoc(goalsCol(), goal);
+    showModal('✅ Creato!','Obiettivo aggiunto.',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaObiettivi')}]);
+};
+
+window.completeObiettivo = async (id) => {
+    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}/atleti/${S.atleta.id}/goals/${id}`),{completed:true,completedAt:new Date().toISOString().split('T')[0]});
+    showModal('🎉 Complimenti!','Obiettivo completato!',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaObiettivi')}]);
+};
+
+window.deleteObiettivo = async (id) => {
+    showModal('🗑️ Elimina Obiettivo','Sei sicuro?',[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Elimina',cls:'btn-danger',fn:async()=>{
+            await deleteDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}/atleti/${S.atleta.id}/goals/${id}`));
+            window.setView('atletaObiettivi');
+        }}
+    ]);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── CONFRONTA SESSIONI ──────────────────────────────────────────────────────
+window._selSess = [];
+async function renderConfronta() {
+    setHeader('⚖️ Confronta Sessioni', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+    window._selSess = [];
+    const valid = S.sessioni.filter(s => !s.trainingWithoutScore);
+
+    render(`
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Seleziona 2 o 3 sessioni da confrontare (esclusi allenamenti tecnici)</p>
+        ${valid.length < 2 ? `<div class="card"><p style="text-align:center;color:var(--muted);padding:1rem">Hai bisogno di almeno 2 sessioni con punteggio.</p></div>` : `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">Seleziona sessioni (max 3)</div>
+            <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:0.4rem">
+                ${valid.map(s=>`<label style="display:flex;align-items:center;gap:0.6rem;background:var(--dark3);border:1px solid var(--border);border-radius:8px;padding:0.5rem;cursor:pointer">
+                    <input type="checkbox" id="cmp-${s.id||s.docId}" value="${s.id||s.docId}" onchange="window.toggleCmp(this)" style="width:18px;height:18px;flex-shrink:0">
+                    <div>
+                        <div style="font-weight:700;color:var(--text);font-size:0.88rem">${fmtDate(s.data)} — ${s.type}${s.quickScore?' ⚡':''}</div>
+                        <div style="font-size:0.75rem;color:var(--gold)">${s.distanza||'-'} | ${s.tipoTarga||'-'} | Tot: ${s.totalScore||0}</div>
+                    </div>
+                </label>`).join('')}
+            </div>
+        </div>
+        <div id="cmp-preview" style="margin-bottom:0.75rem"></div>
+        <button class="btn btn-gold btn-full" id="cmp-btn" disabled onclick="window.eseguiConfronto()">📊 Confronta</button>
+        <div id="cmp-results" style="margin-top:1rem"></div>`}
+    `);
+}
+
+window.toggleCmp = (cb) => {
+    const id = cb.value;
+    if (cb.checked) {
+        if (window._selSess.length >= 3) {
+            cb.checked = false;
+            return showModal('Limite','Massimo 3 sessioni.',[{text:'OK'}]);
+        }
+        window._selSess.push(id);
+    } else {
+        window._selSess = window._selSess.filter(x=>x!==id);
+    }
+    const btn = document.getElementById('cmp-btn');
+    if (btn) btn.disabled = window._selSess.length < 2;
+    const prev = document.getElementById('cmp-preview');
+    if (prev) {
+        const sel = window._selSess.map(id=>S.sessioni.find(s=>(s.id||s.docId)===id)).filter(Boolean);
+        prev.innerHTML = sel.length>0?`<div class="card card-gold" style="font-size:0.82rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.35rem">Selezionate (${sel.length}/3)</div>
+            ${sel.map(s=>`<div style="display:flex;justify-content:space-between;padding:0.2rem 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text)">${fmtDate(s.data)} — ${s.type}</span>
+                <span style="color:var(--gold);font-weight:700">${s.totalScore||0} pt</span>
+            </div>`).join('')}
+        </div>`:'';
+    }
+};
+
+window.eseguiConfronto = () => {
+    const sel = window._selSess.map(id=>S.sessioni.find(s=>(s.id||s.docId)===id)).filter(Boolean);
+    if (sel.length<2) return;
+    const cols = ['#3b82f6','#22c55e','#a855f7'];
+    const maxS=Math.max(...sel.map(s=>s.totalScore||0));
+    const maxX=Math.max(...sel.map(s=>s.totalX||0));
+    const maxAvg=Math.max(...sel.map(s=>s.totalAverage||0));
+    const insights = [];
+    const best=sel.reduce((mx,s)=>(s.totalScore||0)>(mx.totalScore||0)?s:mx);
+    insights.push(`✅ <strong>Miglior punteggio:</strong> ${fmtDate(best.data)} con ${best.totalScore} pt`);
+    const avg=sel.reduce((s,x)=>s+(x.totalScore||0),0)/sel.length;
+    const scores=sel.map(s=>s.totalScore||0);
+    const std=Math.sqrt(scores.reduce((s,v)=>s+Math.pow(v-avg,2),0)/scores.length);
+    insights.push(`📊 <strong>Media:</strong> ${avg.toFixed(1)} pt · Dev. std: ${std.toFixed(1)} (${std<10?'Molto costante':std<20?'Buona costanza':'Variabile'})`);
+    insights.push(`⚖️ <strong>Differenza max-min:</strong> ${Math.max(...scores)-Math.min(...scores)} pt`);
+
+    const res = document.getElementById('cmp-results');
+    if (!res) return;
+    res.innerHTML = `<div class="card card-gold" style="margin-top:0.5rem">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:1.1rem;font-weight:700;color:var(--gold);margin-bottom:1rem;text-align:center">📊 Risultati Confronto</div>
+        
+        <div style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">Punteggi Totali</div>
+            ${sel.map((s,i)=>{const pct=Math.round((s.totalScore||0)/maxS*100);return `
+            <div style="margin-bottom:0.4rem">
+                <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:2px">
+                    <span style="color:var(--text)">${fmtDate(s.data)}${s.quickScore?' ⚡':''}</span>
+                    <span style="color:${(s.totalScore||0)===maxS?'#22c55e':'var(--text)'};font-weight:700">${s.totalScore||0}</span>
+                </div>
+                <div style="background:var(--dark);border-radius:6px;overflow:hidden;height:20px">
+                    <div style="background:${cols[i]};height:100%;width:${pct}%;display:flex;align-items:center;justify-content:flex-end;padding-right:4px">
+                        <span style="font-size:0.68rem;color:#fff;font-weight:700">${pct}%</span>
+                    </div>
+                </div>
+            </div>`;}).join('')}
+        </div>
+
+        <div style="overflow-x:auto;margin-bottom:1rem">
+            <table style="width:100%;border-collapse:collapse;font-size:0.8rem">
+                <thead><tr style="border-bottom:2px solid var(--gold)">
+                    <th style="text-align:left;padding:4px;color:var(--text)">Metrica</th>
+                    ${sel.map((s,i)=>`<th style="text-align:center;padding:4px;color:${cols[i]}">${fmtDate(s.data)}</th>`).join('')}
+                </tr></thead>
+                <tbody style="color:var(--text)">
+                    ${[
+                        ['Tipo', s=>s.type],
+                        ['Distanza', s=>s.distanza||'-'],
+                        ['Targa', s=>s.tipoTarga||'-'],
+                        ['Punteggio', (s,i)=>`<strong style="color:${(s.totalScore||0)===maxS?'#22c55e':cols[i]}">${s.totalScore||0}</strong>`],
+                        ['Turno 1', s=>s.turn1Score||0],
+                        ['Turno 2', s=>s.turn2Score||0],
+                        ['Media', (s,i)=>`<span style="color:${(s.totalAverage||0)===maxAvg?'#22c55e':'var(--text)'}">${s.totalAverage?parseFloat(s.totalAverage).toFixed(2):'-'}</span>`],
+                        ['X', (s,i)=>`<span style="color:${(s.totalX||0)===maxX?'#22c55e':'var(--text)'}">${s.totalX||0}</span>`],
+                        ['10', s=>s.totalTen||0],
+                        ['9', s=>s.totalNine||0],
+                        ['Luogo', s=>s.luogo||'-'],
+                    ].map(([label, fn])=>`<tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:4px;font-weight:700">${label}</td>
+                        ${sel.map((s,i)=>`<td style="text-align:center;padding:4px;border-left:2px solid ${cols[i]}">${fn(s,i)}</td>`).join('')}
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        
+        <div style="background:var(--dark3);border-radius:10px;padding:0.75rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">💡 Insights</div>
+            ${insights.map(i=>`<div style="font-size:0.82rem;color:var(--text);margin-bottom:0.25rem">• ${i}</div>`).join('')}
+        </div>
+        <button class="btn btn-outline btn-full btn-sm" style="margin-top:0.75rem" onclick="window.setView('confrontaSessioni')">🔄 Nuovo Confronto</button>
+    </div>`;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── STATISTICHE BERSAGLIO ───────────────────────────────────────────────────
+async function renderTargetStats() {
+    setHeader('🎯 Stat. Bersaglio', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+
+    const getArrows = (s) => {
+        const d=s.arrowPositions||[],t1=s.turn1?.arrowPositions||[],t2=s.turn2?.arrowPositions||[];
+        return [...d,...t1,...t2].filter(a=>a&&a.x!=null);
+    };
+
+    let tsFilter = {tipo:'',periodo:'mese_corrente',targa:'',annoCustom:new Date().getFullYear(),meseCustom:new Date().getMonth()+1};
+
+    const buildUI = () => {
+        const now = new Date();
+        const sessWithArrows = S.sessioni.filter(s=>getArrows(s).length>0);
+        const filtered = sessWithArrows.filter(s=>{
+            if (tsFilter.tipo&&s.type!==tsFilter.tipo) return false;
+            if (tsFilter.targa&&s.tipoTarga!==tsFilter.targa) return false;
+            const d=new Date(s.data+'T00:00');
+            if (tsFilter.periodo==='settimana'){const wa=new Date();wa.setDate(now.getDate()-7);if(d<wa)return false;}
+            else if(tsFilter.periodo==='mese_corrente'){if(d.getMonth()!==now.getMonth()||d.getFullYear()!==now.getFullYear())return false;}
+            else if(tsFilter.periodo==='anno_corrente'){if(d.getFullYear()!==now.getFullYear())return false;}
+            else if(tsFilter.periodo==='mese_custom'){if(d.getMonth()+1!==tsFilter.meseCustom||d.getFullYear()!==tsFilter.annoCustom)return false;}
+            else if(tsFilter.periodo==='anno_custom'){if(d.getFullYear()!==tsFilter.annoCustom)return false;}
+            return true;
+        });
+        const allArrows=filtered.flatMap(s=>getArrows(s));
+        const scored=allArrows.filter(a=>a.score!=='M'&&a.x!=null);
+        const totP=allArrows.reduce((s,a)=>s+(a.score==='X'?10:a.score==='M'?0:parseInt(a.score)||0),0);
+        const avg=allArrows.length>0?(totP/allArrows.length).toFixed(2):'—';
+        const targhe=[...new Set(S.sessioni.filter(s=>getArrows(s).length>0).map(s=>s.tipoTarga).filter(Boolean))];
+
+        render(`
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.75rem">
+                <select class="inp" onchange="window._tsF('tipo',this.value)">
+                    <option value="">Tutti i tipi</option>
+                    <option value="Allenamento" ${tsFilter.tipo==='Allenamento'?'selected':''}>Allenamento</option>
+                    <option value="Gara" ${tsFilter.tipo==='Gara'?'selected':''}>Gara</option>
+                </select>
+                <select class="inp" onchange="window._tsF('targa',this.value)">
+                    <option value="">Tutte le targhe</option>
+                    ${targhe.map(t=>`<option value="${t}" ${tsFilter.targa===t?'selected':''}>${t}</option>`).join('')}
+                </select>
+                <select class="inp col-span-2" style="grid-column:span 2" onchange="window._tsF('periodo',this.value)">
+                    <option value="settimana" ${tsFilter.periodo==='settimana'?'selected':''}>Ultima settimana</option>
+                    <option value="mese_corrente" ${tsFilter.periodo==='mese_corrente'?'selected':''}>Mese corrente</option>
+                    <option value="anno_corrente" ${tsFilter.periodo==='anno_corrente'?'selected':''}>Anno corrente</option>
+                    <option value="mese_custom" ${tsFilter.periodo==='mese_custom'?'selected':''}>Mese specifico…</option>
+                    <option value="anno_custom" ${tsFilter.periodo==='anno_custom'?'selected':''}>Anno specifico…</option>
+                    <option value="tutto" ${tsFilter.periodo==='tutto'?'selected':''}>Tutto</option>
+                </select>
+                ${(tsFilter.periodo==='mese_custom'||tsFilter.periodo==='anno_custom')?`
+                    <input type="number" class="inp" value="${tsFilter.annoCustom}" min="2020" max="2040" onchange="window._tsF('annoCustom',parseInt(this.value))" placeholder="Anno">
+                    ${tsFilter.periodo==='mese_custom'?`<input type="number" class="inp" value="${tsFilter.meseCustom}" min="1" max="12" onchange="window._tsF('meseCustom',parseInt(this.value))" placeholder="Mese">`:'<div></div>'}
+                `:''}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:0.75rem">
+                <div class="stat-box"><div class="stat-num">${filtered.length}</div><div class="stat-label">Sessioni</div></div>
+                <div class="stat-box"><div class="stat-num">${allArrows.length}</div><div class="stat-label">Frecce</div></div>
+                <div class="stat-box"><div class="stat-num">${avg}</div><div class="stat-label">Media</div></div>
+            </div>
+            ${scored.length===0?`<div style="text-align:center;padding:3rem;color:var(--muted)">
+                <div style="font-size:3rem;margin-bottom:0.5rem">🎯</div>
+                <p>Nessuna freccia registrata sul bersaglio per i filtri selezionati.</p>
+                <p style="font-size:0.78rem;margin-top:0.35rem">Usa il pulsante 🎯 Bersaglio durante il segnapunti per registrare la posizione delle frecce.</p>
+            </div>`:`
+            <div class="card" style="margin-bottom:0.75rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">Distribuzione Colpi (${scored.length} frecce)</div>
+                <div id="ts-targets" style="display:flex;justify-content:center;flex-wrap:wrap;gap:12px"></div>
+            </div>
+            <div class="card">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">Distribuzione per Anello</div>
+                <div id="ts-bars"></div>
+            </div>`}
+        `);
+
+        if (scored.length > 0) {
+            requestAnimationFrame(()=>{
+                const wrap = document.getElementById('ts-targets');
+                if (!wrap) return;
+                const byTarga = {};
+                filtered.forEach(s=>{
+                    const t=s.tipoTarga||'Singola';
+                    if(!byTarga[t])byTarga[t]=[];
+                    byTarga[t].push(...getArrows(s).filter(a=>a.score!=='M'&&a.x!=null));
+                });
+                Object.entries(byTarga).forEach(([targa,arrows])=>{
+                    if(!arrows.length) return;
+                    const isTr=targa.toLowerCase().includes('tripla');
+                    const cw=document.createElement('div');
+                    cw.innerHTML=`<p style="text-align:center;font-size:11px;color:var(--gold);margin-bottom:6px">${targa} (${arrows.length})</p>`;
+                    const cv=document.createElement('div');
+                    cv.style.cssText=isTr?`position:relative;width:${TK_TR_W}px;height:${TK_TR_H}px;border-radius:10px;overflow:hidden;border:2px solid #334155;background:#1e293b;`:`position:relative;width:280px;height:280px;border-radius:50%;overflow:hidden;border:2px solid #334155;background:#374151;`;
+                    if(isTr){TK_TR_CY.forEach(cy=>[...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.8px solid rgba(0,0,0,0.4);left:${TK_TR_CX-r.r}px;top:${cy-r.r}px;`;cv.appendChild(el);}));}
+                    else{[...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.5px solid rgba(0,0,0,0.3);`;cv.appendChild(el);});}
+                    const sc=isTr?1:280/340;
+                    arrows.forEach(a=>{const dot=document.createElement('div');const sv=a.score==='X'?10:parseInt(a.score)||0;const dc=sv>=9?'#fbbf24':sv>=7?'#fb923c':sv>=5?'#60a5fa':'#64748b';dot.style.cssText=`position:absolute;width:7px;height:7px;border-radius:50%;background:${dc};border:1.5px solid rgba(0,0,0,0.7);left:${a.x*sc}px;top:${a.y*sc}px;transform:translate(-50%,-50%);opacity:0.85;z-index:10;`;cv.appendChild(dot);});
+                    cw.appendChild(cv);wrap.appendChild(cw);
+                });
+                const barsEl=document.getElementById('ts-bars');
+                if(!barsEl) return;
+                const counts={};
+                allArrows.forEach(a=>{counts[a.score]=(counts[a.score]||0)+1;});
+                const order=['X','10','9','8','7','6','5','4','3','2','1','M'];
+                const maxC=Math.max(...Object.values(counts),1);
+                barsEl.innerHTML=order.filter(k=>counts[k]).map(k=>{
+                    const c=counts[k]||0,pct=Math.round(c/allArrows.length*100),w=Math.round(c/maxC*100);
+                    const bc=k==='X'||k==='10'||k==='9'?'#fbbf24':k==='8'||k==='7'?'#fb923c':k==='6'?'#3b82f6':k==='5'?'#60a5fa':k==='M'?'#ef4444':'#64748b';
+                    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+                        <div style="width:22px;text-align:right;font-weight:700;font-size:0.82rem;color:var(--text)">${k}</div>
+                        <div style="flex:1;background:var(--dark);border-radius:4px;overflow:hidden;height:18px">
+                            <div style="width:${w}%;background:${bc};height:100%;transition:width 0.3s"></div>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--muted);width:50px;text-align:right">${c} (${pct}%)</div>
+                    </div>`;
+                }).join('');
+            });
+        }
+    };
+
+    window._tsF = (k,v)=>{tsFilter[k]=v;buildUI();};
+    buildUI();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── CONTATORE FRECCE ────────────────────────────────────────────────────────
+async function renderContatoreFrecce() {
+    setHeader('🪃 Contatore Frecce', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+    const sess = S.sessioni;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const dow = now.getDay(), diff = dow===0?-6:1-dow;
+    const weekStart = new Date(now); weekStart.setDate(now.getDate()+diff);
+    const weekStr = weekStart.toISOString().split('T')[0];
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const yearStr = `${now.getFullYear()}-01-01`;
+    const arrowsToday = sess.filter(s=>s.data===todayStr).reduce((s,x)=>s+countArrowsForSession(x),0);
+    const arrowsWeek  = sess.filter(s=>s.data>=weekStr).reduce((s,x)=>s+countArrowsForSession(x),0);
+    const arrowsMonth = sess.filter(s=>s.data>=monthStr).reduce((s,x)=>s+countArrowsForSession(x),0);
+    const arrowsYear  = sess.filter(s=>s.data>=yearStr).reduce((s,x)=>s+countArrowsForSession(x),0);
+    const mNomi=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+    const monthlyData={};
+    for(let m=0;m<12;m++){
+        const ms=`${now.getFullYear()}-${String(m+1).padStart(2,'0')}-01`;
+        const me=`${now.getFullYear()}-${String(m+1).padStart(2,'0')}-${new Date(now.getFullYear(),m+1,0).getDate()}`;
+        monthlyData[mNomi[m]]=sess.filter(s=>s.data>=ms&&s.data<=me).reduce((s,x)=>s+countArrowsForSession(x),0);
+    }
+    const maxBar=Math.max(...Object.values(monthlyData),1);
+    const recent=[...sess].reverse().slice(0,15).filter(s=>countArrowsForSession(s)>0);
+    render(`
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem;margin-bottom:1rem">
+            <div class="stat-box"><div class="stat-num">${arrowsToday}</div><div class="stat-label">Oggi</div></div>
+            <div class="stat-box"><div class="stat-num">${arrowsWeek}</div><div class="stat-label">Settimana</div></div>
+            <div class="stat-box"><div class="stat-num">${arrowsMonth}</div><div class="stat-label">Mese</div></div>
+            <div class="stat-box"><div class="stat-num" style="color:var(--gold-light)">${arrowsYear}</div><div class="stat-label">Anno ${now.getFullYear()}</div></div>
+        </div>
+        <div class="card" style="margin-bottom:0.75rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📊 Frecce per Mese (${now.getFullYear()})</div>
+            ${Object.entries(monthlyData).map(([m,c])=>`
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                <span style="font-size:0.72rem;color:var(--gold);width:28px;flex-shrink:0">${m}</span>
+                <div style="flex:1;background:var(--dark);border-radius:4px;overflow:hidden;height:18px">
+                    <div style="background:var(--gold);height:100%;width:${(c/maxBar*100).toFixed(1)}%;transition:width 0.3s"></div>
+                </div>
+                <span style="font-size:0.72rem;color:var(--text);font-weight:700;width:30px;text-align:right">${c}</span>
+            </div>`).join('')}
+        </div>
+        <div class="card">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Sessioni Recenti</div>
+            ${recent.length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem">Nessuna freccia registrata ancora.</p>`:
+            recent.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border)">
+                <div>
+                    <span style="font-weight:700;color:var(--text);font-size:0.85rem">${fmtDate(s.data)}</span>
+                    <span style="font-size:0.72rem;color:var(--muted);margin-left:0.4rem">${s.type||''}${s.trainingWithoutScore?' 🎓':''}</span>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-weight:700;color:var(--text)">${countArrowsForSession(s)} frecce</div>
+                    ${(parseInt(s.frecceAggiuntive)||0)>0&&!s.trainingWithoutScore?`<div style="font-size:0.68rem;color:var(--muted)">+${s.frecceAggiuntive} extra</div>`:''}
+                </div>
+            </div>`).join('')}
+        </div>
+    `);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ESPORTA & BACKUP ────────────────────────────────────────────────────────
+async function renderEsportaDati() {
+    setHeader('📥 Esporta & Backup', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+    render(`
+        <div class="card card-gold" style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📊 Esporta in CSV</div>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Esporta tutte le sessioni in formato CSV per Excel o altri strumenti.</p>
+            <button class="btn btn-gold btn-full" onclick="window.esportaCSV()">📄 Scarica CSV</button>
+        </div>
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💾 Backup JSON</div>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Backup completo di tutte le sessioni in formato JSON.</p>
+            <button class="btn btn-outline btn-full" onclick="window.esportaJSON()">💾 Scarica Backup JSON</button>
+        </div>
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">🖨️ Stampa Report</div>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.5rem">Genera un report stampabile delle sessioni.</p>
+            <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.6rem">
+                <label class="form-label">Periodo Report</label>
+                <select class="inp" id="rpt-period">
+                    <option value="all">Tutte le sessioni</option>
+                    <option value="month">Ultimo mese</option>
+                    <option value="3months">Ultimi 3 mesi</option>
+                    <option value="6months">Ultimi 6 mesi</option>
+                    <option value="year">Ultimo anno</option>
+                </select>
+            </div>
+            <button class="btn btn-outline btn-full" onclick="window.stampaReport()">🖨️ Genera e Stampa</button>
+        </div>
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📄 Esporta Agenda PDF</div>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.5rem">Genera un PDF in formato agenda con le sessioni del periodo scelto.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
+                <div><label class="form-label">Da</label><input type="date" class="inp" id="pdf-da"></div>
+                <div><label class="form-label">A</label><input type="date" class="inp" id="pdf-a"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.35rem;margin-bottom:0.6rem">
+                <button class="btn btn-ghost btn-sm" onclick="window.setPdfPer('week')">Settimana</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.setPdfPer('month')">Mese</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.setPdfPer('year')">Anno</button>
+            </div>
+            <button class="btn btn-gold btn-full" onclick="window.esportaAgenda()">📥 Genera Agenda PDF</button>
+        </div>
+    `);
+}
+
+window.esportaCSV = () => {
+    if (!S.sessioni.length) return showModal('Attenzione','Nessuna sessione da esportare.',[{text:'OK'}]);
+    const headers=['Data','Tipo','Luogo','Indoor/Out','Distanza','Targa','Formato','Punteggio','T1','T2','X','10','9','Media','Frecce','Arco','Tecnico','QuickScore'];
+    const rows=S.sessioni.map(s=>[fmtDate(s.data),s.type||'',s.luogo||'',s.tipoLuogo||'',s.distanza||'',s.tipoTarga||'',s.formatoGara||'',s.totalScore||0,s.turn1Score||0,s.turn2Score||0,s.totalX||0,s.totalTen||0,s.totalNine||0,s.totalAverage?parseFloat(s.totalAverage).toFixed(2):0,parseInt(s.frecceAggiuntive)||0,s.tipoArco||'',s.trainingWithoutScore?'Sì':'No',s.quickScore?'Sì':'No']);
+    let csv=headers.map(h=>`"${h}"`).join(',')+'\n';
+    rows.forEach(r=>{csv+=r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')+'\n';});
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`archery_${S.atleta.nome}_${new Date().toISOString().split('T')[0]}.csv`;a.click();
+    showModal('✅ Scaricato!','File CSV scaricato.',[{text:'OK'}]);
+};
+
+window.esportaJSON = () => {
+    const data={exportDate:new Date().toISOString(),atleta:`${S.atleta.nome} ${S.atleta.cognome}`,asd:S.asd.nome,sessions:S.sessioni,total:S.sessioni.length};
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`backup_${S.atleta.nome}_${new Date().toISOString().split('T')[0]}.json`;a.click();
+    showModal('✅ Backup Scaricato!',`${S.sessioni.length} sessioni esportate.`,[{text:'OK'}]);
+};
+
+window.setPdfPer = (p) => {
+    const now=new Date();let from,to;
+    if(p==='week'){const dw=now.getDay(),d=dw===0?-6:1-dw;from=new Date(now);from.setDate(now.getDate()+d);to=new Date(from);to.setDate(from.getDate()+6);}
+    else if(p==='month'){from=new Date(now.getFullYear(),now.getMonth(),1);to=new Date(now.getFullYear(),now.getMonth()+1,0);}
+    else{from=new Date(now.getFullYear(),0,1);to=new Date(now.getFullYear(),11,31);}
+    const fmt=d=>d.toISOString().split('T')[0];
+    const fe=document.getElementById('pdf-da'),te=document.getElementById('pdf-a');
+    if(fe)fe.value=fmt(from);if(te)te.value=fmt(to);
+};
+
+window.stampaReport = () => {
+    const period=document.getElementById('rpt-period')?.value||'all';
+    let filtered=[...S.sessioni];
+    if(period!=='all'){const now=new Date(),cut=new Date();
+        if(period==='month')cut.setMonth(now.getMonth()-1);
+        else if(period==='3months')cut.setMonth(now.getMonth()-3);
+        else if(period==='6months')cut.setMonth(now.getMonth()-6);
+        else if(period==='year')cut.setFullYear(now.getFullYear()-1);
+        filtered=filtered.filter(s=>new Date(s.data)>=cut);
+    }
+    if(!filtered.length) return showModal('Attenzione','Nessuna sessione nel periodo.',[{text:'OK'}]);
+    const valid=filtered.filter(s=>!s.trainingWithoutScore&&s.totalScore>0);
+    const avgScore=valid.length?valid.reduce((s,x)=>s+(x.totalScore||0),0)/valid.length:0;
+    const maxScore=valid.length?Math.max(...valid.map(s=>s.totalScore||0)):0;
+    const pw=window.open('','','width=800,height=600');
+    pw.document.write(`<!DOCTYPE html><html><head><title>Report Archery - ${S.atleta.nome} ${S.atleta.cognome}</title>
+    <style>body{font-family:Arial;padding:20px;color:#000}h1{color:#c9a227}table{width:100%;border-collapse:collapse;margin:15px 0}th,td{border:1px solid #ddd;padding:7px;text-align:left}th{background:#c9a227;color:#fff}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0}.stat-box{border:2px solid #c9a227;padding:10px;text-align:center;border-radius:6px}.stat-val{font-size:24px;font-weight:bold;color:#c9a227}@media print{button{display:none}}</style></head><body>
+    <h1>🏹 Report Archery — ${S.atleta.nome} ${S.atleta.cognome}</h1>
+    <p><strong>ASD:</strong> ${S.asd.nome} &nbsp;|&nbsp; <strong>Data:</strong> ${fmtDate(new Date().toISOString().split('T')[0])}</p>
+    <div class="stats">
+        <div class="stat-box"><div class="stat-val">${filtered.length}</div><div>Sessioni</div></div>
+        <div class="stat-box"><div class="stat-val">${avgScore.toFixed(1)}</div><div>Media</div></div>
+        <div class="stat-box"><div class="stat-val">${maxScore}</div><div>Record</div></div>
+    </div>
+    <h2>📋 Sessioni</h2>
+    <table><thead><tr><th>Data</th><th>Tipo</th><th>Distanza</th><th>Targa</th><th>Punteggio</th><th>T1</th><th>T2</th><th>Luogo</th></tr></thead><tbody>
+    ${filtered.map(s=>`<tr><td>${fmtDate(s.data)}</td><td>${s.type||''}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</td><td>${s.distanza||'-'}</td><td>${s.tipoTarga||'-'}</td><td><strong>${s.trainingWithoutScore?'-':s.totalScore||0}</strong></td><td>${s.trainingWithoutScore?'-':s.turn1Score||0}</td><td>${s.trainingWithoutScore?'-':s.turn2Score||0}</td><td>${s.luogo||''}</td></tr>`).join('')}
+    </tbody></table>
+    <button onclick="window.print()" style="padding:10px 20px;background:#c9a227;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-top:15px">🖨️ Stampa</button>
+    </body></html>`);
+    pw.document.close();
+};
+
+window.esportaAgenda = () => {
+    const da=document.getElementById('pdf-da')?.value, a=document.getElementById('pdf-a')?.value;
+    if(!da||!a) return showModal('Errore','Seleziona un periodo.',[{text:'OK'}]);
+    const filtered=S.sessioni.filter(s=>s.data>=da&&s.data<=a).sort((a,b)=>a.data.localeCompare(b.data));
+    if(!filtered.length) return showModal('Attenzione','Nessuna sessione nel periodo.',[{text:'OK'}]);
+    const blocks=filtered.map(s=>{
+        const isT=s.trainingWithoutScore,isQS=s.quickScore;
+        return `<div style="border:1px solid #333;border-radius:6px;padding:12px;margin-bottom:10px;break-inside:avoid">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:8px">
+                <div><strong style="font-size:14px">${fmtDate(s.data)}</strong> &nbsp;·&nbsp; <span style="color:#c9a227">${s.type||''}${isT?' 🎓':isQS?' ⚡':''}</span></div>
+                ${!isT&&s.totalScore>0?`<div style="font-size:20px;font-weight:bold;color:#c9a227">${s.totalScore} pt</div>`:''}
+            </div>
+            <div style="font-size:12px;color:#555;margin-bottom:6px">${s.luogo||''} ${s.tipoLuogo?'('+s.tipoLuogo+')':''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
+            ${s.esercizConsigliati?`<div style="margin-top:6px"><strong style="font-size:11px;color:#c9a227">🎯 Esercizi Consigliati:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.esercizConsigliati}</div></div>`:''}
+            ${s.esercizSvolti?`<div style="margin-top:6px"><strong style="font-size:11px;color:#22c55e">✅ Svolti:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.esercizSvolti}</div></div>`:''}
+            ${s.noteCondizioniFisiche?`<div style="margin-top:6px"><strong style="font-size:11px;color:#3b82f6">🩺 Note Fisiche:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.noteCondizioniFisiche}</div></div>`:''}
+            ${s.notePreGara?`<div style="margin-top:6px"><strong style="font-size:11px;color:#eab308">📝 Pre-Gara:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.notePreGara}</div></div>`:''}
+            ${s.notePostGara?`<div style="margin-top:6px"><strong style="font-size:11px;color:#22c55e">🏆 Post-Gara:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.notePostGara}</div></div>`:''}
+        </div>`;
+    }).join('');
+    const pw=window.open('','','width=800,height=600');
+    pw.document.write(`<!DOCTYPE html><html><head><title>Agenda ${S.atleta.nome}</title>
+    <style>body{font-family:Arial;padding:20px;max-width:800px;margin:0 auto}h1{color:#c9a227;border-bottom:2px solid #c9a227;padding-bottom:8px}@media print{button{display:none}}</style></head><body>
+    <h1>🏹 Diario di Allenamento — ${S.atleta.nome} ${S.atleta.cognome}</h1>
+    <p style="color:#555">${S.asd.nome} &nbsp;|&nbsp; ${fmtDate(da)} – ${fmtDate(a)} &nbsp;|&nbsp; ${filtered.length} sessioni</p>
+    <hr style="border-color:#c9a227;margin:15px 0">
+    ${blocks}
+    <button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#c9a227;border:none;padding:12px 24px;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer">🖨️ Stampa / PDF</button>
+    </body></html>`);
+    pw.document.close();
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── IMPOSTAZIONI ────────────────────────────────────────────────────────────
+async function renderImpostazioni() {
+    setHeader('⚙️ Impostazioni', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+    const sessions = S.sessioni.filter(s=>!s.trainingWithoutScore).sort((a,b)=>b.data.localeCompare(a.data));
+
+    render(`
+        <div class="card card-gold" style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">✏️ Modifica Massiva Sessioni</div>
+            <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.75rem">Seleziona sessioni e compila i campi da aggiornare. Lascia vuoto per non modificare.</p>
+            <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem">
+                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.bulk-cb').forEach(c=>c.checked=true)">Seleziona tutte</button>
+                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.bulk-cb').forEach(c=>c.checked=false)">Deseleziona</button>
+            </div>
+            <div style="max-height:200px;overflow-y:auto;background:var(--dark);border-radius:8px;padding:0.5rem;margin-bottom:0.75rem">
+                ${sessions.length===0?`<p style="color:var(--muted);font-size:0.82rem;text-align:center;padding:0.5rem">Nessuna sessione.</p>`:
+                sessions.map(s=>`<label style="display:flex;align-items:start;gap:0.5rem;margin-bottom:0.3rem;cursor:pointer">
+                    <input type="checkbox" class="bulk-cb" value="${s.id||s.docId}" data-id="${s.id||s.docId}" style="margin-top:3px;flex-shrink:0">
+                    <span style="font-size:0.78rem;color:var(--text)">${s.data} — <span style="color:var(--gold)">${s.type}${s.trainingWithoutScore?' 🎓':''}</span> | ${s.luogo||''} ${s.distanza?'('+s.distanza+')':''}</span>
+                </label>`).join('')}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                <div><label class="form-label">🪃 Frecce Programmate</label><input class="inp" type="number" id="bulk-fr" min="0" placeholder="Lascia vuoto per non modificare"></div>
+                <div style="background:var(--dark3);padding:0.5rem;border-radius:8px;border-left:3px solid var(--gold)">
+                    <label class="form-label">🎯 Esercizi Consigliati</label>
+                    <textarea class="inp" id="bulk-ec" rows="2" placeholder="Lascia vuoto per non modificare"></textarea>
+                </div>
+                <div style="background:var(--dark3);padding:0.5rem;border-radius:8px;border-left:3px solid #3d9970">
+                    <label class="form-label" style="color:#5dba94">✅ Esercizi Svolti</label>
+                    <textarea class="inp" id="bulk-es" rows="2" placeholder="Lascia vuoto per non modificare"></textarea>
+                </div>
+                <div style="background:var(--dark3);padding:0.5rem;border-radius:8px;border-left:3px solid #2980b9">
+                    <label class="form-label" style="color:#5daadc">🩺 Note Fisiche</label>
+                    <textarea class="inp" id="bulk-nf" rows="2" placeholder="Lascia vuoto per non modificare"></textarea>
+                </div>
+            </div>
+            <button class="btn btn-gold btn-full" style="margin-top:0.75rem" onclick="window.applyBulk()">💾 Applica alle Sessioni Selezionate</button>
+        </div>
+    `);
+}
+
+window.applyBulk = async () => {
+    const sel=[...document.querySelectorAll('.bulk-cb:checked')].map(c=>c.dataset.id).filter(Boolean);
+    if(!sel.length) return showModal('Attenzione','Seleziona almeno una sessione.',[{text:'OK'}]);
+    const fr=document.getElementById('bulk-fr')?.value.trim();
+    const ec=document.getElementById('bulk-ec')?.value.trim();
+    const es=document.getElementById('bulk-es')?.value.trim();
+    const nf=document.getElementById('bulk-nf')?.value.trim();
+    if(!fr&&!ec&&!es&&!nf) return showModal('Attenzione','Compila almeno un campo.',[{text:'OK'}]);
+    showModal('Conferma',`Aggiornare ${sel.length} sessione/i?`,[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Sì, aggiorna',cls:'btn-gold',fn:async()=>{
+            const updates={};
+            if(fr!=='')updates.frecceProgrammate=parseInt(fr)||0;
+            if(ec!=='')updates.esercizConsigliati=ec;
+            if(es!=='')updates.esercizSvolti=es;
+            if(nf!=='')updates.noteCondizioniFisiche=nf;
+            let done=0;
+            for(const id of sel){
+                try{await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}/sessioni/${id}`),updates);done++;}catch(e){}
+            }
+            // Aggiorna in memoria
+            S.sessioni.forEach(s=>{if(sel.includes(s.id||s.docId)){Object.assign(s,updates);}});
+            showModal('✅ Completato!',`${done} sessioni aggiornate.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('impostazioni')}]);
+        }}
+    ]);
+};
 
 window.renderAsdDashboard = renderAsdDashboard;
 window.renderAsdAtleti    = renderAsdAtleti;
