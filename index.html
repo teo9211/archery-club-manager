@@ -641,6 +641,9 @@ async function renderAsdDashboard() {
 
             <div class="gold-line"></div>
 
+            <!-- Box record notifiche (nascosto di default) -->
+            <div id="asd-record-box" style="display:none;background:rgba(201,162,39,0.07);border:1.5px solid var(--gold);border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
+
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                 <div class="card card-hover" onclick="window.setView('asdAtleti')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
@@ -814,29 +817,49 @@ async function renderAsdAtletaDetail({ atletaId }) {
     const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atletaId)));
     const sessioni = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
 
-    const totalScore = sessioni.reduce((s,x)=>s+(x.totalScore||0),0);
-    const totalFrecce = sessioni.reduce((s,x)=>s+(x.frecceAggiuntive||0)+(x.frecceTotali||0),0);
-    const avg = sessioni.filter(s=>s.totalScore>0).length > 0
-        ? (sessioni.filter(s=>s.totalScore>0).reduce((a,s)=>a+(s.totalScore||0),0) / sessioni.filter(s=>s.totalScore>0).length).toFixed(0)
-        : '—';
+    const scored = sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
+    const totalScore = scored.reduce((s,x)=>s+(x.totalScore||0),0);
+    const totalFrecce = sessioni.reduce((s,x)=>s+countArrowsForSession(x),0);
+    const avg = scored.length > 0 ? (totalScore/scored.length).toFixed(0) : '—';
+    const bestGaraPts  = sessioni.filter(s=>s.type==='Gara'&&(s.totalScore||0)>0);
+    const bestAllPts   = sessioni.filter(s=>s.type==='Allenamento'&&!s.trainingWithoutScore&&(s.totalScore||0)>0);
+    const recordGara   = bestGaraPts.length ? Math.max(...bestGaraPts.map(s=>s.totalScore)) : 0;
+    const recordAll    = bestAllPts.length  ? Math.max(...bestAllPts.map(s=>s.totalScore))  : 0;
+
+    // Best scores per il badge record
+    const bestGara = sessioni.filter(s=>s.type==='Gara'&&(s.totalScore||0)>0);
+    const bestAll  = sessioni.filter(s=>s.type==='Allenamento'&&!s.trainingWithoutScore&&(s.totalScore||0)>0);
+    const maxGara  = bestGara.length ? Math.max(...bestGara.map(s=>s.totalScore||0)) : 0;
+    const maxAll   = bestAll.length  ? Math.max(...bestAll.map(s=>s.totalScore||0))  : 0;
 
     const sessionList = sessioni.length === 0
         ? `<p style="text-align:center;color:var(--muted);padding:1.5rem">Nessuna sessione registrata.</p>`
-        : sessioni.map(s => `
-            <div class="session-card" style="cursor:pointer" onclick="showSessionDetail('${s.id}','${atletaId}')">
+        : sessioni.map(s => {
+            const isRecord = (s.type==='Gara'&&s.totalScore===maxGara&&maxGara>0) ||
+                             (s.type==='Allenamento'&&!s.trainingWithoutScore&&s.totalScore===maxAll&&maxAll>0);
+            return `
+            <div class="session-card" style="cursor:pointer;${isRecord?'border-color:var(--gold);':''}" onclick="window.asdDettaglioSessione('${s.id}')">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                    <div>
-                        <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}</span>
+                    <div style="flex:1">
+                        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
+                            <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</span>
+                            ${isRecord?`<span style="font-size:0.65rem;background:rgba(201,162,39,0.2);color:var(--gold);border:1px solid rgba(201,162,39,0.4);padding:1px 5px;border-radius:8px;font-weight:700">🏆 RECORD</span>`:''}
+                        </div>
                         <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.3rem">${fmtDate(s.data)}</div>
-                        <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''}</div>
+                        <div style="font-size:0.75rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
                     </div>
-                    <div style="text-align:right">
-                        ${s.totalScore > 0 ? `<div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.72rem;color:var(--muted)">punti</div>` : `<div style="color:var(--muted);font-size:0.8rem">Solo tecnico</div>`}
+                    <div style="text-align:right;flex-shrink:0">
+                        ${s.totalScore > 0 ? `<div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:${isRecord?'var(--gold)':'var(--gold-light)'}">${s.totalScore}</div><div style="font-size:0.7rem;color:var(--muted)">${s.turn1Score?'T1:'+s.turn1Score+(s.turn2Score?' T2:'+s.turn2Score:''):''}</div>` : `<div style="color:var(--muted);font-size:0.78rem">${s.trainingWithoutScore?'Tecnico':'—'}</div>`}
                     </div>
                 </div>
-                ${s.esercizSvolti ? `<div style="margin-top:0.5rem;font-size:0.78rem;color:var(--muted);border-top:1px solid var(--border);padding-top:0.4rem"><strong style="color:var(--text)">Esercizi:</strong> ${s.esercizSvolti.substring(0,100)}${s.esercizSvolti.length>100?'…':''}</div>` : ''}
-            </div>
-        `).join('');
+                ${(s.esercizConsigliati||s.esercizSvolti||s.noteCondizioniFisiche) ? `
+                <div style="margin-top:0.5rem;border-top:1px solid var(--border);padding-top:0.4rem;display:flex;flex-direction:column;gap:0.2rem">
+                    ${s.esercizConsigliati?`<div style="font-size:0.75rem"><strong style="color:var(--gold)">🎯 Consigliati:</strong> <span style="color:var(--muted)">${s.esercizConsigliati.substring(0,80)}${s.esercizConsigliati.length>80?'…':''}</span></div>`:''}
+                    ${s.esercizSvolti?`<div style="font-size:0.75rem"><strong style="color:#5dba94">✅ Svolti:</strong> <span style="color:var(--muted)">${s.esercizSvolti.substring(0,80)}${s.esercizSvolti.length>80?'…':''}</span></div>`:''}
+                    ${s.noteCondizioniFisiche?`<div style="font-size:0.75rem"><strong style="color:#5daadc">🩺 Note:</strong> <span style="color:var(--muted)">${s.noteCondizioniFisiche.substring(0,60)}${s.noteCondizioniFisiche.length>60?'…':''}</span></div>`:''}
+                </div>` : ''}
+            </div>`;
+        }).join('');
 
     render(`
         <button class="btn btn-ghost btn-sm" onclick="window.setView('asdAtleti')" style="margin-bottom:1rem">← Atleti</button>
@@ -853,10 +876,20 @@ async function renderAsdAtletaDetail({ atletaId }) {
             </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:0.75rem">
             <div class="stat-box"><div class="stat-num">${sessioni.length}</div><div class="stat-label">Sessioni</div></div>
             <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce</div></div>
-            <div class="stat-box"><div class="stat-num">${avg}</div><div class="stat-label">Media pt</div></div>
+            <div class="stat-box"><div class="stat-num">${avg}</div><div class="stat-label">Media</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:1rem">
+            <div class="stat-box" style="${recordGara>0?'border-color:var(--gold)':''}">
+                <div class="stat-num" style="color:var(--gold-light)">${recordGara||'—'}</div>
+                <div class="stat-label">🏆 Record Gara</div>
+            </div>
+            <div class="stat-box" style="${recordAll>0?'border-color:rgba(201,162,39,0.4)':''}">
+                <div class="stat-num">${recordAll||'—'}</div>
+                <div class="stat-label">🎯 Record Alln.</div>
+            </div>
         </div>
 
         <div class="gold-line"></div>
@@ -866,24 +899,38 @@ async function renderAsdAtletaDetail({ atletaId }) {
 }
 
 async function showSessionDetail(sessionId, atletaId) {
+    window.asdDettaglioSessione(sessionId);
+}
+window.showSessionDetail = showSessionDetail;
+
+window.asdDettaglioSessione = async (sessionId) => {
     const snapRef = doc(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni/${sessionId}`);
     const snap = await getDoc(snapRef);
     if (!snap.exists()) return;
     const s = { id: snap.id, ...snap.data() };
-    showModal(`📋 ${fmtDate(s.data)} — ${s.type||'Sessione'}`,`
-        <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.85rem">
-            ${s.totalScore>0?`<div><strong style="color:var(--gold)">Punteggio:</strong> ${s.totalScore} pt | X: ${s.totalX||0} | 10: ${s.totalTen||0}</div>`:''}
-            ${s.distanza?`<div><strong style="color:var(--gold)">Distanza:</strong> ${s.distanza}</div>`:''}
-            ${s.luogo?`<div><strong style="color:var(--gold)">Luogo:</strong> ${s.luogo} (${s.tipoLuogo||''})</div>`:''}
-            ${s.frecceAggiuntive>0?`<div><strong style="color:var(--gold)">Frecce tirate:</strong> ${s.frecceAggiuntive}</div>`:''}
-            ${s.esercizConsigliati?`<div><strong style="color:var(--gold)">Esercizi consigliati:</strong><br>${s.esercizConsigliati}</div>`:''}
-            ${s.esercizSvolti?`<div><strong style="color:var(--gold)">Esercizi svolti:</strong><br>${s.esercizSvolti}</div>`:''}
-            ${s.noteCondizioniFisiche?`<div><strong style="color:var(--gold)">Note:</strong><br>${s.noteCondizioniFisiche}</div>`:''}
+    const noteBlock = (emoji, color, label, text) => !text ? '' :
+        `<div style="background:var(--dark3);border-left:3px solid ${color};border-radius:6px;padding:0.5rem 0.6rem;margin-top:0.4rem">
+            <div style="font-size:0.7rem;font-weight:700;color:${color};margin-bottom:0.2rem">${emoji} ${label}</div>
+            <div style="font-size:0.83rem;color:var(--text);white-space:pre-wrap">${text}</div>
+        </div>`;
+    showModal(`📋 ${fmtDate(s.data)} — ${s.type||'Sessione'}`, `
+        <div style="display:flex;flex-direction:column;gap:0.3rem;font-size:0.85rem">
+            ${s.totalScore>0?`<div style="text-align:center;background:var(--dark3);border-radius:8px;padding:0.5rem;margin-bottom:0.3rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-size:2rem;font-weight:900;color:var(--gold-light)">${s.totalScore}</div>
+                <div style="font-size:0.7rem;color:var(--muted)">pt ${s.totalX!=null?'· X:'+s.totalX+' · 10:'+s.totalTen+' · 9:'+s.totalNine:''} ${s.totalAverage?'· Media:'+parseFloat(s.totalAverage).toFixed(2):''}</div>
+                ${(s.turn1Score||s.turn2Score)?`<div style="font-size:0.75rem;color:var(--text)">T1: ${s.turn1Score||0}${s.turn2Score?' · T2: '+s.turn2Score:''}</div>`:''}
+            </div>`:''}
+            <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.tipoLuogo?'('+s.tipoLuogo+')':''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
+            ${s.tipoArco?`<div style="font-size:0.78rem;color:var(--muted)">🏹 ${s.tipoArco}</div>`:''}
+            ${s.frecceAggiuntive>0?`<div style="font-size:0.78rem;color:var(--muted)">🪃 Frecce extra: ${s.frecceAggiuntive}</div>`:''}
+            ${noteBlock('🎯','var(--gold)','Esercizi Consigliati', s.esercizConsigliati)}
+            ${noteBlock('✅','#3d9970','Esercizi Svolti', s.esercizSvolti)}
+            ${noteBlock('🩺','#2980b9','Note e Condizioni Fisiche', s.noteCondizioniFisiche)}
+            ${noteBlock('📝','#e5a400','Note Pre-Gara', s.notePreGara)}
+            ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
         </div>
     `, [{ text:'Chiudi', cls:'btn-ghost' }]);
-}
-
-window.showSessionDetail = showSessionDetail;
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ── ASD: STATISTICHE GLOBALI ─────────────────────────────────────────────────
@@ -944,8 +991,38 @@ async function renderAsdMessaggi() {
                     <select class="inp" id="msg-dest">${destOptions}</select></div>
                 <div><label class="form-label">Messaggio / Note</label>
                     <textarea class="inp" id="msg-testo" rows="3" placeholder="Scrivi un messaggio o nota tecnica..."></textarea></div>
-                <div><label class="form-label">Esercizi (opzionale)</label>
-                    <textarea class="inp" id="msg-eserc" rows="2" placeholder="Esercizi consigliati..."></textarea></div>
+                <div style="background:var(--dark3);border-left:3px solid var(--gold);border-radius:6px;padding:0.6rem">
+                    <label class="form-label">🎯 Esercizi Consigliati <span style="color:var(--muted);font-size:0.72rem">(si aggiungeranno automaticamente ai prossimi allenamenti dell'atleta)</span></label>
+                    <textarea class="inp" id="msg-eserc" rows="2" placeholder="Es: Lavoro sulla postura, 30 frecce sulla linea dei 18m..."></textarea>
+                </div>
+                <div style="background:var(--dark3);border-left:3px solid #3d9970;border-radius:6px;padding:0.6rem">
+                    <label class="form-label" style="color:#5dba94">🏅 Obiettivo da Raggiungere <span style="color:var(--muted);font-size:0.72rem">(si aggiungerà agli obiettivi dell'atleta)</span></label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
+                        <div><label class="form-label">Tipo Obiettivo</label>
+                            <select class="inp" id="msg-ob-tipo">
+                                <option value="">Nessuno</option>
+                                <option value="score">🎯 Punteggio target</option>
+                                <option value="sessions">📅 Num. sessioni</option>
+                                <option value="training">🎓 Allenamenti</option>
+                                <option value="arrows">🪃 Frecce</option>
+                            </select>
+                        </div>
+                        <div><label class="form-label">Valore Target</label>
+                            <input class="inp" type="number" id="msg-ob-val" min="1" placeholder="Es: 540">
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
+                        <div><label class="form-label">Periodo</label>
+                            <select class="inp" id="msg-ob-period">
+                                <option value="monthly">Mensile</option>
+                                <option value="weekly">Settimanale</option>
+                            </select>
+                        </div>
+                        <div><label class="form-label">Titolo Obiettivo</label>
+                            <input class="inp" id="msg-ob-title" placeholder="Es: Quota 540">
+                        </div>
+                    </div>
+                </div>
                 <button class="btn btn-gold btn-full" onclick="sendMessaggio()">📨 Invia</button>
             </div>
         </div>
@@ -955,12 +1032,43 @@ async function renderAsdMessaggi() {
 }
 
 async function sendMessaggio() {
-    const dest   = $('msg-dest')?.value;
-    const testo  = $('msg-testo')?.value.trim();
-    const eserc  = $('msg-eserc')?.value.trim();
+    const dest    = $('msg-dest')?.value;
+    const testo   = $('msg-testo')?.value.trim();
+    const eserc   = $('msg-eserc')?.value.trim();
+    const obTipo  = $('msg-ob-tipo')?.value;
+    const obVal   = parseInt($('msg-ob-val')?.value)||0;
+    const obTitle = $('msg-ob-title')?.value.trim();
+    const obPer   = $('msg-ob-period')?.value||'monthly';
     if (!testo) return showModal('Errore','Scrivi un messaggio.',[{text:'OK'}]);
-    await addDoc(msgCol(S.asd.id), { destinatari: dest, testo, esercizi: eserc, mittente:'asd', createdAt: serverTimestamp() });
-    showModal('✅ Inviato!','Messaggio inviato con successo.',[{text:'OK', fn:()=>window.setView('asdMessaggi')}]);
+
+    const msgData = { destinatari: dest, testo, esercizi: eserc, mittente:'asd', createdAt: serverTimestamp() };
+    if (obTipo && obVal > 0) {
+        msgData.obiettivo = { type:obTipo, targetValue:obVal, title:obTitle||`Obiettivo: ${obVal}`, period:obPer };
+    }
+    await addDoc(msgCol(S.asd.id), msgData);
+
+    // Se ci sono esercizi o obiettivo, salvali anche nell'atleta/atleti destinatari
+    const destinatari = dest === 'tutti' ? S.atleti.map(a=>a.id) : [dest];
+    for (const atletaId of destinatari) {
+        // Salva esercizi consigliati come nota nell'atleta (campo 'esercizConsigliatiCoach')
+        if (eserc) {
+            const atletaRef = doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`);
+            await updateDoc(atletaRef, { esercizConsigliatiCoach: eserc, esercizAggiornatiIl: new Date().toISOString().split('T')[0] }).catch(()=>{});
+        }
+        // Crea obiettivo nel profilo atleta se specificato
+        if (obTipo && obVal > 0) {
+            const goalsRef = collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}/goals`);
+            await addDoc(goalsRef, {
+                title: obTitle||`Obiettivo dal coach: ${obVal}`,
+                type: obTipo, targetValue: obVal, period: obPer,
+                completed: false, fromCoach: true,
+                createdAt: new Date().toISOString()
+            }).catch(()=>{});
+        }
+    }
+
+    const esito = [eserc ? '✅ Esercizi consigliati salvati' : '', obTipo && obVal ? '🏅 Obiettivo aggiunto all\'atleta' : ''].filter(Boolean).join(' · ');
+    showModal('✅ Inviato!', esito ? 'Messaggio inviato. ' + esito : 'Messaggio inviato con successo.', [{text:'OK', fn:()=>window.setView('asdMessaggi')}]);
 }
 window.sendMessaggio = sendMessaggio;
 
@@ -1104,23 +1212,6 @@ async function renderAtletaSelect({ asdId }) {
     S._tempAsd = asd;
     S._tempAtleti = atleti;
 
-    const list = atleti.length === 0
-        ? `<p style="color:var(--muted);text-align:center;padding:2rem">Nessun atleta iscritto.</p>`
-        : `<div style="display:flex;flex-direction:column;gap:0.6rem">
-            ${atleti.map(atl => `
-                <div class="card card-hover" onclick="window.selectAtleta('${atl.id}')"
-                     style="display:flex;align-items:center;gap:0.85rem">
-                    ${atl.fotoBase64
-                        ? `<img src="${atl.fotoBase64}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
-                        : `<div class="avatar">${initials(atl.nome,atl.cognome)}</div>`}
-                    <div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700">${atl.nome} ${atl.cognome}</div>
-                        <div style="font-size:0.78rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
-                    </div>
-                </div>
-            `).join('')}
-        </div>`;
-
     const asdInfo = `
         <div class="card card-gold" style="margin-bottom:1rem">
             <div style="display:flex;align-items:center;gap:0.85rem;margin-bottom:0.75rem">
@@ -1151,11 +1242,55 @@ async function renderAtletaSelect({ asdId }) {
         <div style="max-width:400px;margin:0 auto">
             <button class="btn btn-ghost btn-sm" onclick="window.setView('homeLogin')" style="margin-bottom:1rem">← Indietro</button>
             ${asdInfo}
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.6rem">👤 Seleziona il tuo profilo</div>
-            ${list}
+            <div class="card" style="border-color:var(--gold)">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1rem">🔐 Accedi al tuo Profilo</div>
+                <div style="display:flex;flex-direction:column;gap:0.65rem">
+                    <div>
+                        <label class="form-label">Nome Atleta <span style="color:var(--muted);font-size:0.72rem">(opzionale se usi password univoca)</span></label>
+                        <input class="inp" id="atl-login-nome" placeholder="Es: Mario Rossi" autocomplete="off"
+                               onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
+                    </div>
+                    <div>
+                        <label class="form-label">Password *</label>
+                        <input class="inp" type="password" id="atl-login-pwd" placeholder="Inserisci la tua password"
+                               onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
+                    </div>
+                    <button class="btn btn-gold btn-full btn-lg" onclick="window.loginAtletaConPassword()">Accedi</button>
+                    <p style="font-size:0.72rem;color:var(--muted);text-align:center">
+                        Puoi accedere con solo la password se è univoca, oppure indicare il nome per sicurezza.
+                    </p>
+                </div>
+            </div>
         </div>
     `);
 }
+
+window.loginAtletaConPassword = async () => {
+    const nomeInput = $('atl-login-nome')?.value.trim().toLowerCase();
+    const pwd = $('atl-login-pwd')?.value.trim();
+    if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
+    const pwdH = hashPwd(pwd);
+    const atleti = S._tempAtleti || [];
+    // Cerca atleta: prima per nome+pwd, poi solo per pwd (password univoca)
+    let trovato = null;
+    if (nomeInput) {
+        trovato = atleti.find(a =>
+            (a.nome+' '+a.cognome).toLowerCase().includes(nomeInput) && a.pwdHash === pwdH
+        );
+    }
+    if (!trovato) {
+        // Prova con solo password
+        const matches = atleti.filter(a => a.pwdHash === pwdH);
+        if (matches.length === 1) trovato = matches[0];
+        else if (matches.length > 1) {
+            return showModal('Errore','Più atleti con questa password. Inserisci anche il nome.',[{text:'OK'}]);
+        }
+    }
+    if (!trovato) return showModal('Errore','Credenziali non valide. Riprova.',[{text:'OK'}]);
+    S._loginAsd = S._tempAsd;
+    S._loginAtleta = trovato;
+    window.setView('atletaLogin', {});
+};
 
 window.selectAtleta = (atletaId) => {
     const atleta = S._tempAtleti?.find(a => a.id === atletaId);
@@ -1824,7 +1959,10 @@ function renderRegistrationForm({ type='Allenamento' }) {
                 <select class="inp" id="tk-formato">${TK_FORMATO.map(o=>`<option>${o}</option>`).join('')}</select></div>
         </div>
         ${type==='Allenamento'?`<div class="form-section"><label class="form-label">🎯 Esercizi Consigliati</label>
-            <textarea class="inp" id="tk-eserc" rows="2" placeholder="Dal coach..."></textarea></div>`:''}
+            ${S.atleta?.esercizConsigliatiCoach?`<div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">
+                💬 <strong style="color:var(--gold)">Dal coach</strong> (${S.atleta.esercizAggiornatiIl||''}): ${S.atleta.esercizConsigliatiCoach.substring(0,100)}${S.atleta.esercizConsigliatiCoach.length>100?'…':''}
+            </div>`:''}
+            <textarea class="inp" id="tk-eserc" rows="2" placeholder="Dal coach...">${S.atleta?.esercizConsigliatiCoach||''}</textarea></div>`:''}
         <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem">
             <button class="btn btn-gold btn-full btn-lg" id="tk-startbtn" onclick="window.tkStart('${type}')">▶ Inizia Segnapunti</button>
             <button class="btn btn-outline btn-full" onclick="window.tkStartQS('${type}')">⚡ Quick Score</button>
@@ -1843,6 +1981,9 @@ window.tkStart=(type)=>{
     const luogo=document.getElementById('tk-luogo')?.value.trim();
     if(!luogo)return showModal('Errore','Inserisci il luogo.',[{text:'OK'}]);
     if(!ns&&!document.getElementById('tk-formato')?.value)return showModal('Errore','Seleziona il formato frecce.',[{text:'OK'}]);
+    // Auto-carica esercizi consigliati dal coach se presenti
+    const esercizDalCoach = S.atleta?.esercizConsigliatiCoach || '';
+    const esercizForm = document.getElementById('tk-eserc')?.value || '';
     TK.session={
         type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
         luogo,tipoLuogo:document.getElementById('tk-tipoLuogo')?.value||'',
@@ -1850,7 +1991,7 @@ window.tkStart=(type)=>{
         distanza:ns?'':document.getElementById('tk-dist')?.value||'',
         tipoTarga:ns?'':document.getElementById('tk-targa')?.value||'',
         formatoGara:ns?'':document.getElementById('tk-formato')?.value||'30 frecce (3x10)',
-        esercizConsigliati:document.getElementById('tk-eserc')?.value||'',
+        esercizConsigliati:esercizForm || esercizDalCoach,
         trainingWithoutScore:ns,
         noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
@@ -3247,6 +3388,69 @@ window.applyBulk = async () => {
         }}
     ]);
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── NOTIFICHE RECORD ASD ────────────────────────────────────────────────────
+// Controlla se qualche atleta ha battuto il suo record dal nostro ultimo accesso
+async function checkRecordNotifiche() {
+    if (!S.asd || !S.atleti.length) return;
+    const lastCheck = parseInt(localStorage.getItem(`asd_rec_check_${S.asd.id}`)||'0');
+    const ora = Date.now();
+    localStorage.setItem(`asd_rec_check_${S.asd.id}`, ora.toString());
+
+    if (lastCheck === 0) return; // primo accesso, nessuna notifica
+
+    const records = [];
+    for (const atl of S.atleti) {
+        try {
+            const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
+            const sessioni = snap.docs.map(d=>({id:d.id,...d.data()}));
+            const nuove = sessioni.filter(s => {
+                const ts = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+                return ts > lastCheck;
+            });
+            if (!nuove.length) continue;
+            // Controlla se una sessione nuova è un record
+            const allConPunti = sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
+            for (const s of nuove) {
+                if (!s.totalScore || s.trainingWithoutScore) continue;
+                const stesseTipo = allConPunti.filter(x=>x.type===s.type&&x.id!==s.id);
+                const prevMax = stesseTipo.length ? Math.max(...stesseTipo.map(x=>x.totalScore||0)) : 0;
+                if (s.totalScore > prevMax) {
+                    records.push({
+                        atleta:`${atl.nome} ${atl.cognome}`,
+                        tipo: s.type,
+                        score: s.totalScore,
+                        data: s.data,
+                        isNew: prevMax === 0
+                    });
+                }
+            }
+        } catch(e) {}
+    }
+
+    if (!records.length) return;
+
+    // Mostra notifiche nella dashboard
+    const recBox = document.getElementById('asd-record-box');
+    if (!recBox) return;
+    recBox.style.display = 'block';
+    recBox.innerHTML = `
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:1rem">
+            🏆 Nuovi Record Personali
+        </div>
+        ${records.map(r=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border)">
+                <div>
+                    <span style="font-weight:700;color:var(--text)">${r.atleta}</span>
+                    <span style="font-size:0.75rem;color:var(--muted);margin-left:0.4rem">${r.tipo} · ${fmtDate(r.data)}</span>
+                    ${r.isNew?`<span style="font-size:0.65rem;background:rgba(61,153,112,0.2);color:#5dba94;border:1px solid rgba(61,153,112,0.3);padding:1px 5px;border-radius:8px;margin-left:4px">PRIMO PUNTEGGIO</span>`:''}
+                </div>
+                <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:900;color:var(--gold)">${r.score} pt</div>
+            </div>
+        `).join('')}
+    `;
+}
 
 window.renderAsdDashboard = renderAsdDashboard;
 window.renderAsdAtleti    = renderAsdAtleti;
