@@ -1498,6 +1498,8 @@ window.tkNote=(volley)=>{
 window.tkFineTurno=async(isFinal)=>{
     const s=TK.session,st=tkCalc(TK.grid);
     const tk=`turn${TK.turn}`;
+    // Conserva la griglia come array 2D in memoria (per lettura locale)
+    // La serializzazione JSON avviene solo al momento del salvataggio su Firestore
     s[tk]={summary:{score:st.score,X:st.X,Ten:st.Ten,Nine:st.Nine,fired:st.fired,avg:st.avg},grid:TK.grid.map(r=>[...r]),volleyNotes:{...TK.volleyNotes}};
     if(isFinal){
         showModal('🪃 Frecce extra',`
@@ -1525,8 +1527,8 @@ window.tkFineTurno=async(isFinal)=>{
                     esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
                     noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                     notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
-                    turn1:s.turn1?{summary:s.turn1.summary,grid:s.turn1.grid||[],volleyNotes:s.turn1.volleyNotes||{}}:null,
-                    turn2:s.turn2?{summary:s.turn2.summary,grid:s.turn2.grid||[],volleyNotes:s.turn2.volleyNotes||{}}:null,
+                    turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{}}:null,
+                    turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{}}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                 });
                 localStorage.removeItem('tk_d');
@@ -1568,7 +1570,7 @@ window.tkFineTurno=async(isFinal)=>{
                         noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                         notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
                         turn1:{summary:{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
-                               grid:s.turn1?.grid||[],volleyNotes:s.turn1?.volleyNotes||{}},
+                               grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{}},
                         timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                     });
                     localStorage.removeItem('tk_d');
