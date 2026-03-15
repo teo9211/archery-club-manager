@@ -343,6 +343,7 @@ function buildNav() {
             { icon:'📨', label:'Messaggi',  fn:"window.setView('asdMessaggi')" },
             { icon:'⚙️', label:'Profilo ASD', fn:"window.setView('asdProfilo')" },
             { icon:'💬', label:'Msg ASD→ASD',  fn:"window.setView('msgTraAsd')" },
+            { icon:'📬', label:'Msg Esterni',   fn:"window.setView('asdMessaggiEsterni')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
         items += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
             <div class="nav-item" style="color:var(--danger)" onclick="logoutAsd()">🚪 Logout ASD</div>
@@ -438,6 +439,7 @@ window.setView = async (view, params={}) => {
         case 'atletaCalendario':   return renderAtletaCalendario();
         case 'atletaMateriale':    return renderAtletaMateriale();
         case 'msgTraAsd':          return renderMsgTraAsd();
+        case 'asdMessaggiEsterni': return renderAsdMessaggiEsterni();
         case 'targetStats':        return renderTargetStats();
         case 'atletaObiettivi':    return renderAtletaObiettivi();
         case 'confrontaSessioni':  return renderConfronta();
@@ -674,6 +676,11 @@ async function renderAsdDashboard() {
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">⚙️</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Profilo ASD</div>
                     <div style="font-size:0.78rem;color:var(--muted)">Logo, impostazioni</div>
+                </div>
+                <div class="card card-hover" id="card-msg-esterni" onclick="window.setView('asdMessaggiEsterni')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📬</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Msg Esterni</div>
+                    <div id="card-msg-esterni-sub" style="font-size:0.78rem;color:var(--muted)">Da utenti e visitatori</div>
                 </div>
             </div>
         </div>
@@ -1315,20 +1322,28 @@ window.scriviAllAsd = (asdId, asdNome) => {
         <div style="display:flex;flex-direction:column;gap:0.6rem">
             <div><label class="form-label">Il tuo nome</label>
                 <input class="inp" id="msg-asd-nome" placeholder="Nome e Cognome"></div>
+            <div><label class="form-label">Email (opzionale)</label>
+                <input class="inp" type="email" id="msg-asd-email" placeholder="per ricevere risposta"></div>
+            <div><label class="form-label">Telefono (opzionale)</label>
+                <input class="inp" type="tel" id="msg-asd-tel" placeholder="+39 ..."></div>
             <div><label class="form-label">Messaggio *</label>
                 <textarea class="inp" id="msg-asd-testo" rows="4" placeholder="Scrivi il tuo messaggio all'ASD..."></textarea></div>
         </div>
     `, [
         {text:'Annulla',cls:'btn-ghost'},
         {text:'Invia ✉️',cls:'btn-gold',fn:async()=>{
-            const nome = document.getElementById('msg-asd-nome')?.value.trim();
+            const nome  = document.getElementById('msg-asd-nome')?.value.trim();
+            const email = document.getElementById('msg-asd-email')?.value.trim();
+            const tel   = document.getElementById('msg-asd-tel')?.value.trim();
             const testo = document.getElementById('msg-asd-testo')?.value.trim();
             if (!testo) return showModal('Errore','Scrivi un messaggio.',[{text:'OK'}]);
             try {
-                // Salva nella collection messaggi_esterni dell'ASD
                 const extCol = collection(db, `${APP_NS}/data/asd/${asdId}/messaggi_esterni`);
-                await addDoc(extCol, { mittente: nome||'Anonimo', testo, createdAt: serverTimestamp() });
-                showModal('✅ Inviato!','Il tuo messaggio è stato inviato all\'ASD.',[{text:'OK'}]);
+                const data = { mittente: nome||'Anonimo', testo, createdAt: serverTimestamp() };
+                if (email) data.email = email;
+                if (tel)   data.telefono = tel;
+                await addDoc(extCol, data);
+                showModal('✅ Inviato!','Il tuo messaggio è stato inviato all\'ASD. Ti risponderanno al più presto.',[{text:'OK'}]);
             } catch(e) { showModal('Errore','Impossibile inviare: '+e.message,[{text:'OK'}]); }
         }}
     ]);
@@ -1799,7 +1814,16 @@ window.tkFineTurno=async(isFinal)=>{
     const tk=`turn${TK.turn}`;
     // Conserva la griglia come array 2D in memoria (per lettura locale)
     // La serializzazione JSON avviene solo al momento del salvataggio su Firestore
-    s[tk]={summary:{score:st.score,X:st.X,Ten:st.Ten,Nine:st.Nine,fired:st.fired,avg:st.avg},grid:TK.grid.map(r=>[...r]),volleyNotes:{...TK.volleyNotes}};
+    // Converti _tkPos (oggetto {row_col: {x,y,score}}) in array ordinato per questo turno
+    const turnArrowPositions = [];
+    Object.entries(window._tkPos||{}).forEach(([key, pos]) => {
+        const [ri, ci] = key.split('_').map(Number);
+        const sc = TK.grid[ri]?.[ci] || '';
+        if (sc && pos.x != null) turnArrowPositions.push({ ri, ci, x: pos.x, y: pos.y, score: sc });
+    });
+    s[tk]={summary:{score:st.score,X:st.X,Ten:st.Ten,Nine:st.Nine,fired:st.fired,avg:st.avg},grid:TK.grid.map(r=>[...r]),volleyNotes:{...TK.volleyNotes},arrowPositions:turnArrowPositions};
+    // Reset _tkPos per il prossimo turno
+    window._tkPos={};
     if(isFinal){
         showModal('🪃 Frecce extra',`
             <div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold)">${st.score}</div>
@@ -1826,8 +1850,8 @@ window.tkFineTurno=async(isFinal)=>{
                     esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
                     noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                     notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
-                    turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{}}:null,
-                    turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{}}:null,
+                    turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
+                    turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{},arrowPositions:s.turn2.arrowPositions||[]}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                 });
                 tkClearDraft();
@@ -1869,7 +1893,7 @@ window.tkFineTurno=async(isFinal)=>{
                         noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                         notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
                         turn1:{summary:{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
-                               grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{}},
+                               grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{},arrowPositions:s.turn1?.arrowPositions||[]},
                         timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                     });
                     tkClearDraft();
@@ -3521,6 +3545,57 @@ window.applyBulk = async () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ── MESSAGGI ESTERNI (da visitatori/pubblico) ────────────────────────────────
+async function renderAsdMessaggiEsterni() {
+    setHeader('📬 Messaggi Esterni', S.asd?.nome||'');
+    // Segna come letti
+    localStorage.setItem(`ext_msg_seen_${S.asd.id}`, Date.now().toString());
+
+    const extCol = collection(db, `${APP_NS}/data/asd/${S.asd.id}/messaggi_esterni`);
+    const snap = await getDocs(extCol);
+    const msgs = snap.docs.map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)));
+
+    render(`
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem">
+            Messaggi inviati da visitatori e potenziali atleti tramite la schermata pubblica della tua ASD.
+        </p>
+        ${msgs.length===0 ? `<div style="text-align:center;padding:3rem;color:var(--muted)">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem">📬</div>
+            <p>Nessun messaggio esterno ricevuto.</p>
+            <p style="font-size:0.78rem;margin-top:0.3rem">I messaggi arrivano dalla pagina pubblica della tua ASD.</p>
+        </div>` :
+        msgs.map(m => `
+            <div class="card" style="margin-bottom:0.75rem;border-left:3px solid #3d9970">
+                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.4rem">
+                    <div>
+                        <strong style="color:var(--text);font-size:0.95rem">${m.mittente||'Anonimo'}</strong>
+                        <span style="font-size:0.72rem;color:var(--muted);margin-left:0.5rem">${m.createdAt?new Date(m.createdAt.seconds*1000).toLocaleString('it'):''}</span>
+                    </div>
+                    <div style="display:flex;gap:0.4rem;flex-shrink:0">
+                        ${m.telefono||m.email?`<a href="${m.email?'mailto:'+m.email:m.telefono?'tel:'+m.telefono:''}" style="font-size:0.75rem;color:var(--gold);text-decoration:none;border:1px solid var(--gold);border-radius:6px;padding:2px 6px">Rispondi</a>`:''}
+                        <button onclick="window.eliminaMsgEsterno('${m.id}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:0.9rem;padding:0">✕</button>
+                    </div>
+                </div>
+                <div style="font-size:0.88rem;color:var(--text);white-space:pre-wrap;line-height:1.5">${m.testo}</div>
+                ${m.email?`<div style="font-size:0.75rem;color:var(--muted);margin-top:0.3rem">✉️ ${m.email}</div>`:''}
+                ${m.telefono?`<div style="font-size:0.75rem;color:var(--muted);margin-top:0.2rem">📞 ${m.telefono}</div>`:''}
+            </div>
+        `).join('')}
+    `);
+}
+
+window.eliminaMsgEsterno = async (id) => {
+    showModal('Elimina messaggio','Eliminare questo messaggio esterno?',[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Elimina',cls:'btn-danger',fn:async()=>{
+            await deleteDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}/messaggi_esterni/${id}`));
+            window.setView('asdMessaggiEsterni');
+        }}
+    ]);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ── NOTIFICHE RECORD ASD ────────────────────────────────────────────────────
 // Controlla se qualche atleta ha battuto il suo record dal nostro ultimo accesso
 async function checkRecordNotifiche() {
@@ -3656,23 +3731,42 @@ async function checkMessaggiEsterni() {
     try {
         const extCol = collection(db, `${APP_NS}/data/asd/${S.asd.id}/messaggi_esterni`);
         const snap = await getDocs(extCol);
+        // Aggiorna badge card
+        const cardSub = document.getElementById('card-msg-esterni-sub');
+        const card = document.getElementById('card-msg-esterni');
+        if (snap.size > 0) {
+            // Conta non letti
+            const lastSeen = parseInt(localStorage.getItem(`ext_msg_seen_${S.asd.id}`)||'0');
+            const nonLetti = snap.docs.filter(d=>{
+                const ts = (d.data().createdAt?.seconds||0)*1000;
+                return ts > lastSeen;
+            }).length;
+            if (cardSub) cardSub.innerHTML = `<span style="color:${nonLetti>0?'#5dba94':'var(--muted)'};font-weight:${nonLetti>0?'700':'400'}">${snap.size} totale${nonLetti>0?' · <strong>'+nonLetti+' nuovi</strong>':''}</span>`;
+            if (card && nonLetti>0) { card.style.borderColor='#3d9970'; card.style.background='rgba(61,153,112,0.07)'; }
+        }
         if (!snap.size) return;
         const extBox = document.getElementById('asd-ext-msg-box');
         if (!extBox) return;
         extBox.style.display = 'block';
         const msgs = snap.docs.map(d=>({id:d.id,...d.data()}))
             .sort((a,b)=>((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)));
+        const lastSeen2 = parseInt(localStorage.getItem(`ext_msg_seen_${S.asd.id}`)||'0');
         extBox.innerHTML = `
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#5dba94;margin-bottom:0.5rem">
-                ✉️ Messaggi Ricevuti da Esterni (${msgs.length})
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#5dba94">📬 ${msgs.length} Messaggi da Esterni</div>
+                <button onclick="window.setView('asdMessaggiEsterni')" style="font-size:0.75rem;color:var(--gold);background:none;border:none;cursor:pointer;text-decoration:underline">Vedi tutti →</button>
             </div>
-            ${msgs.map(m=>`<div style="background:var(--dark3);border-radius:8px;padding:0.5rem;margin-bottom:0.4rem;font-size:0.83rem">
-                <div style="display:flex;justify-content:space-between">
-                    <strong style="color:var(--text)">${m.mittente||'Anonimo'}</strong>
-                    <span style="color:var(--muted);font-size:0.7rem">${m.createdAt?new Date(m.createdAt.seconds*1000).toLocaleDateString('it'):''}</span>
-                </div>
-                <div style="color:var(--muted);margin-top:0.2rem">${m.testo}</div>
-            </div>`).join('')}
+            ${msgs.slice(0,2).map(m=>{
+                const isNew=(m.createdAt?.seconds||0)*1000>lastSeen2;
+                return `<div style="background:var(--dark3);border-radius:8px;padding:0.5rem;margin-bottom:0.4rem;font-size:0.83rem;${isNew?'border-left:3px solid #3d9970':''}">
+                    <div style="display:flex;justify-content:space-between">
+                        <strong style="color:${isNew?'#5dba94':'var(--text)'}">${m.mittente||'Anonimo'}${isNew?' 🆕':''}</strong>
+                        <span style="color:var(--muted);font-size:0.7rem">${m.createdAt?new Date(m.createdAt.seconds*1000).toLocaleDateString('it'):''}</span>
+                    </div>
+                    <div style="color:var(--muted);margin-top:0.2rem">${m.testo.substring(0,80)}${m.testo.length>80?'…':''}</div>
+                </div>`;
+            }).join('')}
+            ${msgs.length>2?`<div style="text-align:center;font-size:0.75rem;color:var(--muted)">... e altri ${msgs.length-2}</div>`:''}
         `;
     } catch(e) {}
 }
