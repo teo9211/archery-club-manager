@@ -1623,28 +1623,31 @@ const TK_ARCO    = ['Arco Nudo','Arco Olimpico','Compound'];
 const TK_KEYPAD  = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
 
 const TK = { session:null, turn:1, grid:null, volleyNotes:{}, rows:0, cols:3, format:null, activeCell:{row:1,col:1} };
+// Bersaglio standard WA/FITA: raggio 170px, 10 anelli da 17px ciascuno
+// X = puntino centrale (raggio 8.5 = metà di un anello)
 const TK_RINGS_S = [
-    {s:'X', r:7.4,  c:'#fef08a'},  // giallo chiaro (gold inner)
-    {s:'10',r:17.0, c:'#fbbf24'},  // giallo
-    {s:'9', r:35.9, c:'#fbbf24'},  // giallo
-    {s:'8', r:54.9, c:'#ef4444'},  // rosso
-    {s:'7', r:73.8, c:'#ef4444'},  // rosso
-    {s:'6', r:92.7, c:'#3b82f6'},  // blu
-    {s:'5', r:111.7,c:'#3b82f6'},  // blu
-    {s:'4', r:130.6,c:'#111827'},  // nero
-    {s:'3', r:149.5,c:'#111827'},  // nero
-    {s:'2', r:168.5,c:'#f9fafb'},  // bianco
-    {s:'1', r:170.0,c:'#e5e7eb'},  // bianco (leggermente più scuro per distinguerlo)
+    {s:'X', r:8.5,  c:'#fef08a', border:'1.5px solid #ca8a04'},
+    {s:'10',r:17.0, c:'#fbbf24', border:'1px solid #ca8a04'},
+    {s:'9', r:34.0, c:'#fbbf24', border:'2px solid #92400e'},
+    {s:'8', r:51.0, c:'#ef4444', border:'1px solid #991b1b'},
+    {s:'7', r:68.0, c:'#ef4444', border:'2px solid #7f1d1d'},
+    {s:'6', r:85.0, c:'#3b82f6', border:'1px solid #1e3a8a'},
+    {s:'5', r:102.0,c:'#3b82f6', border:'2px solid #1e3a8a'},
+    {s:'4', r:119.0,c:'#1f2937', border:'1px solid #374151'},
+    {s:'3', r:136.0,c:'#1f2937', border:'2px solid #4b5563'},
+    {s:'2', r:153.0,c:'#f8fafc', border:'1px solid #94a3b8'},
+    {s:'1', r:170.0,c:'#e2e8f0', border:'2px solid #94a3b8'},
 ];
 const TK_TR_W=164,TK_TR_H=508,TK_TR_R=80,TK_TR_CX=82;
 const TK_TR_CY=[82, 82+TK_TR_R*2+12, 82+(TK_TR_R*2+12)*2];
+// Tripla: 6 anelli (X→6), raggio max 43px, ogni anello ~7.2px
 const TK_RINGS_T=[
-    {s:'X', r:3.5, c:'#fef08a'},  // giallo chiaro
-    {s:'10',r:8.0, c:'#fbbf24'},  // giallo
-    {s:'9', r:16.8,c:'#fbbf24'},  // giallo
-    {s:'8', r:25.7,c:'#ef4444'},  // rosso
-    {s:'7', r:34.6,c:'#ef4444'},  // rosso
-    {s:'6', r:43.4,c:'#3b82f6'},  // blu (tripla arriva fino a 6)
+    {s:'X', r:3.6, c:'#fef08a', border:'1.5px solid #ca8a04'},
+    {s:'10',r:7.2, c:'#fbbf24', border:'1px solid #ca8a04'},
+    {s:'9', r:14.4,c:'#fbbf24', border:'2px solid #92400e'},
+    {s:'8', r:21.6,c:'#ef4444', border:'1px solid #991b1b'},
+    {s:'7', r:28.8,c:'#ef4444', border:'2px solid #7f1d1d'},
+    {s:'6', r:36.0,c:'#3b82f6', border:'2px solid #1e3a8a'},
 ];
 const TK_OV = { active:false, cfg:'singola' };
 if(!window._tkPos) window._tkPos={};
@@ -1988,9 +1991,15 @@ function tkOvDrawTarget(canvas,cfg){
     canvas.querySelectorAll('.tk-r,.tk-d,.tk-bg').forEach(d=>d.remove());
     if(isTr){
         const bg=document.createElement('div');bg.className='tk-bg';bg.style.cssText='position:absolute;inset:0;background:#1e293b;border-radius:10px';canvas.appendChild(bg);
-        TK_TR_CY.forEach(cy=>[...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-r';el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.8px solid rgba(0,0,0,0.4);left:${TK_TR_CX-r.r}px;top:${cy-r.r}px`;canvas.appendChild(el);}));
+        TK_TR_CY.forEach(cy=>{
+            // Sfondo bianco per ogni cerchio della tripla
+            const bgr=document.createElement('div');bgr.className='tk-r';bgr.style.cssText=`position:absolute;border-radius:50%;width:${TK_RINGS_T[TK_RINGS_T.length-1].r*2+4}px;height:${TK_RINGS_T[TK_RINGS_T.length-1].r*2+4}px;background:#e2e8f0;left:${TK_TR_CX-TK_RINGS_T[TK_RINGS_T.length-1].r-2}px;top:${cy-TK_RINGS_T[TK_RINGS_T.length-1].r-2}px`;canvas.appendChild(bgr);
+            [...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-r';el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:${r.border||'1px solid rgba(0,0,0,0.3)'};left:${TK_TR_CX-r.r}px;top:${cy-r.r}px`;canvas.appendChild(el);});
+        });
     } else {
-        [...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-r';el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.5px solid rgba(0,0,0,0.3)`;canvas.appendChild(el);});
+        // Sfondo bianco per l'intera targa
+        const bg=document.createElement('div');bg.className='tk-r';bg.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:340px;height:340px;background:#e2e8f0';canvas.appendChild(bg);
+        [...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.className='tk-r';el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:${r.border||'1px solid rgba(0,0,0,0.2)'}`;canvas.appendChild(el);});
     }
     const ri=TK.activeCell.row-1;
     TK.grid.forEach((row,r)=>row.forEach((sc,c)=>{
@@ -2004,9 +2013,20 @@ function tkOvBuildMag(cfg){
     const off=document.createElement('canvas');off.width=W;off.height=H;
     const ctx=off.getContext('2d');
     const rings=isTr?TK_RINGS_T:TK_RINGS_S;
-    const dT=(cx,cy)=>[...rings].reverse().forEach(r=>{ctx.beginPath();ctx.arc(cx,cy,r.r,0,Math.PI*2);ctx.fillStyle=r.c;ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.stroke();});
+    const dT=(cx,cy)=>{
+        // Sfondo bianco
+        ctx.beginPath();ctx.arc(cx,cy,rings[rings.length-1].r+2,0,Math.PI*2);ctx.fillStyle='#e2e8f0';ctx.fill();
+        [...rings].reverse().forEach(r=>{
+            ctx.beginPath();ctx.arc(cx,cy,r.r,0,Math.PI*2);
+            ctx.fillStyle=r.c;ctx.fill();
+            // Linea di demarcazione
+            ctx.beginPath();ctx.arc(cx,cy,r.r,0,Math.PI*2);
+            const bc=r.border?r.border.split(' ').pop():'rgba(0,0,0,0.25)';
+            ctx.strokeStyle=bc;ctx.lineWidth=r.border&&r.border.includes('2px')?1.5:0.8;ctx.stroke();
+        });
+    };
     if(isTr){ctx.fillStyle='#1e293b';ctx.fillRect(0,0,W,H);TK_TR_CY.forEach(cy=>dT(TK_TR_CX,cy));}
-    else{ctx.fillStyle='#e5e7eb';ctx.beginPath();ctx.arc(170,170,170,0,Math.PI*2);ctx.fill();dT(170,170);}
+    else{ctx.fillStyle='#e2e8f0';ctx.beginPath();ctx.arc(170,170,170,0,Math.PI*2);ctx.fill();dT(170,170);}
     const mag=document.getElementById('test-magnifier');
     if(mag)mag.style.backgroundImage=`url('${off.toDataURL()}')`;
 }
@@ -3252,10 +3272,21 @@ async function renderTargetStats() {
                     const cw=document.createElement('div');
                     cw.innerHTML=`<p style="text-align:center;font-size:11px;color:var(--gold);margin-bottom:6px">${targa} (${arrows.length})</p>`;
                     const cv=document.createElement('div');
-                    cv.style.cssText=isTr?`position:relative;width:${TK_TR_W}px;height:${TK_TR_H}px;border-radius:10px;overflow:hidden;border:2px solid #334155;background:#1e293b;`:`position:relative;width:280px;height:280px;border-radius:50%;overflow:hidden;border:2px solid #334155;background:#374151;`;
-                    if(isTr){TK_TR_CY.forEach(cy=>[...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.8px solid rgba(0,0,0,0.4);left:${TK_TR_CX-r.r}px;top:${cy-r.r}px;`;cv.appendChild(el);}));}
-                    else{[...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.5px solid rgba(0,0,0,0.3);`;cv.appendChild(el);});}
-                    const sc=isTr?1:280/340;
+                    // Scala bersaglio per le statistiche: singolo 280px (scala 280/340), tripla dimensione originale
+                    const scStats=isTr?1:280/340;
+                    cv.style.cssText=isTr?`position:relative;width:${TK_TR_W}px;height:${TK_TR_H}px;border-radius:10px;overflow:hidden;border:2px solid #334155;background:#1e293b;`:`position:relative;width:280px;height:280px;border-radius:50%;overflow:hidden;border:1px solid #94a3b8;background:#e2e8f0;`;
+                    if(isTr){
+                        TK_TR_CY.forEach(cy=>{
+                            // sfondo bianco per ogni cerchio tripla
+                            const bgr=document.createElement('div');const maxR=TK_RINGS_T[TK_RINGS_T.length-1].r;bgr.style.cssText=`position:absolute;border-radius:50%;width:${maxR*2+4}px;height:${maxR*2+4}px;background:#e2e8f0;left:${TK_TR_CX-maxR-2}px;top:${cy-maxR-2}px;`;cv.appendChild(bgr);
+                            [...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:${r.border||'1px solid rgba(0,0,0,0.3)'};left:${TK_TR_CX-r.r}px;top:${cy-r.r}px;`;cv.appendChild(el);});
+                        });
+                    } else {
+                        // Sfondo bianco dell'intera targa
+                        const bgEl=document.createElement('div');bgEl.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:280px;height:280px;background:#e2e8f0';cv.appendChild(bgEl);
+                        [...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2*scStats}px;height:${r.r*2*scStats}px;background:${r.c};border:${r.border||'1px solid rgba(0,0,0,0.2)'}`;cv.appendChild(el);});
+                    }
+                    const sc=isTr?1:280/340; // per i puntini frecce
                     arrows.forEach(a=>{const dot=document.createElement('div');const sv=a.score==='X'?10:parseInt(a.score)||0;const dc=sv>=9?'#fbbf24':sv>=7?'#ef4444':sv>=5?'#3b82f6':sv>=3?'#111827':'#f9fafb';const dob=sv<3?'rgba(100,100,100,0.6)':'rgba(0,0,0,0.7)';dot.style.cssText=`position:absolute;width:7px;height:7px;border-radius:50%;background:${dc};border:1.5px solid ${dob};left:${a.x*sc}px;top:${a.y*sc}px;transform:translate(-50%,-50%);opacity:0.9;z-index:10;`;cv.appendChild(dot);});
                     cw.appendChild(cv);wrap.appendChild(cw);
                 });
