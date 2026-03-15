@@ -1624,16 +1624,27 @@ const TK_KEYPAD  = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
 
 const TK = { session:null, turn:1, grid:null, volleyNotes:{}, rows:0, cols:3, format:null, activeCell:{row:1,col:1} };
 const TK_RINGS_S = [
-    {s:'X',r:7.4,c:'#fef08a'},{s:'10',r:17.0,c:'#fef08a'},{s:'9',r:35.9,c:'#fde047'},
-    {s:'8',r:54.9,c:'#fde047'},{s:'7',r:73.8,c:'#fb923c'},{s:'6',r:92.7,c:'#fb923c'},
-    {s:'5',r:111.7,c:'#60a5fa'},{s:'4',r:130.6,c:'#60a5fa'},{s:'3',r:149.5,c:'#1e1e1e'},
-    {s:'2',r:168.5,c:'#1e1e1e'},{s:'1',r:170.0,c:'#374151'}
+    {s:'X', r:7.4,  c:'#fef08a'},  // giallo chiaro (gold inner)
+    {s:'10',r:17.0, c:'#fbbf24'},  // giallo
+    {s:'9', r:35.9, c:'#fbbf24'},  // giallo
+    {s:'8', r:54.9, c:'#ef4444'},  // rosso
+    {s:'7', r:73.8, c:'#ef4444'},  // rosso
+    {s:'6', r:92.7, c:'#3b82f6'},  // blu
+    {s:'5', r:111.7,c:'#3b82f6'},  // blu
+    {s:'4', r:130.6,c:'#111827'},  // nero
+    {s:'3', r:149.5,c:'#111827'},  // nero
+    {s:'2', r:168.5,c:'#f9fafb'},  // bianco
+    {s:'1', r:170.0,c:'#e5e7eb'},  // bianco (leggermente più scuro per distinguerlo)
 ];
 const TK_TR_W=164,TK_TR_H=508,TK_TR_R=80,TK_TR_CX=82;
 const TK_TR_CY=[82, 82+TK_TR_R*2+12, 82+(TK_TR_R*2+12)*2];
 const TK_RINGS_T=[
-    {s:'X',r:3.5,c:'#fef08a'},{s:'10',r:8.0,c:'#fef08a'},{s:'9',r:16.8,c:'#fde047'},
-    {s:'8',r:25.7,c:'#ef4444'},{s:'7',r:34.6,c:'#ef4444'},{s:'6',r:43.4,c:'#3b82f6'}
+    {s:'X', r:3.5, c:'#fef08a'},  // giallo chiaro
+    {s:'10',r:8.0, c:'#fbbf24'},  // giallo
+    {s:'9', r:16.8,c:'#fbbf24'},  // giallo
+    {s:'8', r:25.7,c:'#ef4444'},  // rosso
+    {s:'7', r:34.6,c:'#ef4444'},  // rosso
+    {s:'6', r:43.4,c:'#3b82f6'},  // blu (tripla arriva fino a 6)
 ];
 const TK_OV = { active:false, cfg:'singola' };
 if(!window._tkPos) window._tkPos={};
@@ -1728,7 +1739,7 @@ function tkRenderScoring(){
             <td style="color:var(--gold);font-weight:700">${i+1}</td>
             ${Array(TK.cols).fill(0).map((_,ci)=>{
                 const act=TK.activeCell.row===i+1&&TK.activeCell.col===ci+1,sc=TK.grid[i][ci];
-                return `<td class="score-cell" onclick="window.tkCell(${i+1},${ci+1})" style="${act?'background:var(--gold);color:#000;font-weight:900;':''}${sc==='X'||sc==='10'?'color:#fbbf24;':sc==='M'?'color:#ef4444;':''}">${sc||''}</td>`;
+                return `<td class="score-cell" onclick="window.tkCell(${i+1},${ci+1})" style="${act?'background:var(--gold);color:#000;font-weight:900;':''}${sc==='X'||sc==='10'||sc==='9'?'color:#fbbf24;font-weight:700;':sc==='8'||sc==='7'?'color:#ef4444;font-weight:700;':sc==='6'||sc==='5'?'color:#60a5fa;':sc==='M'?'color:#ef4444;':''}">${sc||''}</td>`;
             }).join('')}
             <td style="font-weight:700">${fil.length?p:''}</td><td style="font-weight:700">${fil.length?cum:''}</td>
             <td style="color:var(--gold)">${fil.length?`${vx}-${vt}`:''}</td><td>${fil.length?vn:''}</td>
@@ -1931,7 +1942,7 @@ function tkOvRender(){
     const lc=`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:44px">
         <p style="font-size:9px;color:#6b7280;text-transform:uppercase;writing-mode:vertical-lr;transform:rotate(180deg)">V.${ri+1}</p>
         ${Array(TK.cols).fill(0).map((_,i)=>{const sc=sorted[i];
-            if(sc){const st2=sc==='X'||sc==='10'?'background:#eab308;color:#000':sc==='M'?'background:#dc2626;color:#fff':parseInt(sc)>=7?'background:#ef4444;color:#fff':parseInt(sc)>=5?'background:#3b82f6;color:#fff':'background:#4b5563;color:#fff';
+            if(sc){const sv2=sc==='X'?10:parseInt(sc)||0;const st2=sc==='X'||sv2>=9?'background:#fbbf24;color:#000':sc==='M'?'background:#dc2626;color:#fff':sv2>=7?'background:#ef4444;color:#fff':sv2>=5?'background:#3b82f6;color:#fff':sv2>=3?'background:#111827;color:#fff':'background:#e5e7eb;color:#000';
                 return `<div style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:900;font-size:15px;${st2}">${sc}</div>`;}
             return `<div style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#1f2937;border:1px solid #374151;color:#6b7280;font-size:12px">·</div>`;
         }).join('')}
@@ -1995,7 +2006,7 @@ function tkOvBuildMag(cfg){
     const rings=isTr?TK_RINGS_T:TK_RINGS_S;
     const dT=(cx,cy)=>[...rings].reverse().forEach(r=>{ctx.beginPath();ctx.arc(cx,cy,r.r,0,Math.PI*2);ctx.fillStyle=r.c;ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.stroke();});
     if(isTr){ctx.fillStyle='#1e293b';ctx.fillRect(0,0,W,H);TK_TR_CY.forEach(cy=>dT(TK_TR_CX,cy));}
-    else{ctx.fillStyle='#374151';ctx.beginPath();ctx.arc(170,170,170,0,Math.PI*2);ctx.fill();dT(170,170);}
+    else{ctx.fillStyle='#e5e7eb';ctx.beginPath();ctx.arc(170,170,170,0,Math.PI*2);ctx.fill();dT(170,170);}
     const mag=document.getElementById('test-magnifier');
     if(mag)mag.style.backgroundImage=`url('${off.toDataURL()}')`;
 }
@@ -2467,7 +2478,7 @@ async function renderDettaglioSessione(params) {
             const hasNote = notes[i+1];
             html += `<tr style="background:${i%2===0?'var(--dark3)':'var(--dark2)'}">
                 <td style="color:var(--gold);font-weight:700">${i+1}${hasNote?' 📝':''}</td>
-                ${padded.map(sc=>`<td style="${sc==='X'||sc==='10'?'color:#fbbf24;font-weight:700':sc==='M'?'color:#ef4444':''}">${sc||''}</td>`).join('')}
+                ${padded.map(sc=>`<td style="${sc==='X'||sc==='10'||sc==='9'?'color:#fbbf24;font-weight:700':sc==='8'||sc==='7'?'color:#ef4444':sc==='6'||sc==='5'?'color:#60a5fa':sc==='M'?'color:#ef4444;font-weight:700':''}">${sc||''}</td>`).join('')}
                 <td style="font-weight:700">${v.parz}</td><td style="font-weight:700">${v.tot}</td>
                 <td style="color:var(--gold)">${v.x10}</td><td>${v.nine}</td>
             </tr>`;
@@ -3245,7 +3256,7 @@ async function renderTargetStats() {
                     if(isTr){TK_TR_CY.forEach(cy=>[...TK_RINGS_T].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.8px solid rgba(0,0,0,0.4);left:${TK_TR_CX-r.r}px;top:${cy-r.r}px;`;cv.appendChild(el);}));}
                     else{[...TK_RINGS_S].reverse().forEach(r=>{const el=document.createElement('div');el.style.cssText=`position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;width:${r.r*2}px;height:${r.r*2}px;background:${r.c};border:0.5px solid rgba(0,0,0,0.3);`;cv.appendChild(el);});}
                     const sc=isTr?1:280/340;
-                    arrows.forEach(a=>{const dot=document.createElement('div');const sv=a.score==='X'?10:parseInt(a.score)||0;const dc=sv>=9?'#fbbf24':sv>=7?'#fb923c':sv>=5?'#60a5fa':'#64748b';dot.style.cssText=`position:absolute;width:7px;height:7px;border-radius:50%;background:${dc};border:1.5px solid rgba(0,0,0,0.7);left:${a.x*sc}px;top:${a.y*sc}px;transform:translate(-50%,-50%);opacity:0.85;z-index:10;`;cv.appendChild(dot);});
+                    arrows.forEach(a=>{const dot=document.createElement('div');const sv=a.score==='X'?10:parseInt(a.score)||0;const dc=sv>=9?'#fbbf24':sv>=7?'#ef4444':sv>=5?'#3b82f6':sv>=3?'#111827':'#f9fafb';const dob=sv<3?'rgba(100,100,100,0.6)':'rgba(0,0,0,0.7)';dot.style.cssText=`position:absolute;width:7px;height:7px;border-radius:50%;background:${dc};border:1.5px solid ${dob};left:${a.x*sc}px;top:${a.y*sc}px;transform:translate(-50%,-50%);opacity:0.9;z-index:10;`;cv.appendChild(dot);});
                     cw.appendChild(cv);wrap.appendChild(cw);
                 });
                 const barsEl=document.getElementById('ts-bars');
@@ -3256,7 +3267,7 @@ async function renderTargetStats() {
                 const maxC=Math.max(...Object.values(counts),1);
                 barsEl.innerHTML=order.filter(k=>counts[k]).map(k=>{
                     const c=counts[k]||0,pct=Math.round(c/allArrows.length*100),w=Math.round(c/maxC*100);
-                    const bc=k==='X'||k==='10'||k==='9'?'#fbbf24':k==='8'||k==='7'?'#fb923c':k==='6'?'#3b82f6':k==='5'?'#60a5fa':k==='M'?'#ef4444':'#64748b';
+                    const bc=k==='X'||k==='10'||k==='9'?'#fbbf24':k==='8'||k==='7'?'#ef4444':k==='6'||k==='5'?'#3b82f6':k==='4'||k==='3'?'#374151':k==='2'||k==='1'?'#d1d5db':k==='M'?'#dc2626':'#6b7280';
                     return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
                         <div style="width:22px;text-align:right;font-weight:700;font-size:0.82rem;color:var(--text)">${k}</div>
                         <div style="flex:1;background:var(--dark);border-radius:4px;overflow:hidden;height:18px">
