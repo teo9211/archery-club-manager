@@ -1609,7 +1609,7 @@ async function checkNuoviMessaggi() {
         }
     } catch(e) {}
 }
-window.resetFiltri = () => { window._filtroTipo = ''; window._filtroAnno = ''; };
+window.resetFiltri = () => { window._filtroTipo = ''; window._filtroAnno = ''; window._filtroPeriodo = ''; };
 
 // ════════════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════════════
@@ -2256,64 +2256,96 @@ async function renderAtletaDati() {
     setHeader('📊 I Miei Dati', S.atleta ? `${S.atleta.nome} ${S.atleta.cognome}` : '');
     await loadAtletaSessioni();
 
-    const totalScore = S.sessioni.reduce((s,x)=>s+(x.totalScore||0),0);
-    const totalFrecce= S.sessioni.reduce((s,x)=>s+(parseInt(x.frecceAggiuntive)||0),0);
-    const garaList = S.sessioni.filter(s=>s.type==='Gara'&&(s.totalScore||0)>0);
-    const allList = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
+    // ── Stats globali (sempre su tutte le sessioni) ──
+    const allList  = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
     const bestScore = allList.length > 0 ? Math.max(...allList.map(s=>s.totalScore||0)) : 0;
     const sessCount = S.sessioni.length;
-    const garaCount = garaList.length;
-    const allCount = S.sessioni.filter(s=>s.type==='Allenamento').length;
+    const garaCount = S.sessioni.filter(s=>s.type==='Gara').length;
+    const allCount  = S.sessioni.filter(s=>s.type==='Allenamento').length;
+    const totalFrecce = S.sessioni.reduce((sum,s)=>sum+countArrowsForSession(s),0);
 
-    // Filtro sessioni
-    const filtroTipo = window._filtroTipo || '';
-    const filtroAnno = window._filtroAnno || '';
-    let sessioniFiltrate = S.sessioni;
-    if (filtroTipo) sessioniFiltrate = sessioniFiltrate.filter(s => filtroTipo==='tecnico'?s.trainingWithoutScore:s.type===filtroTipo&&!s.trainingWithoutScore);
-    if (filtroAnno) sessioniFiltrate = sessioniFiltrate.filter(s => s.data && s.data.startsWith(filtroAnno));
+    // ── Filtri ──
+    const filtroTipo    = window._filtroTipo    || '';
+    const filtroPeriodo = window._filtroPeriodo || '';
     const anni = [...new Set(S.sessioni.map(s=>s.data?.substring(0,4)).filter(Boolean))].sort().reverse();
 
-    const sessList = sessioniFiltrate.length === 0
-        ? `<p style="text-align:center;color:var(--muted);padding:2rem">Nessuna sessione registrata.</p>`
-        : sessioniFiltrate.map(s => `
+    // Applica filtro tipo
+    let sess = [...S.sessioni];
+    if (filtroTipo === 'Gara')       sess = sess.filter(s=>s.type==='Gara'&&!s.trainingWithoutScore);
+    else if (filtroTipo==='Allenamento') sess = sess.filter(s=>s.type==='Allenamento'&&!s.trainingWithoutScore);
+    else if (filtroTipo==='tecnico')  sess = sess.filter(s=>s.trainingWithoutScore===true);
+
+    // Applica filtro periodo
+    const oggi = new Date(); const todayStr = oggi.toISOString().split('T')[0];
+    if (filtroPeriodo === 'settimana') {
+        const dow = oggi.getDay(), diff = dow===0?-6:1-dow;
+        const lun = new Date(oggi); lun.setDate(oggi.getDate()+diff);
+        const lunStr = lun.toISOString().split('T')[0];
+        sess = sess.filter(s=>s.data>=lunStr&&s.data<=todayStr);
+    } else if (filtroPeriodo === 'mese') {
+        const ms = `${oggi.getFullYear()}-${String(oggi.getMonth()+1).padStart(2,'0')}-01`;
+        sess = sess.filter(s=>s.data>=ms&&s.data<=todayStr);
+    } else if (filtroPeriodo && filtroPeriodo.length===4) {
+        // anno specifico
+        sess = sess.filter(s=>s.data&&s.data.startsWith(filtroPeriodo));
+    }
+
+    // ── Ordine cronologico decrescente (più recenti in alto), poi per orario ──
+    sess.sort((a,b)=>{
+        const da=`${a.data||'0000-00-00'}T${a.ora||'00:00'}`;
+        const db=`${b.data||'0000-00-00'}T${b.ora||'00:00'}`;
+        return db.localeCompare(da);
+    });
+
+    const sessList = sess.length === 0
+        ? `<p style="text-align:center;color:var(--muted);padding:2rem">${filtroTipo||filtroPeriodo?'Nessuna sessione per i filtri selezionati.':`Nessuna sessione registrata.`}</p>`
+        : sess.map(s=>`
             <div class="session-card" onclick="window.apriDettaglio('${s.id||s.docId||''}')" style="cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                    <div>
-                        <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</span>
-                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.3rem">${fmtDate(s.data)}</div>
-                        <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
+                    <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
+                            <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type||'Allenamento'}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</span>
+                        </div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.25rem">${fmtDate(s.data)}${s.ora?` <span style="font-size:0.72rem;color:var(--muted)">ore ${s.ora}</span>`:''}</div>
+                        <div style="font-size:0.75rem;color:var(--muted)">${s.luogo||''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
                     </div>
-                    ${s.totalScore > 0 ? `<div style="text-align:right"><div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.72rem;color:var(--muted)">${s.turn1Score?'T1:'+s.turn1Score+(s.turn2Score?' T2:'+s.turn2Score:''):''}</div></div>` : `<div style="font-size:0.78rem;color:var(--muted)">${s.trainingWithoutScore?'Tecnico':'Solo note'}</div>`}
+                    ${s.totalScore>0?`<div style="text-align:right;flex-shrink:0"><div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.7rem;color:var(--muted)">${s.turn1Score?'T1:'+s.turn1Score+(s.turn2Score?' T2:'+s.turn2Score:''):''}</div></div>`:`<div style="font-size:0.75rem;color:var(--muted);flex-shrink:0">${s.trainingWithoutScore?'Tecnico':'—'}</div>`}
                 </div>
             </div>
         `).join('');
 
+    const hasFiltri = filtroTipo || filtroPeriodo;
     render(`
-        <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaMenu')" style="margin-bottom:1rem">← Menu</button>
-        <div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap">
-            <select class="inp" style="flex:1;min-width:100px" onchange="window._filtroTipo=this.value;renderAtletaDati()">
-                <option value="" ${!filtroTipo?'selected':''}>Tutti i tipi</option>
-                <option value="Allenamento" ${filtroTipo==='Allenamento'?'selected':''}>Allenamento</option>
-                <option value="Gara" ${filtroTipo==='Gara'?'selected':''}>Gara</option>
-                <option value="tecnico" ${filtroTipo==='tecnico'?'selected':''}>Tecnico 🎓</option>
-            </select>
-            <select class="inp" style="flex:1;min-width:80px" onchange="window._filtroAnno=this.value;renderAtletaDati()">
-                <option value="" ${!filtroAnno?'selected':''}>Tutti gli anni</option>
-                ${anni.map(a=>`<option value="${a}" ${filtroAnno===a?'selected':''}>${a}</option>`).join('')}
-            </select>
-            ${filtroTipo||filtroAnno?`<button class="btn btn-ghost btn-sm" onclick="window._filtroTipo='';window._filtroAnno='';renderAtletaDati()">✕</button>`:''}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:1rem">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.45rem;margin-bottom:0.75rem">
             <div class="stat-box"><div class="stat-num">${sessCount}</div><div class="stat-label">Sessioni</div></div>
-            <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenim.</div></div>
+            <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenamenti</div></div>
             <div class="stat-box"><div class="stat-num">${garaCount}</div><div class="stat-label">Gare</div></div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;margin-bottom:1.25rem">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.45rem;margin-bottom:1rem">
             <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best Score</div></div>
             <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce Tot.</div></div>
         </div>
+
         <div class="gold-line"></div>
-        <h3 style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">📋 Sessioni</h3>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">🔍 Filtra Sessioni</div>
+
+        <!-- Riga 1: tipo -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.3rem;margin-bottom:0.4rem">
+            ${[['','Tutti'],['Allenamento','Allenamento'],['Gara','Gara'],['tecnico','Tecnico 🎓']].map(([v,l])=>`
+                <button onclick="window._filtroTipo='${v}';renderAtletaDati()" style="padding:0.3rem 0;font-size:0.73rem;font-weight:700;border-radius:8px;border:1.5px solid ${filtroTipo===v?'var(--gold)':'var(--border)'};background:${filtroTipo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${filtroTipo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+            `).join('')}
+        </div>
+        <!-- Riga 2: periodo -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.3rem;margin-bottom:0.75rem">
+            ${[['','Tutto'],['settimana','Sett.'],['mese','Mese'],...anni.slice(0,2).map(a=>[a,a])].map(([v,l])=>`
+                <button onclick="window._filtroPeriodo='${v}';renderAtletaDati()" style="padding:0.3rem 0;font-size:0.73rem;font-weight:700;border-radius:8px;border:1.5px solid ${filtroPeriodo===v?'var(--gold)':'var(--border)'};background:${filtroPeriodo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${filtroPeriodo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+            `).join('')}
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">📋 Sessioni${hasFiltri?` (${sess.length})`:' ('+sess.length+')'}</div>
+            ${hasFiltri?`<button onclick="window._filtroTipo='';window._filtroPeriodo='';renderAtletaDati()" class="btn btn-ghost btn-sm">✕ Reset</button>`:''}
+        </div>
         ${sessList}
     `);
 }
@@ -2675,22 +2707,40 @@ window._calRender = () => {
             <div class="stat-box"><div class="stat-num">${totFrecce}</div><div class="stat-label">Frecce</div></div>
         </div>` : `<p style="text-align:center;color:var(--muted);font-size:0.85rem">Nessuna sessione in ${MESI[m]} ${y}</p>`;
     const sessEl = document.getElementById('cal-sessions');
-    if (sessEl && mSess.length > 0) {
-        const sorted = [...mSess].sort((a,b)=>b.data.localeCompare(a.data));
+    if (sessEl) {
+        if (!mSess.length) { sessEl.innerHTML = ''; return; }
+        const calFiltroTipo = window._calFiltroTipo || '';
+        let sessVis = [...mSess];
+        if (calFiltroTipo==='Gara') sessVis = sessVis.filter(ss=>ss.type==='Gara'&&!ss.trainingWithoutScore);
+        else if (calFiltroTipo==='Allenamento') sessVis = sessVis.filter(ss=>ss.type==='Allenamento'&&!ss.trainingWithoutScore);
+        else if (calFiltroTipo==='tecnico') sessVis = sessVis.filter(ss=>ss.trainingWithoutScore===true);
+        // Ordine cronologico decrescente con orario
+        sessVis.sort((a,b)=>{
+            const da=`${a.data||''}T${a.ora||'00:00'}`, db=`${b.data||''}T${b.ora||'00:00'}`;
+            return db.localeCompare(da);
+        });
         sessEl.innerHTML = `<div class="gold-line"></div>
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Sessioni di ${MESI[m]}</div>
-            ${sorted.map(ss=>`<div class="session-card" onclick="window.apriDettaglio('${ss.id||ss.docId||''}')" style="cursor:pointer;margin-bottom:0.5rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 ${MESI[m]} (${mSess.length})</div>
+            <!-- Filtro tipo nel calendario -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.3rem;margin-bottom:0.6rem">
+                ${[['','Tutti'],['Allenamento','Allenim.'],['Gara','Gare'],['tecnico','Tecnico 🎓']].map(([v,l])=>`
+                    <button onclick="window._calFiltroTipo='${v}';window._calRender()" style="padding:0.3rem 0;font-size:0.68rem;font-weight:700;border-radius:8px;border:1.5px solid ${calFiltroTipo===v?'var(--gold)':'var(--border)'};background:${calFiltroTipo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${calFiltroTipo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+                `).join('')}
+            </div>
+            ${sessVis.length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:1rem">Nessuna sessione per questo filtro.</p>`:
+            sessVis.map(ss=>`<div class="session-card" onclick="window.apriDettaglio('${ss.id||ss.docId||''}')" style="cursor:pointer;margin-bottom:0.4rem">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div>
                         <span class="badge ${ss.type==='Gara'?'badge-gold':'badge-blue'}" style="font-size:0.68rem">${ss.type}${ss.trainingWithoutScore?' 🎓':ss.quickScore?' ⚡':''}</span>
                         <span style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-left:0.4rem">${fmtDate(ss.data)}</span>
-                        <div style="font-size:0.73rem;color:var(--muted)">${ss.luogo||''} ${ss.distanza?'· '+ss.distanza:''}</div>
+                        ${ss.ora?`<span style="font-size:0.7rem;color:var(--muted);margin-left:0.3rem">ore ${ss.ora}</span>`:''}
+                        <div style="font-size:0.72rem;color:var(--muted)">${ss.luogo||''} ${ss.distanza?'· '+ss.distanza:''}</div>
                     </div>
                     ${ss.totalScore>0?`<div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold-light)">${ss.totalScore}</div>`:
-                    ss.trainingWithoutScore?`<div style="font-size:0.73rem;color:var(--muted)">Tecnico</div>`:''}
+                    ss.trainingWithoutScore?`<div style="font-size:0.72rem;color:var(--muted)">Tecnico</div>`:''}
                 </div>
             </div>`).join('')}`;
-    } else if (sessEl) sessEl.innerHTML = '';
+    }
 };
 window._calDay = (dateStr) => {
     const daySess = S.sessioni.filter(ss => ss.data === dateStr);
@@ -2720,7 +2770,7 @@ function arrowCardHtml(a,i,isActive) {
             </div>
         </div>
         <div style="font-size:0.73rem;color:var(--gold)">${a.modello||'-'} | Spine: ${a.spine||'-'}</div>
-        <div style="font-size:0.7rem;color:var(--muted)">Punta: ${a.pesoPunta||'-'}gr · Ø${a.diametro||'-'}</div>
+        <div style="font-size:0.7rem;color:var(--muted)">Punta: ${a.pesoPunta||'-'}gr · Ø${a.diametro||'-'}${a.alette?' · Alette: '+a.alette:''}</div>
     </div>`;
 }
 function arrowDetailHtml(a,i) {
@@ -2735,11 +2785,88 @@ function arrowDetailHtml(a,i) {
             <div><label class="form-label">Diametro (mm)</label><input class="inp" id="arr-diametro-${i}" value="${a.diametro||''}" placeholder="5.5"></div>
             <div><label class="form-label">Punta (grani)</label><input class="inp" type="number" id="arr-pesoPunta-${i}" value="${a.pesoPunta||''}" placeholder="100"></div>
             <div><label class="form-label">Cocche</label><input class="inp" id="arr-cocca-${i}" value="${a.cocca||''}"></div>
+            <div><label class="form-label">Alette (tipo/marca)</label><input class="inp" id="arr-alette-${i}" value="${a.alette||''}" placeholder="Es: Spin Wings 40mm"></div>
+            <div><label class="form-label">Colore alette</label><input class="inp" id="arr-coloreAlette-${i}" value="${a.coloreAlette||''}" placeholder="Es: trasparente, blu..."></div>
             <div><label class="form-label">Note</label><input class="inp" id="arr-note-${i}" value="${a.note||''}"></div>
         </div>
         <button class="btn btn-gold btn-full" style="margin-top:0.6rem" onclick="window.eqSaveArrow(${i})">💾 Salva Freccia</button>
     </div>`;
 }
+function bowCardHtml(b,i,isActive) {
+    const bowTypes=['Ricurvo','Compound','Longbow','Barebow','Altro'];
+    return `<div onclick="window.eqSelectBow(${i})" style="background:var(--dark3);border:2px solid ${isActive?'var(--gold)':'var(--border)'};border-radius:10px;padding:0.75rem;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+            <span style="font-weight:700;color:var(--text);font-size:0.88rem">${b.nome||'Arco '+(i+1)}</span>
+            <div style="display:flex;gap:4px;align-items:center">
+                ${isActive?`<span style="font-size:0.62rem;background:var(--gold);color:#000;padding:1px 6px;border-radius:10px;font-weight:700">Attivo</span>`:''}
+                <button onclick="event.stopPropagation();window.eqDeleteBow(${i})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0">✕</button>
+            </div>
+        </div>
+        <div style="font-size:0.73rem;color:var(--gold)">${b.tipo||'-'} | ${b.braccetto||'-'}</div>
+        <div style="font-size:0.7rem;color:var(--muted)">${b.libbre||'-'}lb · allungo ${b.allungo||'-'}"</div>
+    </div>`;
+}
+function bowDetailHtml(b,i) {
+    if (!b) return '';
+    const bowTypes=['Ricurvo','Compound','Longbow','Barebow','Altro'];
+    return `<div id="bow-detail-${i}" style="background:var(--dark3);border:1px solid var(--gold);border-radius:10px;padding:1rem;margin-top:0.75rem">
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">✏️ ${b.nome||'Arco '+(i+1)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
+            <div><label class="form-label">Nome/Etichetta</label><input class="inp" id="bow-nome-${i}" value="${b.nome||''}" placeholder="Es: Gara, Indoor..."></div>
+            <div><label class="form-label">Tipo Arco</label>
+                <select class="inp" id="bow-tipo-${i}">${bowTypes.map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+            <div><label class="form-label">Riser</label><input class="inp" id="bow-braccetto-${i}" value="${b.braccetto||''}" placeholder="Hoyt Xceed"></div>
+            <div><label class="form-label">Flettenti</label><input class="inp" id="bow-marcaArco-${i}" value="${b.marcaArco||''}" placeholder="Uukha VX+"></div>
+            <div><label class="form-label">Misura arco</label><input class="inp" id="bow-misuraArco-${i}" value="${b.misuraArco||''}" placeholder='25"'></div>
+            <div><label class="form-label">Libbre (lb)</label><input class="inp" type="number" id="bow-libbre-${i}" value="${b.libbre||''}" placeholder="40"></div>
+            <div><label class="form-label">Allungo (poll.)</label><input class="inp" type="number" id="bow-allungo-${i}" value="${b.allungo||''}" placeholder="28.5" step="0.5"></div>
+            <div><label class="form-label">Note</label><input class="inp" id="bow-note-${i}" value="${b.note||''}"></div>
+        </div>
+        <button class="btn btn-gold btn-full" style="margin-top:0.6rem" onclick="window.eqSaveBow(${i})">💾 Salva Arco</button>
+    </div>`;
+}
+window.eqSelectBow = (idx) => {
+    const eq=getEquipment(); eq.activeBowIdx=idx; localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=(eq.bows||[]).map((b,i)=>bowCardHtml(b,i,i===idx)).join('');
+    const dc=document.getElementById('bow-detail-container'); if(dc) dc.innerHTML=bowDetailHtml((eq.bows||[])[idx],idx);
+};
+window.eqAddBow = () => {
+    const eq=getEquipment(); if(!eq.bows)eq.bows=[];
+    eq.bows.push({nome:'',tipo:'Ricurvo',braccetto:'',marcaArco:'',misuraArco:'',libbre:'',allungo:'',note:''});
+    const ni=eq.bows.length-1; eq.activeBowIdx=ni;
+    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=eq.bows.map((b,i)=>bowCardHtml(b,i,i===ni)).join('');
+    const dc=document.getElementById('bow-detail-container'); if(dc) dc.innerHTML=bowDetailHtml(eq.bows[ni],ni);
+};
+window.eqSaveBow = (idx) => {
+    const eq=getEquipment(); if(!eq.bows)eq.bows=[];
+    eq.bows[idx]={
+        nome:document.getElementById(`bow-nome-${idx}`)?.value||'',
+        tipo:document.getElementById(`bow-tipo-${idx}`)?.value||'',
+        braccetto:document.getElementById(`bow-braccetto-${idx}`)?.value||'',
+        marcaArco:document.getElementById(`bow-marcaArco-${idx}`)?.value||'',
+        misuraArco:document.getElementById(`bow-misuraArco-${idx}`)?.value||'',
+        libbre:document.getElementById(`bow-libbre-${idx}`)?.value||'',
+        allungo:document.getElementById(`bow-allungo-${idx}`)?.value||'',
+        note:document.getElementById(`bow-note-${idx}`)?.value||'',
+    };
+    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=eq.bows.map((b,i)=>bowCardHtml(b,i,i===idx)).join('');
+    showModal('✅ Salvato!',`Arco "${eq.bows[idx].nome||'Arco '+(idx+1)}" salvato.`,[{text:'OK'}]);
+};
+window.eqDeleteBow = (idx) => {
+    showModal('Elimina Arco','Sei sicuro?',[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Elimina',cls:'btn-danger',fn:()=>{
+            const eq=getEquipment(); eq.bows.splice(idx,1);
+            eq.activeBowIdx=Math.max(0,(eq.activeBowIdx||0)-(idx<=(eq.activeBowIdx||0)?1:0));
+            localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+            const bows=eq.bows||[]; const act=eq.activeBowIdx||0;
+            const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=bows.map((b,i)=>bowCardHtml(b,i,i===act)).join('');
+            const dc=document.getElementById('bow-detail-container'); if(dc) dc.innerHTML=bows.length>0?bowDetailHtml(bows[act]||bows[0],act):'';
+        }}
+    ]);
+};
 function renderAtletaMateriale() {
     setHeader('🏹 Materiale', S.atleta?.nome||'');
     const eq = getEquipment();
@@ -2747,16 +2874,18 @@ function renderAtletaMateriale() {
     const activeArrow = eq.activeArrowIdx || 0;
     const bowTypes = ['Ricurvo','Compound','Longbow','Barebow','Altro'];
     render(`
+        <!-- ARCHI MULTIPLI -->
         <div class="card card-gold" style="margin-bottom:1rem">
-            <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🏹 Arco</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
-                <div><label class="form-label">Tipo Arco</label>
-                    <select class="inp" id="eq-tipoArco">${bowTypes.map(t=>`<option ${eq.tipoArco===t?'selected':''}>${t}</option>`).join('')}</select></div>
-                <div><label class="form-label">Riser</label><input class="inp" id="eq-braccetto" value="${eq.braccetto||''}" placeholder="Hoyt Xceed"></div>
-                <div><label class="form-label">Flettenti</label><input class="inp" id="eq-marcaArco" value="${eq.marcaArco||''}" placeholder="Uukha VX+"></div>
-                <div><label class="form-label">Misura</label><input class="inp" id="eq-misuraArco" value="${eq.misuraArco||''}" placeholder='25"'></div>
-                <div><label class="form-label">Libbre (lb)</label><input class="inp" type="number" id="eq-peso" value="${eq.peso||''}" placeholder="40"></div>
-                <div><label class="form-label">Allungo (poll.)</label><input class="inp" type="number" id="eq-allungo" value="${eq.allungo||''}" placeholder="28.5" step="0.5"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold)">🏹 Archi</div>
+                <button class="btn btn-gold btn-sm" onclick="window.eqAddBow()">+ Aggiungi</button>
+            </div>
+            ${(eq.bows||[]).length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:0.5rem">Nessun arco configurato. Premi "+ Aggiungi".</p>`:''}
+            <div id="bows-list" style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
+                ${(eq.bows||[]).map((b,i)=>bowCardHtml(b,i,i===(eq.activeBowIdx||0))).join('')}
+            </div>
+            <div id="bow-detail-container">
+                ${(eq.bows||[]).length>0?bowDetailHtml(eq.bows[eq.activeBowIdx||0],eq.activeBowIdx||0):''}
             </div>
         </div>
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
@@ -2826,6 +2955,8 @@ window.eqSaveArrow = (idx) => {
         diametro:document.getElementById(`arr-diametro-${idx}`)?.value||'',
         pesoPunta:document.getElementById(`arr-pesoPunta-${idx}`)?.value||'',
         cocca:document.getElementById(`arr-cocca-${idx}`)?.value||'',
+        alette:document.getElementById(`arr-alette-${idx}`)?.value||'',
+        coloreAlette:document.getElementById(`arr-coloreAlette-${idx}`)?.value||'',
         note:document.getElementById(`arr-note-${idx}`)?.value||'',
     };
     localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
@@ -2850,13 +2981,7 @@ window.eqSave = () => {
     const scalaMirino={};
     ['18','25','40','50','60','70'].forEach(d=>{scalaMirino[d]=document.getElementById(`eq-mirino-${d}`)?.value||'';});
     const eq={...existing,
-        tipoArco:document.getElementById('eq-tipoArco')?.value||'',
-        braccetto:document.getElementById('eq-braccetto')?.value||'',
-        marcaArco:document.getElementById('eq-marcaArco')?.value||'',
-        misuraArco:document.getElementById('eq-misuraArco')?.value||'',
-        peso:document.getElementById('eq-peso')?.value||'',
-        allungo:document.getElementById('eq-allungo')?.value||'',
-        mirino:document.getElementById('eq-mirino')?.value||'',
+                mirino:document.getElementById('eq-mirino')?.value||'',
         stabilizzatori:document.getElementById('eq-stabilizzatori')?.value||'',
         corda:document.getElementById('eq-corda')?.value||'',
         pesoTotale:document.getElementById('eq-pesoTotale')?.value||'',
