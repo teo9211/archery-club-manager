@@ -297,11 +297,14 @@ function showModal(title, bodyHtml, actions=[]) {
 }
 function closeModal() { $('modal-overlay').classList.remove('show'); }
 function hashPwd(s) {
-    // Simple deterministic hash (for demo — in production use bcrypt server-side)
     let h = 0;
     for (let i = 0; i < s.length; i++) { h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; }
     return 'h_' + Math.abs(h).toString(36);
 }
+// ── CHIAVE MASTER (cambia la password qui, poi aggiorna l'hash) ─────────────
+// Password attuale: ACMadmin2025! → hash: h_1l8b8k7k
+// Per cambiarla: apri la console e digita hashPwd('nuovapassword') poi incolla il risultato qui
+const MASTER_HASH = 'h_yyy2o4';
 function fmtDate(d) {
     if (!d) return 'N/D';
     const p = d.split('-');
@@ -455,6 +458,7 @@ window.setView = async (view, params={}) => {
         case 'contatoreFrecce':    return renderContatoreFrecce();
         case 'esportaDati':        return renderEsportaDati();
         case 'impostazioni':       return renderImpostazioni();
+        case 'masterPanel':        return window._masterLogged?renderMasterPanel():window.setView('homeLogin');
         default: renderHomeLogin();
     }
 };
@@ -481,6 +485,190 @@ window.showDonatePayPal = () => {
         </div>
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ACCESSO MASTER (sviluppatore) ───────────────────────────────────────────
+// Attivazione: tap 5 volte sul numero di versione in basso nella home
+// ═══════════════════════════════════════════════════════════════════════════
+window._masterTapCount = 0;
+window._masterTapTimer = null;
+window._masterLogged = false;
+
+window._masterTap = () => {
+    window._masterTapCount++;
+    clearTimeout(window._masterTapTimer);
+    window._masterTapTimer = setTimeout(() => { window._masterTapCount = 0; }, 2000);
+    if (window._masterTapCount >= 5) {
+        window._masterTapCount = 0;
+        window._masterLogin();
+    }
+};
+
+window._masterLogin = () => {
+    showModal('🔑 Accesso Sviluppatore', `
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
+            <p style="font-size:0.78rem;color:var(--muted)">Inserisci la chiave di accesso sviluppatore.</p>
+            <input class="inp" type="password" id="master-pwd" placeholder="Chiave master"
+                   onkeydown="if(event.key==='Enter')window._masterAuth()">
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'Accedi', cls:'btn-gold', fn: window._masterAuth}
+    ]);
+    setTimeout(()=>document.getElementById('master-pwd')?.focus(), 150);
+};
+
+window._masterAuth = async () => {
+    const pwd = document.getElementById('master-pwd')?.value || '';
+    if (!pwd) return;
+    if (hashPwd(pwd) !== MASTER_HASH) {
+        showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
+        return;
+    }
+    window._masterLogged = true;
+    await loadAllAsd();
+    window.setView('masterPanel');
+};
+
+async function renderMasterPanel() {
+    setHeader('🔑 Pannello Sviluppatore', 'Accesso Admin');
+    await loadAllAsd();
+
+    // Carica bug reports
+    let bugs = [];
+    try {
+        const bugSnap = await getDocs(collection(db, `${APP_NS}/data/bug_reports`));
+        bugs = bugSnap.docs.map(d=>({id:d.id,...d.data()}))
+            .sort((a,b)=>((b.timestamp?.seconds||0)-(a.timestamp?.seconds||0)));
+    } catch(e) {}
+
+    render(`
+        <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;background:rgba(201,162,39,0.08);border:1.5px solid rgba(201,162,39,0.4);border-radius:12px;padding:0.75rem">
+            <span style="font-size:1.5rem">🔑</span>
+            <div>
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Modalità Sviluppatore Attiva</div>
+                <div style="font-size:0.73rem;color:var(--muted)">Accesso completo a tutti i profili</div>
+            </div>
+            <button onclick="window._masterLogged=false;window.setView('homeLogin')" style="margin-left:auto;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:0.3rem 0.6rem;font-size:0.75rem;font-weight:700;cursor:pointer">🚪 Esci</button>
+        </div>
+
+        <!-- BUG REPORTS -->
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🐛 Bug Reports (${bugs.length})</div>
+            ${bugs.length===0?`<p style="color:var(--muted);font-size:0.83rem;text-align:center">Nessuna segnalazione.</p>`:
+            bugs.slice(0,10).map(b=>`
+                <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;margin-bottom:0.5rem;border-left:3px solid ${b.tipo==='bug'?'#ef4444':b.tipo==='dati'?'#3b82f6':'var(--border)'}">
+                    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.2rem">
+                        <span style="font-size:0.72rem;font-weight:700;color:var(--gold)">${b.tipo||'?'} · ${b.asd||'Non loggato'}</span>
+                        <span style="font-size:0.68rem;color:var(--muted)">${b.createdAt?new Date(b.createdAt).toLocaleDateString('it'):''}</span>
+                    </div>
+                    <div style="font-size:0.82rem;color:var(--text)">${b.descrizione||''}</div>
+                    ${b.sezione?`<div style="font-size:0.72rem;color:var(--muted);margin-top:0.2rem">Sezione: ${b.sezione}</div>`:''}
+                    <button onclick="window._masterDeleteBug('${b.id}')" style="font-size:0.68rem;color:var(--danger);background:none;border:none;cursor:pointer;margin-top:0.2rem">🗑️ Risolto</button>
+                </div>
+            `).join('')}
+        </div>
+
+        <!-- LISTA ASD -->
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🏆 Gestione ASD (${S.allAsd.length})</div>
+            ${S.allAsd.map(asd=>`
+                <div style="background:var(--dark3);border-radius:10px;padding:0.65rem;margin-bottom:0.5rem">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <div style="font-weight:700;color:var(--text)">${asd.nome}</div>
+                            <div style="font-size:0.73rem;color:var(--muted)">${asd.citta||''}</div>
+                        </div>
+                        <div style="display:flex;gap:0.4rem">
+                            <button onclick="window._masterViewAsd('${asd.id}')" class="btn btn-ghost btn-sm">👁️ Vedi</button>
+                            <button onclick="window._masterResetAsdPwd('${asd.id}','${asd.nome.replace(/'/g,"\'")}')" class="btn btn-outline btn-sm">🔑 Reset Pwd</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `);
+}
+
+window._masterDeleteBug = async (id) => {
+    showModal('🗑️ Elimina Report','Segnare come risolto ed eliminare?',[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Elimina',cls:'btn-danger',fn:async()=>{
+            await deleteDoc(doc(db,`${APP_NS}/data/bug_reports/${id}`));
+            window.setView('masterPanel');
+        }}
+    ]);
+};
+
+window._masterViewAsd = async (asdId) => {
+    const asd = S.allAsd.find(a=>a.id===asdId);
+    if (!asd) return;
+    // Carica atleti della ASD
+    const snap = await getDocs(atletiCol(asdId));
+    const atleti = snap.docs.map(d=>({id:d.id,...d.data()}));
+
+    showModal(`🏆 ${asd.nome}`, `
+        <div style="font-size:0.85rem;display:flex;flex-direction:column;gap:0.5rem">
+            <div><strong style="color:var(--gold)">Città:</strong> ${asd.citta||'—'}</div>
+            <div><strong style="color:var(--gold)">ID:</strong> <span style="font-size:0.72rem;font-family:monospace">${asdId}</span></div>
+            <div style="border-top:1px solid var(--border);padding-top:0.5rem">
+                <div style="font-weight:700;color:var(--gold);margin-bottom:0.4rem">👥 Atleti (${atleti.length})</div>
+                ${atleti.length===0?`<p style="color:var(--muted)">Nessun atleta.</p>`:
+                atleti.map(atl=>`
+                    <div style="background:var(--dark3);border-radius:8px;padding:0.5rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <div style="font-weight:700">${atl.nome} ${atl.cognome}</div>
+                            <div style="font-size:0.72rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
+                        </div>
+                        <button onclick="window._masterResetAtletaPwd('${asdId}','${atl.id}','${(atl.nome+' '+atl.cognome).replace(/'/g,"\'")}')" style="font-size:0.72rem;background:none;border:1px solid var(--gold);color:var(--gold);border-radius:6px;padding:3px 8px;cursor:pointer">🔑 Reset</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `, [{text:'Chiudi',cls:'btn-ghost'}]);
+};
+
+window._masterResetAsdPwd = (asdId, nomeAsd) => {
+    showModal(`🔑 Reset Password — ${nomeAsd}`, `
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <p style="font-size:0.82rem;color:var(--muted)">Imposta una nuova password per questa ASD.</p>
+            <input class="inp" type="password" id="master-new-pwd" placeholder="Nuova password">
+            <input class="inp" type="password" id="master-new-pwd2" placeholder="Conferma password">
+        </div>
+    `, [
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+            const p1=document.getElementById('master-new-pwd')?.value||'';
+            const p2=document.getElementById('master-new-pwd2')?.value||'';
+            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
+            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash:hashPwd(p1)});
+            showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAsd}</strong> è stata resettata.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
+        }}
+    ]);
+};
+
+window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
+    showModal(`🔑 Reset Password — ${nomeAtleta}`, `
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <p style="font-size:0.82rem;color:var(--muted)">Imposta una nuova password per questo atleta.</p>
+            <input class="inp" type="password" id="master-atl-pwd" placeholder="Nuova password">
+            <input class="inp" type="password" id="master-atl-pwd2" placeholder="Conferma password">
+        </div>
+    `, [
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+            const p1=document.getElementById('master-atl-pwd')?.value||'';
+            const p2=document.getElementById('master-atl-pwd2')?.value||'';
+            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash:hashPwd(p1)});
+            showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
+        }}
+    ]);
+};
+
+window.renderMasterPanel = renderMasterPanel;
 
 window.showBugReport = () => {
     showModal('🐛 Segnala un Problema', `
@@ -630,8 +818,8 @@ function renderHomeLogin() {
             </p>
         </div>
 
-        <!-- VERSION NOTE -->
-        <div style="text-align:center;padding:1rem 0 0.25rem;font-size:0.68rem;color:var(--muted)">
+        <!-- VERSION NOTE — tap 5 volte per accesso sviluppatore -->
+        <div id="ver-note" style="text-align:center;padding:1rem 0 0.25rem;font-size:0.68rem;color:var(--muted);user-select:none" onclick="window._masterTap()">
             Archery Club Manager · Progetto privato open-use · v1.0
         </div>
     `);
