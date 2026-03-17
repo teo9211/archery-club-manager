@@ -176,7 +176,11 @@
         /* ── SESSION CARD ── */
         .session-card { background: var(--dark2); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem; transition: border-color 0.2s; }
         .session-card:hover { border-color: rgba(201,162,39,0.4); }
-    </style>
+    
+    /* Offset header per barra offline */
+    body.is-offline .app-header { top: 32px; }
+    body.is-offline #content-view { padding-top: calc(var(--header-h) + 32px); }
+</style>
 </head>
 <body>
 
@@ -195,6 +199,11 @@
         </div>
         <div id="nav-items"></div>
     </div>
+</div>
+
+<!-- BARRA OFFLINE -->
+<div id="offline-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;font-size:0.82rem;font-weight:700;padding:0.4rem 1rem;align-items:center;justify-content:center;gap:0.5rem;text-align:center">
+    📵 Sei offline — i dati vengono salvati localmente e sincronizzati alla riconnessione
 </div>
 
 <!-- APP HEADER -->
@@ -453,6 +462,110 @@ window.setView = async (view, params={}) => {
 // ════════════════════════════════════════════════════════════════════════════
 // ── HOME LOGIN (scelta ASD o login ASD) ─────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
+window.showDonateInfo = () => {
+    showModal('🏦 Donazione Bonifico', `
+        <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.85rem">
+            <p style="color:var(--muted)">Inserisci qui i dati del conto bancario per ricevere donazioni:</p>
+            <div style="background:var(--dark3);border:1px solid var(--gold);border-radius:10px;padding:0.85rem;line-height:2">
+                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-bottom:0.4rem">
+                    <strong style="color:var(--gold);font-size:0.78rem">Intestatario</strong>
+                    <span style="color:var(--text);font-weight:700">[NOME SVILUPPATORE]</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-bottom:0.4rem">
+                    <strong style="color:var(--gold);font-size:0.78rem">IBAN</strong>
+                    <span style="color:var(--text);font-weight:700;font-family:monospace;font-size:0.82rem">[IT00 XXXX XXXX XXXX]</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <strong style="color:var(--gold);font-size:0.78rem">Causale</strong>
+                    <span style="color:var(--text)">Donazione ACM</span>
+                </div>
+            </div>
+            <p style="font-size:0.73rem;color:var(--muted);text-align:center;line-height:1.4">
+                Ogni contributo, grande o piccolo, è prezioso per continuare a sviluppare e migliorare l'app. <strong style="color:var(--gold)">Grazie! 🙏🏹</strong>
+            </p>
+        </div>
+    `, [{text:'Chiudi', cls:'btn-ghost'}]);
+};
+
+window.showDonatePayPal = () => {
+    showModal('💳 Donazione PayPal', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;text-align:center">
+            <div style="font-size:2rem">💳</div>
+            <p style="color:var(--text);line-height:1.5">
+                Puoi donare tramite PayPal al seguente link o indirizzo email:
+            </p>
+            <div style="background:var(--dark3);border:1px solid rgba(0,100,200,0.3);border-radius:10px;padding:0.85rem">
+                <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.3rem">Indirizzo PayPal</div>
+                <div style="font-weight:700;color:#60a5fa;font-size:0.9rem">[EMAIL PAYPAL]</div>
+            </div>
+            <a href="https://www.paypal.com/donate" target="_blank" rel="noopener"
+               style="display:block;padding:0.75rem;background:rgba(0,100,200,0.15);border:1.5px solid rgba(0,100,200,0.4);border-radius:10px;color:#60a5fa;font-weight:700;text-decoration:none;font-size:0.88rem">
+                💳 Vai a PayPal.com
+            </a>
+            <p style="font-size:0.72rem;color:var(--muted)">Grazie per il supporto! 🙏</p>
+        </div>
+    `, [{text:'Chiudi', cls:'btn-ghost'}]);
+};
+
+window.showBugReport = () => {
+    showModal('🐛 Segnala un Problema', `
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
+            <p style="font-size:0.8rem;color:var(--muted)">Descrivi il problema riscontrato nel modo più dettagliato possibile.</p>
+            <div><label class="form-label">Tipo di problema</label>
+                <select class="inp" id="bug-tipo">
+                    <option value="bug">🐛 Bug / Errore tecnico</option>
+                    <option value="ui">🖥️ Problema di visualizzazione</option>
+                    <option value="dati">💾 Problema con i dati</option>
+                    <option value="altro">❓ Altro</option>
+                </select>
+            </div>
+            <div><label class="form-label">Descrizione *</label>
+                <textarea class="inp" id="bug-desc" rows="4" placeholder="Descrivi cosa stavi facendo quando si è verificato il problema..."></textarea>
+            </div>
+            <div><label class="form-label">Sezione dell'app</label>
+                <input class="inp" id="bug-sezione" placeholder="Es: Segnapunti, Calendario, Messaggi...">
+            </div>
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'📨 Invia', cls:'btn-gold', fn: async () => {
+            const tipo = document.getElementById('bug-tipo')?.value || '';
+            const desc = document.getElementById('bug-desc')?.value.trim() || '';
+            const sez  = document.getElementById('bug-sezione')?.value.trim() || '';
+            if (!desc) return showModal('Errore','Descrivi il problema.',[{text:'OK', fn:window.showBugReport}]);
+            try {
+                const bugCol = collection(db, `${APP_NS}/data/bug_reports`);
+                await addDoc(bugCol, {
+                    tipo, descrizione: desc, sezione: sez,
+                    userAgent: navigator.userAgent,
+                    asd: S.asd?.nome || 'Non loggato',
+                    timestamp: serverTimestamp(),
+                    createdAt: new Date().toISOString()
+                });
+                showModal('✅ Segnalazione Inviata!', `
+                    <div style="text-align:center">
+                        <div style="font-size:2rem;margin-bottom:0.5rem">🙏</div>
+                        <p style="color:var(--text);margin-bottom:0.5rem">Grazie per la segnalazione!</p>
+                        <p style="font-size:0.82rem;color:var(--muted);line-height:1.5">
+                            Il tuo report è stato registrato. Essendo un progetto sviluppato privatamente e non da un'azienda,
+                            i tempi di risoluzione possono variare e potrebbero richiedere
+                            <strong style="color:var(--gold)">fino a 30 giorni</strong>.
+                            Faremo del nostro meglio per sistemare il problema il prima possibile. Grazie per la pazienza!
+                        </p>
+                    </div>
+                `, [{text:'OK', cls:'btn-gold'}]);
+            } catch(e) {
+                const bugs = JSON.parse(localStorage.getItem('pending_bugs')||'[]');
+                bugs.push({tipo, descrizione:desc, sezione:sez, createdAt:new Date().toISOString()});
+                localStorage.setItem('pending_bugs', JSON.stringify(bugs));
+                showModal('✅ Salvato Localmente',
+                    'Non è stato possibile inviare la segnalazione. È stata salvata e verrà inviata alla prossima connessione.',
+                    [{text:'OK'}]);
+            }
+        }}
+    ]);
+};
+
 function renderHomeLogin() {
     hideHeader();
     const tiles = S.allAsd.length === 0
@@ -494,6 +607,65 @@ function renderHomeLogin() {
         <div style="text-align:center;padding:1rem 0;border-top:1px solid var(--border)">
             <p style="color:var(--muted);font-size:0.8rem;margin-bottom:0.6rem">Sei il responsabile di una ASD?</p>
             <button class="btn btn-outline btn-sm" onclick="window.setView('asdRegister')">➕ Registra nuova ASD</button>
+        </div>
+
+        <!-- DONAZIONE -->
+        <div style="margin-top:1.5rem;background:linear-gradient(135deg,rgba(201,162,39,0.1),rgba(201,162,39,0.04));border:2px solid rgba(201,162,39,0.4);border-radius:16px;padding:1.2rem">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+                <span style="font-size:1.8rem">☕</span>
+                <div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem;line-height:1.1">Supporta il Progetto</div>
+                    <div style="font-size:0.72rem;color:var(--muted)">Gratuito per tutti, con costi reali</div>
+                </div>
+            </div>
+            <p style="font-size:0.79rem;color:var(--text);margin-bottom:1rem;line-height:1.55">
+                Archery Club Manager è sviluppato e mantenuto da un privato, con costi reali di hosting, database e tempo.
+                Se lo usi e lo trovi utile, anche una piccola donazione aiuta a tenerlo vivo e migliorarlo. <strong style="color:var(--gold)">Grazie! 🙏</strong>
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                <button onclick="window.showDonatePayPal()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.25rem;padding:0.9rem 0.5rem;background:rgba(0,100,200,0.15);border:1.5px solid rgba(0,100,200,0.4);border-radius:12px;color:#60a5fa;font-weight:700;cursor:pointer;transition:all 0.15s" onmouseover="this.style.background='rgba(0,100,200,0.25)'" onmouseout="this.style.background='rgba(0,100,200,0.15)'">
+                    <span style="font-size:1.5rem">💳</span>
+                    <span style="font-size:0.82rem">PayPal</span>
+                    <span style="font-size:0.68rem;color:var(--muted)">Veloce e sicuro</span>
+                </button>
+                <button onclick="window.showDonateInfo()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.25rem;padding:0.9rem 0.5rem;background:rgba(61,153,112,0.15);border:1.5px solid rgba(61,153,112,0.4);border-radius:12px;color:#5dba94;font-weight:700;cursor:pointer;transition:all 0.15s" onmouseover="this.style.background='rgba(61,153,112,0.25)'" onmouseout="this.style.background='rgba(61,153,112,0.15)'">
+                    <span style="font-size:1.5rem">🏦</span>
+                    <span style="font-size:0.82rem">Bonifico</span>
+                    <span style="font-size:0.68rem;color:var(--muted)">Dati bancari</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- SEGNALA ERRORI -->
+        <div style="margin-top:0.9rem;background:var(--dark3);border:1px solid var(--border);border-radius:16px;padding:1.1rem">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem">
+                <span style="font-size:1.5rem">🐛</span>
+                <div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--text);font-size:0.95rem;line-height:1.1">Hai trovato un errore?</div>
+                    <div style="font-size:0.72rem;color:var(--muted)">Aiutaci a migliorare l'app</div>
+                </div>
+            </div>
+            <p style="font-size:0.77rem;color:var(--muted);margin-bottom:0.75rem;line-height:1.5">
+                Segnala bug, malfunzionamenti o suggerimenti. Essendo un <strong style="color:var(--text)">progetto privato</strong>, 
+                i tempi di risposta possono arrivare fino a <strong style="color:var(--gold)">30 giorni</strong>, ma ogni segnalazione viene letta e considerata.
+            </p>
+            <button onclick="window.showBugReport()" style="width:100%;padding:0.65rem;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:0.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:0.5rem;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
+                📝 Segnala Problema o Suggerimento
+            </button>
+        </div>
+
+        <!-- SALVATAGGIO LOCALE INFO -->
+        <div style="margin-top:0.75rem;background:rgba(61,153,112,0.06);border:1px solid rgba(61,153,112,0.25);border-radius:12px;padding:0.75rem;display:flex;align-items:center;gap:0.6rem">
+            <span style="font-size:1.1rem;flex-shrink:0">💾</span>
+            <p style="font-size:0.72rem;color:var(--muted);line-height:1.45;margin:0">
+                <strong style="color:#5dba94">Salvataggio automatico:</strong> il segnapunti viene salvato sul tuo dispositivo ad ogni freccia. 
+                Se chiudi o perdi la connessione, i dati vengono recuperati al prossimo accesso.
+            </p>
+        </div>
+
+        <!-- VERSION NOTE -->
+        <div style="text-align:center;padding:1rem 0 0.25rem;font-size:0.68rem;color:var(--muted)">
+            Archery Club Manager · Progetto privato open-use · v1.0
         </div>
     `);
 }
@@ -1688,7 +1860,7 @@ function tkInitGrid(){
     TK.activeCell={row:1,col:1};
 }
 function tkSave(){try{const dk=`tk_d_${S.atleta?.id||''}`;const d=JSON.stringify({s:TK.session,t:TK.turn,g:TK.grid,n:TK.volleyNotes,r:TK.rows,c:TK.cols,f:TK.format,a:TK.activeCell});localStorage.setItem(dk,d);localStorage.setItem('tk_d',d);}catch(e){}}
-function tkClearDraft(){try{localStorage.removeItem(`tk_d_${S.atleta?.id||''}`);tkClearDraft();}catch(e){}}
+function tkClearDraft(){try{localStorage.removeItem(`tk_d_${S.atleta?.id||''}`);localStorage.removeItem('tk_d');}catch(e){}}
 
 window.tkKey=(val)=>{
     const {row,col}=TK.activeCell,ri=row-1,ci=col-1;
@@ -1851,8 +2023,7 @@ window.tkFineTurno=async(isFinal)=>{
             const totalScore=t1.score+t2.score;
             const t1f=s.turn1?.summary?.fired||0,t2f=s.turn2?.summary?.fired||0;
             const totShots=t1f+t2f;
-            try{
-                await addDoc(sessioniCol(S.asd.id),{
+            const sessionData = {
                     archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
                     type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',
                     distanza:s.distanza||'',tipoTarga:s.tipoTarga||'',formatoGara:s.formatoGara||'',
@@ -1867,12 +2038,25 @@ window.tkFineTurno=async(isFinal)=>{
                     turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
                     turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{},arrowPositions:s.turn2.arrowPositions||[]}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
-                });
+                };
+            try{
+                if (!navigator.onLine) throw new Error('offline');
+                await addDoc(sessioniCol(S.asd.id), sessionData);
                 tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
                 await loadAtletaSessioni();
                 showModal('✅ Salvato!',`Punteggio: ${totalScore} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
-            }catch(e){showModal('Errore','Salvataggio fallito: '+e.message,[{text:'OK'}]);}
+            }catch(e){
+                // Salva offline se senza rete
+                const qk=`offline_queue_${S.atleta?.id||''}`;
+                const q=JSON.parse(localStorage.getItem(qk)||'[]');
+                q.push({asdId:S.asd.id,data:sessionData,savedAt:new Date().toISOString()});
+                localStorage.setItem(qk,JSON.stringify(q));
+                tkClearDraft();
+                TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
+                await loadAtletaSessioni();
+                showModal('⚠️ Salvato Offline',`Punteggio: ${totalScore} pt — Sei offline. La sessione verrà sincronizzata automaticamente alla riconnessione.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
+            }
         }}]);
     } else {
         // Fine Turno 1: scelta tra 2° turno o salva solo T1
@@ -3944,6 +4128,145 @@ window.renderAsdStats     = renderAsdStats;
 window.renderAsdMessaggi  = renderAsdMessaggi;
 window.renderAsdProfilo   = renderAsdProfilo;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ── SALVATAGGIO ROBUSTO: beforeunload + coda offline ──────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Salvataggio di emergenza: ogni 30 secondi e a chiusura pagina ────────────
+function tkEmergencySave() {
+    if (!TK.session) return;
+    try {
+        tkSave(); // salva bozza principale
+        const snap = {
+            ts: Date.now(),
+            atletaId: S.atleta?.id || '',
+            session: TK.session,
+            turn: TK.turn,
+            grid: TK.grid,
+            notes: TK.volleyNotes,
+            rows: TK.rows,
+            cols: TK.cols,
+            format: TK.format,
+            activeCell: TK.activeCell
+        };
+        localStorage.setItem('tk_emergency_' + (S.atleta?.id || 'anon'), JSON.stringify(snap));
+    } catch(e) {}
+}
+
+// Salva ogni 30 secondi se c'è una sessione attiva
+setInterval(tkEmergencySave, 30000);
+
+// Salva anche prima di chiudere/ricaricare la pagina
+window.addEventListener('beforeunload', () => {
+    tkEmergencySave();
+    // Salva anche lo stato dell'app (quale atleta è loggato)
+    if (S.atleta?.id && S.asd?.id) {
+        try {
+            localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S.asd.id, atletaId: S.atleta.id }));
+        } catch(e) {}
+    }
+});
+
+// Salva anche quando l'app va in background (mobile)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        tkEmergencySave();
+    }
+});
+
+// Gestione connettività: segnala stato offline
+window.addEventListener('online',  () => {
+    const bar = document.getElementById('offline-bar');
+    if (bar) { bar.style.display = 'none'; }
+    // Prova a sincronizzare la coda offline
+    syncOfflineQueue();
+    // Invia anche bug report in sospeso
+    const pendingBugs = JSON.parse(localStorage.getItem('pending_bugs')||'[]');
+    if (pendingBugs.length > 0) {
+        Promise.all(pendingBugs.map(b => addDoc(collection(db, `${APP_NS}/data/bug_reports`), {...b, timestamp: serverTimestamp()}).catch(()=>null)))
+            .then(() => localStorage.removeItem('pending_bugs'))
+            .catch(()=>{});
+    }
+});
+window.addEventListener('offline', () => {
+    const bar = document.getElementById('offline-bar');
+    if (bar) { bar.style.display = 'flex'; }
+});
+
+// Coda sessioni salvate offline (da sincronizzare quando si torna online)
+async function syncOfflineQueue() {
+    const queueKey = `offline_queue_${S.atleta?.id || ''}`;
+    const queue = JSON.parse(localStorage.getItem(queueKey) || '[]');
+    if (!queue.length) return;
+    let synced = 0;
+    const remaining = [];
+    for (const item of queue) {
+        try {
+            await addDoc(sessioniCol(item.asdId), item.data);
+            synced++;
+        } catch(e) {
+            remaining.push(item);
+        }
+    }
+    localStorage.setItem(queueKey, JSON.stringify(remaining));
+    if (synced > 0) {
+        await loadAtletaSessioni();
+        showModal('✅ Sincronizzato!', `${synced} session${synced>1?'i':'e'} salvat${synced>1?'e':'a'} offline ora sincronizzat${synced>1?'e':'a'} con il server.`, [{text:'OK'}]);
+    }
+}
+
+// Intercetta i salvataggi Firestore quando si è offline
+async function saveSessionWithFallback(asdId, data) {
+    if (!navigator.onLine) {
+        // Salva localmente in coda
+        const queueKey = `offline_queue_${S.atleta?.id || ''}`;
+        const queue = JSON.parse(localStorage.getItem(queueKey) || '[]');
+        queue.push({ asdId, data, savedAt: new Date().toISOString() });
+        localStorage.setItem(queueKey, JSON.stringify(queue));
+        showModal('⚠️ Salvato Offline', 'Sei offline. La sessione è stata salvata sul dispositivo e verrà sincronizzata automaticamente quando tornerai online.', [{text:'OK'}]);
+        TK.session = null; TK.turn = 1; TK.grid = null; TK.volleyNotes = {};
+        tkClearDraft();
+        await loadAtletaSessioni(); // aggiorna da dati locali
+        window.setView('atletaDati');
+        return false; // non andare avanti con addDoc
+    }
+    return true; // online, procedi normalmente
+}
+
+// Controlla coda offline all'avvio
+setTimeout(() => {
+    if (navigator.onLine && S.atleta?.id) syncOfflineQueue();
+    // Controlla salvataggio di emergenza
+    const ek = 'tk_emergency_' + (S.atleta?.id || 'anon');
+    const emergency = localStorage.getItem(ek);
+    if (emergency && TK.session === null) {
+        try {
+            const snap = JSON.parse(emergency);
+            const age = Date.now() - (snap.ts || 0);
+            if (age < 3600000 && snap.session) { // meno di 1 ora
+                showModal('⚠️ Dati recuperati', 
+                    `Trovata sessione non salvata (${Math.round(age/60000)} minuti fa).<br>Vuoi riprendere da dove eri rimasto?`,
+                    [
+                        {text:'🗑️ Ignora', cls:'btn-ghost', fn:()=>localStorage.removeItem(ek)},
+                        {text:'▶ Riprendi', cls:'btn-gold', fn:()=>{
+                            TK.session = snap.session; TK.turn = snap.turn||1;
+                            TK.grid = snap.grid; TK.volleyNotes = snap.notes||{};
+                            TK.rows = snap.rows; TK.cols = snap.cols;
+                            TK.format = snap.format; TK.activeCell = snap.activeCell||{row:1,col:1};
+                            localStorage.removeItem(ek);
+                            tkRenderScoring();
+                        }}
+                    ]
+                );
+            } else {
+                localStorage.removeItem(ek);
+            }
+        } catch(e) { localStorage.removeItem(ek); }
+    }
+}, 1500);
+
+window.saveSessionWithFallback = saveSessionWithFallback;
+window.syncOfflineQueue = syncOfflineQueue;
 </script>
 </body>
 </html>
