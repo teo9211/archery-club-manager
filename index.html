@@ -569,6 +569,13 @@ async function renderMasterPanel() {
             `).join('')}
         </div>
 
+        <!-- MIGRAZIONE DATI -->
+        <div class="card" style="margin-bottom:1rem;border-color:#3b82f6">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#60a5fa;margin-bottom:0.4rem">📦 Migrazione Dati</div>
+            <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.6rem">Importa sessioni dalla vecchia webapp (Archery Tracker) verso un atleta di questa app.</p>
+            <button onclick="window._masterMigrazione()" class="btn btn-outline btn-full" style="border-color:#3b82f6;color:#60a5fa">📥 Avvia Migrazione Dati</button>
+        </div>
+
         <!-- LISTA ASD -->
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🏆 Gestione ASD (${S.allAsd.length})</div>
@@ -667,6 +674,231 @@ window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
         }}
     ]);
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── MIGRAZIONE DATI: dalla vecchia webapp → ACM ─────────────────────────────
+// La vecchia app (Archery Tracker) salva le sessioni in Firebase con struttura:
+// collection "archers" → doc archer → subcollection "sessions"
+// oppure in localStorage come backup JSON
+// ═══════════════════════════════════════════════════════════════════════════
+
+window._masterMigrazione = async () => {
+    await loadAllAsd();
+    const asdOptions = S.allAsd.map(a=>`<option value="${a.id}">${a.nome}</option>`).join('');
+
+    showModal('📦 Migrazione Dati', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem">
+            <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:0.65rem">
+                <strong style="color:#60a5fa">Come funziona:</strong>
+                <ol style="margin:0.4rem 0 0 1rem;line-height:1.8;color:var(--muted);font-size:0.78rem">
+                    <li>Esporta i dati dalla vecchia app (Impostazioni → Backup JSON)</li>
+                    <li>Seleziona qui sotto la ASD e l'atleta destinatario</li>
+                    <li>Incolla il JSON esportato nel campo testo</li>
+                    <li>Premi Importa</li>
+                </ol>
+            </div>
+            <div>
+                <label class="form-label">ASD Destinataria *</label>
+                <select class="inp" id="mig-asd" onchange="window._migLoadAtleti(this.value)">
+                    <option value="">— Seleziona ASD —</option>
+                    ${asdOptions}
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Atleta Destinatario *</label>
+                <select class="inp" id="mig-atleta">
+                    <option value="">— Prima seleziona una ASD —</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">JSON dalla vecchia app *</label>
+                <textarea class="inp" id="mig-json" rows="5" placeholder='Incolla qui il JSON esportato dalla vecchia app...'></textarea>
+            </div>
+            <div>
+                <label class="form-label">Oppure: carica file JSON</label>
+                <input type="file" id="mig-file" accept=".json" class="inp" onchange="window._migFileLoad()" style="font-size:0.8rem">
+            </div>
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'📥 Importa', cls:'btn-gold', fn: window._migExecute}
+    ]);
+};
+
+window._migLoadAtleti = async (asdId) => {
+    if (!asdId) return;
+    const snap = await getDocs(atletiCol(asdId));
+    const atleti = snap.docs.map(d=>({id:d.id,...d.data()}));
+    const sel = document.getElementById('mig-atleta');
+    if (sel) sel.innerHTML = '<option value="">— Seleziona Atleta —</option>' +
+        atleti.map(a=>`<option value="${a.id}">${a.nome} ${a.cognome}</option>`).join('');
+};
+
+window._migFileLoad = () => {
+    const file = document.getElementById('mig-file')?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        const ta = document.getElementById('mig-json');
+        if (ta) ta.value = e.target.result;
+    };
+    reader.readAsText(file);
+};
+
+window._migExecute = async () => {
+    const asdId   = document.getElementById('mig-asd')?.value;
+    const atletaId= document.getElementById('mig-atleta')?.value;
+    const jsonTxt = document.getElementById('mig-json')?.value?.trim();
+
+    if (!asdId)    return showModal('Errore','Seleziona una ASD.',[{text:'OK',fn:window._masterMigrazione}]);
+    if (!atletaId) return showModal('Errore','Seleziona un atleta.',[{text:'OK',fn:window._masterMigrazione}]);
+    if (!jsonTxt)  return showModal('Errore','Inserisci il JSON.',[{text:'OK',fn:window._masterMigrazione}]);
+
+    let rawData;
+    try { rawData = JSON.parse(jsonTxt); }
+    catch(e) { return showModal('Errore JSON', 'Il testo incollato non è un JSON valido: '+e.message, [{text:'OK',fn:window._masterMigrazione}]); }
+
+    // Carica info atleta destinatario
+    const atlSnap = await getDocs(atletiCol(asdId));
+    const atleta  = atlSnap.docs.map(d=>({id:d.id,...d.data()})).find(a=>a.id===atletaId);
+    if (!atleta) return showModal('Errore','Atleta non trovato.',[{text:'OK'}]);
+
+    // ── Normalizza il JSON dalla vecchia app ──
+    // La vecchia app può avere diverse strutture:
+    // 1. Array di sessioni diretto: [{type, data, totalScore, ...}, ...]
+    // 2. Oggetto con chiave "sessions": {sessions: [...]}
+    // 3. Oggetto con chiave "data": {data: {sessions: [...]}}
+    // 4. Struttura Firebase export con archers: [{sessions:[...]}]
+    let sessions = [];
+    if (Array.isArray(rawData)) {
+        sessions = rawData;
+    } else if (Array.isArray(rawData.sessions)) {
+        sessions = rawData.sessions;
+    } else if (rawData.data && Array.isArray(rawData.data.sessions)) {
+        sessions = rawData.data.sessions;
+    } else if (rawData.data && Array.isArray(rawData.data)) {
+        sessions = rawData.data;
+    } else if (Array.isArray(rawData.archers)) {
+        // Struttura con archers: prendi le sessioni di tutti
+        rawData.archers.forEach(a => { if (Array.isArray(a.sessions)) sessions.push(...a.sessions); });
+    } else {
+        // Prova a cercare ricorsivamente array di sessioni
+        const findSessions = (obj) => {
+            if (!obj || typeof obj !== 'object') return [];
+            if (Array.isArray(obj)) {
+                if (obj.length > 0 && (obj[0].type || obj[0].totalScore || obj[0].data)) return obj;
+                for (const item of obj) { const r = findSessions(item); if (r.length) return r; }
+            }
+            for (const key of Object.keys(obj)) {
+                const r = findSessions(obj[key]);
+                if (r.length) return r;
+            }
+            return [];
+        };
+        sessions = findSessions(rawData);
+    }
+
+    if (!sessions.length) {
+        return showModal('Nessuna Sessione', 'Non sono state trovate sessioni nel JSON fornito. Verifica che sia il backup corretto della vecchia app.', [{text:'OK',fn:window._masterMigrazione}]);
+    }
+
+    // ── Mostra anteprima e chiedi conferma ──
+    const tipiCount = {};
+    sessions.forEach(s => { const t = s.type||'Allenamento'; tipiCount[t]=(tipiCount[t]||0)+1; });
+    const riepilogo = Object.entries(tipiCount).map(([t,n])=>`${n} ${t}`).join(', ');
+
+    showModal('📋 Anteprima Migrazione', `
+        <div style="font-size:0.85rem;display:flex;flex-direction:column;gap:0.5rem">
+            <div style="background:var(--dark3);border-radius:8px;padding:0.65rem">
+                <div><strong style="color:var(--gold)">Sessioni trovate:</strong> ${sessions.length}</div>
+                <div><strong style="color:var(--gold)">Riepilogo:</strong> ${riepilogo}</div>
+                <div><strong style="color:var(--gold)">Destinatario:</strong> ${atleta.nome} ${atleta.cognome}</div>
+            </div>
+            <p style="color:var(--muted);font-size:0.78rem">Le sessioni verranno aggiunte al profilo dell'atleta selezionato. I dati esistenti non vengono eliminati.</p>
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:`✅ Importa ${sessions.length} sessioni`, cls:'btn-gold', fn: async () => {
+            await _migImportSessions(asdId, atletaId, atleta, sessions);
+        }}
+    ]);
+};
+
+async function _migImportSessions(asdId, atletaId, atleta, sessions) {
+    let ok = 0, fail = 0;
+    const col = sessioniCol(asdId);
+
+    // Mostra progresso
+    showModal('⏳ Importazione...', `<div id="mig-progress" style="text-align:center;padding:1rem">
+        <div style="font-size:1.5rem;margin-bottom:0.5rem">⏳</div>
+        <div id="mig-prog-txt" style="color:var(--muted)">Inizio importazione...</div>
+    </div>`, []);
+
+    for (const s of sessions) {
+        try {
+            // Mappa i campi dalla vecchia struttura alla nuova
+            const mapped = _migMapSession(s, atletaId, atleta);
+            await addDoc(col, mapped);
+            ok++;
+            const el = document.getElementById('mig-prog-txt');
+            if (el) el.textContent = `Importate ${ok}/${sessions.length} sessioni...`;
+        } catch(e) {
+            fail++;
+        }
+    }
+
+    closeModal();
+    showModal(ok>0?'✅ Importazione Completata!':'⚠️ Importazione Fallita', `
+        <div style="text-align:center;font-size:0.9rem">
+            <div style="font-size:2rem;margin-bottom:0.5rem">${ok>0?'✅':'❌'}</div>
+            <div><strong style="color:var(--gold)">${ok}</strong> sessioni importate con successo</div>
+            ${fail>0?`<div style="color:var(--danger);margin-top:0.3rem">${fail} sessioni non importate (errore)</div>`:''}
+            <p style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem">Le sessioni sono ora visibili nel profilo atleta.</p>
+        </div>
+    `, [{text:'OK', cls:'btn-gold', fn:()=>window.setView('masterPanel')}]);
+}
+
+function _migMapSession(s, atletaId, atleta) {
+    // Mappa dai campi della vecchia app ai campi della nuova
+    // La vecchia app usa: type, date/data, score/totalScore, location/luogo, arrows, distance/distanza, target/tipoTarga ecc.
+    const data = s.date || s.data || s.createdAt?.split?.('T')?.[0] || new Date().toISOString().split('T')[0];
+    const type = s.type === 'competition' ? 'Gara' : s.type === 'training' ? 'Allenamento' : (s.type || 'Allenamento');
+    const totalScore = parseInt(s.totalScore || s.score || s.total || 0) || 0;
+    const t1 = parseInt(s.turn1Score || s.t1Score || s.round1 || 0) || 0;
+    const t2 = parseInt(s.turn2Score || s.t2Score || s.round2 || 0) || 0;
+    return {
+        archerId:    atletaId,
+        arciere:     `${atleta.nome} ${atleta.cognome}`,
+        type,
+        data,
+        luogo:       s.location || s.luogo || s.place || '',
+        tipoLuogo:   s.tipoLuogo || s.locationType || '',
+        distanza:    s.distance || s.distanza || s.dist || '',
+        tipoTarga:   s.target || s.tipoTarga || s.targetType || '',
+        formatoGara: s.formatoGara || s.format || s.formato || '',
+        tipoArco:    s.bowType || s.tipoArco || s.arco || atleta.tipoArco || '',
+        totalScore,
+        turn1Score:  t1,
+        turn2Score:  t2,
+        totalX:      parseInt(s.totalX || s.xCount || 0) || 0,
+        totalTen:    parseInt(s.totalTen || s.tenCount || 0) || 0,
+        totalNine:   parseInt(s.totalNine || s.nineCount || 0) || 0,
+        totalAverage:parseFloat(s.totalAverage || s.average || s.avg || 0) || 0,
+        frecceAggiuntive: parseInt(s.frecceAggiuntive || s.arrows || s.arrowCount || 0) || 0,
+        frecceProgrammate:parseInt(s.frecceProgrammate || 0) || 0,
+        esercizConsigliati: s.esercizConsigliati || s.exercises || s.notes || '',
+        esercizSvolti:      s.esercizSvolti || s.exercisesDone || '',
+        noteCondizioniFisiche: s.noteCondizioniFisiche || s.physicalNotes || '',
+        notePreGara:  s.notePreGara || s.preNotes || '',
+        notePostGara: s.notePostGara || s.postNotes || '',
+        trainingWithoutScore: s.trainingWithoutScore || (type==='Allenamento' && totalScore===0 && !s.quickScore) ? false : false,
+        quickScore:   !!s.quickScore,
+        migrated:     true,
+        migratedAt:   new Date().toISOString(),
+        createdAt:    s.createdAt || new Date().toISOString(),
+        timestamp:    serverTimestamp()
+    };
+}
 
 window.renderMasterPanel = renderMasterPanel;
 
@@ -2673,8 +2905,8 @@ function renderRegistrationForm({ type='Allenamento' }) {
             </div>
         </div>
         <div id="tk-sfields" class="form-section">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
-                <div><label class="form-label">Distanza</label>
+            <div id="tk-dist-targa-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                <div id="tk-dist-wrap"><label class="form-label">Distanza</label>
                     <select class="inp" id="tk-dist">${TK_DIST.map(o=>`<option>${o}</option>`).join('')}</select></div>
                 <div><label class="form-label">Tipo Targa *</label>
                     <select class="inp" id="tk-targa" onchange="window.tkOnTargaChange(this.value)">${TK_TARGA.map(o=>`<option>${o}</option>`).join('')}</select></div>
@@ -2726,15 +2958,22 @@ window.tkToggle=(checked)=>{
 window._tk3dEnte = 'FITARCO';
 window._tk3dFrec = 2; // default FITARCO = 2 frecce
 window.tkOnTargaChange = (val) => {
-    const fw = document.getElementById('tk-formato-wrap');
-    const dw = document.getElementById('tk-3d-wrap');
+    const fw  = document.getElementById('tk-formato-wrap');
+    const dw  = document.getElementById('tk-3d-wrap');
+    const dDw = document.getElementById('tk-dist-wrap');
+    const grid= document.getElementById('tk-dist-targa-grid');
     if (val === '3D') {
-        if (fw) fw.style.display = 'none';
-        if (dw) dw.style.display = 'block';
-        window.tk3dSetEnte('FITARCO'); // default
+        if (fw)  fw.style.display  = 'none';
+        if (dw)  dw.style.display  = 'block';
+        if (dDw) dDw.style.display = 'none';
+        // Griglia solo 1 colonna (solo targa, niente distanza)
+        if (grid) grid.style.gridTemplateColumns = '1fr';
+        window.tk3dSetEnte('FITARCO');
     } else {
-        if (fw) fw.style.display = 'block';
-        if (dw) dw.style.display = 'none';
+        if (fw)  fw.style.display  = 'block';
+        if (dw)  dw.style.display  = 'none';
+        if (dDw) dDw.style.display = 'block';
+        if (grid) grid.style.gridTemplateColumns = '1fr 1fr';
     }
 };
 
@@ -2793,7 +3032,7 @@ window.tkStart=(type)=>{
         type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
         luogo,tipoLuogo:document.getElementById('tk-tipoLuogo')?.value||'',
         tipoArco:document.getElementById('tk-tipoArco')?.value||'',
-        distanza:ns?'':document.getElementById('tk-dist')?.value||'',
+        distanza:(ns||is3D)?'':document.getElementById('tk-dist')?.value||'',
         tipoTarga:ns?'':document.getElementById('tk-targa')?.value||'',
         formatoGara:ns?'':(is3D?`3D ${window._tk3dEnte} ${parseInt(document.getElementById('tk-3d-piazzole')?.value)||0}p ${window._tk3dFrec}f`:document.getElementById('tk-formato')?.value||'30 frecce (3x10)'),
         d3:(!ns&&is3D)?{ente:window._tk3dEnte,piazzole:parseInt(document.getElementById('tk-3d-piazzole')?.value)||24,frecce:window._tk3dFrec,piazzola:0,frecciaCorrente:1}:null,
