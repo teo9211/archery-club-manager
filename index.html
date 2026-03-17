@@ -462,31 +462,6 @@ window.setView = async (view, params={}) => {
 // ════════════════════════════════════════════════════════════════════════════
 // ── HOME LOGIN (scelta ASD o login ASD) ─────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
-window.showDonateInfo = () => {
-    showModal('🏦 Donazione Bonifico', `
-        <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.85rem">
-            <p style="color:var(--muted)">Inserisci qui i dati del conto bancario per ricevere donazioni:</p>
-            <div style="background:var(--dark3);border:1px solid var(--gold);border-radius:10px;padding:0.85rem;line-height:2">
-                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-bottom:0.4rem">
-                    <strong style="color:var(--gold);font-size:0.78rem">Intestatario</strong>
-                    <span style="color:var(--text);font-weight:700">[NOME SVILUPPATORE]</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-bottom:0.4rem">
-                    <strong style="color:var(--gold);font-size:0.78rem">IBAN</strong>
-                    <span style="color:var(--text);font-weight:700;font-family:monospace;font-size:0.82rem">[IT00 XXXX XXXX XXXX]</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <strong style="color:var(--gold);font-size:0.78rem">Causale</strong>
-                    <span style="color:var(--text)">Donazione ACM</span>
-                </div>
-            </div>
-            <p style="font-size:0.73rem;color:var(--muted);text-align:center;line-height:1.4">
-                Ogni contributo, grande o piccolo, è prezioso per continuare a sviluppare e migliorare l'app. <strong style="color:var(--gold)">Grazie! 🙏🏹</strong>
-            </p>
-        </div>
-    `, [{text:'Chiudi', cls:'btn-ghost'}]);
-};
-
 window.showDonatePayPal = () => {
     showModal('💳 Donazione PayPal', `
         <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;text-align:center">
@@ -622,18 +597,10 @@ function renderHomeLogin() {
                 Archery Club Manager è sviluppato e mantenuto da un privato, con costi reali di hosting, database e tempo.
                 Se lo usi e lo trovi utile, anche una piccola donazione aiuta a tenerlo vivo e migliorarlo. <strong style="color:var(--gold)">Grazie! 🙏</strong>
             </p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
-                <button onclick="window.showDonatePayPal()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.25rem;padding:0.9rem 0.5rem;background:rgba(0,100,200,0.15);border:1.5px solid rgba(0,100,200,0.4);border-radius:12px;color:#60a5fa;font-weight:700;cursor:pointer;transition:all 0.15s" onmouseover="this.style.background='rgba(0,100,200,0.25)'" onmouseout="this.style.background='rgba(0,100,200,0.15)'">
-                    <span style="font-size:1.5rem">💳</span>
-                    <span style="font-size:0.82rem">PayPal</span>
-                    <span style="font-size:0.68rem;color:var(--muted)">Veloce e sicuro</span>
-                </button>
-                <button onclick="window.showDonateInfo()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.25rem;padding:0.9rem 0.5rem;background:rgba(61,153,112,0.15);border:1.5px solid rgba(61,153,112,0.4);border-radius:12px;color:#5dba94;font-weight:700;cursor:pointer;transition:all 0.15s" onmouseover="this.style.background='rgba(61,153,112,0.25)'" onmouseout="this.style.background='rgba(61,153,112,0.15)'">
-                    <span style="font-size:1.5rem">🏦</span>
-                    <span style="font-size:0.82rem">Bonifico</span>
-                    <span style="font-size:0.68rem;color:var(--muted)">Dati bancari</span>
-                </button>
-            </div>
+            <button onclick="window.showDonatePayPal()" style="display:flex;align-items:center;justify-content:center;gap:0.6rem;width:100%;padding:0.85rem;background:rgba(0,100,200,0.15);border:1.5px solid rgba(0,100,200,0.4);border-radius:12px;color:#60a5fa;font-weight:700;cursor:pointer;transition:all 0.15s" onmouseover="this.style.background='rgba(0,100,200,0.25)'" onmouseout="this.style.background='rgba(0,100,200,0.15)'">
+                <span style="font-size:1.4rem">💳</span>
+                <span style="font-size:0.9rem">Supporta con PayPal</span>
+            </button>
         </div>
 
         <!-- SEGNALA ERRORI -->
@@ -2821,8 +2788,33 @@ async function renderAtletaCalendario() {
     await loadAtletaSessioni();
     const now = new Date();
     window._calState = { m: now.getMonth(), y: now.getFullYear() };
+
+    // ── Stat globali "I Miei Dati" ──
+    const allList  = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
+    const bestScore = allList.length>0 ? Math.max(...allList.map(s=>s.totalScore||0)) : 0;
+    const totalFrecce = S.sessioni.reduce((sum,s)=>sum+countArrowsForSession(s),0);
+    const sessCount = S.sessioni.length;
+    const garaCount = S.sessioni.filter(s=>s.type==='Gara').length;
+    const allCount  = S.sessioni.filter(s=>s.type==='Allenamento').length;
+
     render(`
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <!-- I MIEI DATI (stat globali) -->
+        <div style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.5rem">📊 I Miei Dati</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:0.4rem">
+                <div class="stat-box"><div class="stat-num">${sessCount}</div><div class="stat-label">Sessioni</div></div>
+                <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenamenti</div></div>
+                <div class="stat-box"><div class="stat-num">${garaCount}</div><div class="stat-label">Gare</div></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.4rem">
+                <div class="stat-box"><div class="stat-num" style="color:var(--gold-light)">${bestScore||'—'}</div><div class="stat-label">Best Score</div></div>
+                <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce Tot.</div></div>
+            </div>
+        </div>
+        <div class="gold-line"></div>
+
+        <!-- CALENDARIO -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
             <button class="btn btn-ghost btn-sm" onclick="window._calNav(-1)">◀ Prec.</button>
             <span id="cal-title" style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem"></span>
             <button class="btn btn-ghost btn-sm" onclick="window._calNav(1)">Succ. ▶</button>
@@ -2831,7 +2823,7 @@ async function renderAtletaCalendario() {
             ${['Dom','Lun','Mar','Mer','Gio','Ven','Sab'].map(d=>`<div style="text-align:center;font-size:0.7rem;color:var(--gold);font-weight:700;padding:3px">${d}</div>`).join('')}
         </div>
         <div id="cal-grid"></div>
-        <div id="cal-stats" style="margin-top:1rem"></div>
+        <div id="cal-stats" style="margin-top:0.75rem"></div>
         <div id="cal-sessions" style="margin-top:0.75rem"></div>
     `);
     window._calRender();
@@ -3649,7 +3641,6 @@ async function renderContatoreFrecce() {
         monthlyData[mNomi[m]]=sess.filter(s=>s.data>=ms&&s.data<=me).reduce((s,x)=>s+countArrowsForSession(x),0);
     }
     const maxBar=Math.max(...Object.values(monthlyData),1);
-    const recent=[...sess].reverse().slice(0,15).filter(s=>countArrowsForSession(s)>0);
     render(`
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem;margin-bottom:1rem">
             <div class="stat-box"><div class="stat-num">${arrowsToday}</div><div class="stat-label">Oggi</div></div>
@@ -3668,20 +3659,7 @@ async function renderContatoreFrecce() {
                 <span style="font-size:0.72rem;color:var(--text);font-weight:700;width:30px;text-align:right">${c}</span>
             </div>`).join('')}
         </div>
-        <div class="card">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Sessioni Recenti</div>
-            ${recent.length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem">Nessuna freccia registrata ancora.</p>`:
-            recent.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border)">
-                <div>
-                    <span style="font-weight:700;color:var(--text);font-size:0.85rem">${fmtDate(s.data)}</span>
-                    <span style="font-size:0.72rem;color:var(--muted);margin-left:0.4rem">${s.type||''}${s.trainingWithoutScore?' 🎓':''}</span>
-                </div>
-                <div style="text-align:right">
-                    <div style="font-weight:700;color:var(--text)">${countArrowsForSession(s)} frecce</div>
-                    ${(parseInt(s.frecceAggiuntive)||0)>0&&!s.trainingWithoutScore?`<div style="font-size:0.68rem;color:var(--muted)">+${s.frecceAggiuntive} extra</div>`:''}
-                </div>
-            </div>`).join('')}
-        </div>
+
     `);
 }
 
