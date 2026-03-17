@@ -1769,6 +1769,23 @@ const TK_FORMATO = ['30 frecce (3x10)','36 frecce (6x6)','72 frecce (6x12)'];
 const TK_ARCO    = ['Arco Nudo','Arco Olimpico','Compound'];
 const TK_KEYPAD  = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
 
+// ── 3D scoring ───────────────────────────────────────────────────────────
+// Modalità 3D: si attiva quando tipoTarga === '3D'
+// TK.session.d3 = { ente:'FITARCO'|'FIARC', frecce:1|2|3, piazzole:N }
+// FITARCO: 1 o 2 frecce per piazzola. Punteggi: Spot=11, SKill=10, Kill=8, Body=5, M=0
+// FIARC:   1, 2 o 3 frecce per piazzola. Prima freccia: Spot=20,Kill=18,Body=16
+//          Seconda: Spot=14,Kill=12,Body=10.  Terza: Spot=8,Kill=6,Body=4.  M=0
+//          Se colpisci con la prima → piazzola chiusa (non puoi sparare altre)
+const TK_3D_FITARCO_KP = ['Spot 11','SKill 10','Kill 8','Body 5','M','CANC'];
+const TK_3D_FIARC_KP   = ['Spot','Kill','Body','M','CANC']; // il punteggio dipende dal numero di freccia
+const TK_3D_SCORE_FITARCO = { 'Spot 11':11, 'SKill 10':10, 'Kill 8':8, 'Body 5':5, 'M':0 };
+// Per FIARC il punteggio dipende dalla freccia (1=max, 2=med, 3=min)
+const TK_3D_SCORE_FIARC = {
+    1: { Spot:20, Kill:18, Body:16, M:0 },
+    2: { Spot:14, Kill:12, Body:10, M:0 },
+    3: { Spot:8,  Kill:6,  Body:4,  M:0 }
+};
+
 const TK = { session:null, turn:1, grid:null, volleyNotes:{}, rows:0, cols:3, format:null, activeCell:{row:1,col:1} };
 // Bersaglio standard WA/FITA: raggio 170px, 10 anelli da 17px ciascuno
 // X = puntino centrale (raggio 8.5 = metà di un anello)
@@ -1825,6 +1842,25 @@ function tkCalc(grid){
     });
     return{score:tot,X,Ten,Nine,fired,avg:fired>0?tot/fired:0,max:TK.rows*TK.cols*10,volleys};
 }
+
+function tkCalc3D(grid, d3){
+    // Calcola punteggio 3D da grid: ogni riga = piazzola, ogni cella = valore testuale
+    // es. '20','18','14','M','—' per FIARC; '11','10','8','5','M','—' per FITARCO
+    // '—' = non tirata (piazzola chiusa prima)
+    let tot=0, fired=0, piazzoleComplete=0;
+    const rows=[];
+    (grid||[]).forEach((row,pi)=>{
+        const vals=row.filter(v=>v!==''&&v!==undefined&&v!=='—');
+        if(!vals.length) return;
+        let p=0;
+        vals.forEach(v=>{ p+=parseInt(v)||0; });
+        tot+=p; fired+=vals.length; piazzoleComplete++;
+        rows.push({pi,vals,parz:p,tot});
+    });
+    const maxPerPiazzola=d3.ente==='FITARCO'?11:20;
+    const maxScore=(d3.piazzole||0)*maxPerPiazzola;
+    return{score:tot,fired,piazzoleComplete,avg:piazzoleComplete>0?tot/piazzoleComplete:0,max:maxScore,rows};
+}
 function tkInitGrid(){
     const f=TK.session?.formatoGara||'30 frecce (3x10)';
     TK.format=f;
@@ -1833,6 +1869,18 @@ function tkInitGrid(){
     else{TK.rows=10;TK.cols=3;}
     TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));
     TK.activeCell={row:1,col:1};
+}
+function tkInitGrid3D(){
+    const d3=TK.session?.d3;
+    if(!d3) return tkInitGrid();
+    TK.format=TK.session.formatoGara;
+    TK.rows=d3.piazzole;      // 1 riga per piazzola
+    TK.cols=d3.frecce;        // N colonne = N frecce massime
+    // Ogni cella contiene il punteggio della freccia o '' se non ancora tirata o 'X' se chiusa
+    TK.grid=Array.from({length:TK.rows},()=>Array(TK.cols).fill(''));
+    TK.activeCell={row:1,col:1};
+    TK.session.d3.piazzola=0;
+    TK.session.d3.frecciaCorrente=1;
 }
 function tkSave(){try{const dk=`tk_d_${S.atleta?.id||''}`;const d=JSON.stringify({s:TK.session,t:TK.turn,g:TK.grid,n:TK.volleyNotes,r:TK.rows,c:TK.cols,f:TK.format,a:TK.activeCell});localStorage.setItem(dk,d);localStorage.setItem('tk_d',d);}catch(e){}}
 function tkClearDraft(){try{localStorage.removeItem(`tk_d_${S.atleta?.id||''}`);localStorage.removeItem('tk_d');}catch(e){}}
@@ -1961,6 +2009,195 @@ function tkRenderScoring(){
         <button class="btn btn-gold btn-full btn-lg" style="margin-top:0.75rem" onclick="window.tkFineTurno(${isFinal})">${isFinal?`✅ Fine ${s.type} — Salva`:'💾 Fine Turno 1 → continua'}</button>
     `);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// ── SEGNAPUNTI 3D ──────────────────────────────────────────────────────
+function tkRenderScoring3D(){
+    const s=TK.session;
+    if(!s||!s.d3) return tkRenderScoring();
+    const d3=s.d3;
+    const st=tkCalc3D(TK.grid,d3);
+    const ente=d3.ente, freq=d3.frecce, nPiaz=d3.piazzole;
+    const piazzolaCorrente=d3.piazzola; // 0-based
+    const frecciaCorrente=d3.frecciaCorrente; // 1-based
+    const finito=piazzolaCorrente>=nPiaz;
+
+    // Mappa punteggi → keypad
+    let kpLabels, kpValues;
+    if(ente==='FITARCO'){
+        kpLabels=[{l:'Spot',v:'11'},{l:'SKill',v:'10'},{l:'Kill',v:'8'},{l:'Body',v:'5'},{l:'M',v:'0'}];
+    } else {
+        // FIARC: i punteggi dipendono dalla freccia corrente
+        const sc=TK_3D_SCORE_FIARC[Math.min(frecciaCorrente,3)]||TK_3D_SCORE_FIARC[3];
+        kpLabels=[{l:`Spot ${sc.Spot}`,v:String(sc.Spot)},{l:`Kill ${sc.Kill}`,v:String(sc.Kill)},{l:`Body ${sc.Body}`,v:String(sc.Body)},{l:'M',v:'0'}];
+    }
+
+    // Colore del punteggio per la cella
+    const scoreColor=(v)=>{
+        const n=parseInt(v);
+        if(v==='0'||v==='M') return 'color:#ef4444';
+        if(n>=18) return 'color:#fbbf24;font-weight:700';
+        if(n>=14) return 'color:#fbbf24';
+        if(n>=10) return 'color:#fb923c';
+        if(n>=5)  return 'color:#60a5fa';
+        return '';
+    };
+
+    // Tabella piazzole
+    let tbl=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:0.75rem">
+    <table class="score-tbl w-full border-collapse" style="min-width:260px"><thead><tr>
+        <th style="width:40px">Piaz.</th>
+        ${Array(freq).fill(0).map((_,i)=>`<th style="width:44px">${i+1}ª</th>`).join('')}
+        <th>Tot</th><th>Cum.</th>
+    </tr></thead><tbody>`;
+    let cum=0;
+    for(let pi=0;pi<nPiaz;pi++){
+        const row=TK.grid[pi]||[];
+        const vals=row.filter(v=>v!==''&&v!==undefined&&v!=='—');
+        const rowP=vals.reduce((s,v)=>s+(parseInt(v)||0),0);
+        if(vals.length) cum+=rowP;
+        const isActive=pi===piazzolaCorrente&&!finito;
+        tbl+=`<tr style="background:${isActive?'rgba(201,162,39,0.1)':pi%2===0?'var(--dark3)':'var(--dark2)'};${isActive?'border:1.5px solid var(--gold);':''}">
+            <td style="font-weight:700;${isActive?'color:var(--gold)':'color:var(--muted)'}">P${pi+1}</td>
+            ${Array(freq).fill(0).map((_,ci)=>{
+                const v=TK.grid[pi]?.[ci]||'';
+                const isSkip=v==='—';
+                const isAct=isActive&&ci===frecciaCorrente-1;
+                return `<td style="${isAct?'background:var(--gold);color:#000;font-weight:900;':''}${!isAct&&v?scoreColor(v):''};${isSkip?'color:var(--muted)':''}">${v==='0'?'M':v||''}</td>`;
+            }).join('')}
+            <td style="font-weight:700">${vals.length?rowP:''}</td>
+            <td style="font-weight:700">${vals.length?cum:''}</td>
+        </tr>`;
+    }
+    tbl+=`<tr style="background:var(--gold);color:#000;font-weight:900">
+        <td colspan="${1+freq+1}" style="text-align:right;padding-right:0.4rem">Totale</td>
+        <td>${st.score}</td>
+    </tr>`;
+    tbl+=`</tbody></table></div>`;
+
+    // Live stats
+    const live=!finito&&piazzolaCorrente>0?`<div style="background:linear-gradient(135deg,var(--dark3),var(--dark2));border:2px solid var(--gold);border-radius:12px;padding:0.65rem;margin-bottom:0.75rem">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.35rem">
+            <div class="stat-box"><div class="stat-num">${st.score}</div><div class="stat-label">Punti</div></div>
+            <div class="stat-box"><div class="stat-num">${piazzolaCorrente}</div><div class="stat-label">Piazzole</div></div>
+            <div class="stat-box"><div class="stat-num">${nPiaz-piazzolaCorrente}</div><div class="stat-label">Rimaste</div></div>
+            <div class="stat-box"><div class="stat-num">${st.avg.toFixed(1)}</div><div class="stat-label">Media</div></div>
+        </div>
+    </div>`:'';
+
+    // Keypad 3D
+    const kp=!finito?`<div style="margin-bottom:0.75rem">
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">
+            🦌 Piazzola ${piazzolaCorrente+1}/${nPiaz}
+            ${ente==='FIARC'?`<span style="font-size:0.78rem;color:var(--muted);font-weight:400"> · ${frecciaCorrente}ª freccia</span>`:''}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(${Math.ceil(kpLabels.length/2)===2?'2':'3'},1fr);gap:0.5rem;margin-bottom:0.5rem">
+            ${kpLabels.map(k=>`<button onclick="window.tk3dKey('${k.v}')" style="padding:0.75rem 0.4rem;font-family:'Rajdhani',sans-serif;font-size:0.95rem;font-weight:700;background:var(--dark3);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);touch-action:manipulation" ontouchstart="this.style.background='var(--gold)';this.style.color='#000'" ontouchend="this.style.background='var(--dark3)';this.style.color='var(--text)'">${k.l}</button>`).join('')}
+        </div>
+        <button onclick="window.tk3dUndo()" style="width:100%;padding:0.5rem;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-weight:700;cursor:pointer">↩ Annulla ultima</button>
+    </div>`:
+    `<div class="card card-gold" style="text-align:center;margin-bottom:0.75rem">
+        <div style="font-size:1.5rem;margin-bottom:0.3rem">✅</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">Percorso completato!</div>
+        <div style="font-size:0.82rem;color:var(--muted);margin-top:0.2rem">Punteggio finale: <strong style="color:var(--gold-light)">${st.score}</strong> pt</div>
+    </div>`;
+
+    render(`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+            <span style="font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">${s.type} · 3D ${ente}</span>
+            <span style="font-size:0.75rem;color:var(--muted)">${nPiaz} piazzole · ${freq} ${freq===1?'freccia':'frecce'}</span>
+        </div>
+        ${live}${tbl}${kp}
+        ${finito?`<button class="btn btn-gold btn-full btn-lg" onclick="window.tkSave3D()">💾 Salva Sessione 3D</button>`:`<button class="btn btn-outline btn-full btn-sm" onclick="window.tkSave3D()" style="margin-top:0.3rem">💾 Salva e chiudi (incompleto)</button>`}
+    `);
+}
+
+window.tk3dKey = (val) => {
+    const d3=TK.session?.d3;
+    if(!d3) return;
+    const pi=d3.piazzola, fi=d3.frecciaCorrente-1; // 0-based
+    if(pi>=d3.piazzole) return;
+
+    const punti=parseInt(val)||0;
+    TK.grid[pi][fi]=punti===0?'0':val;
+
+    if(punti>0) {
+        // Colpito: piazzola chiusa → segna le frecce rimanenti come '—'
+        for(let c=fi+1;c<d3.frecce;c++) TK.grid[pi][c]='—';
+        // Avanza alla prossima piazzola
+        d3.piazzola++; d3.frecciaCorrente=1;
+    } else {
+        // Mancato: prossima freccia (se disponibile)
+        if(fi+1<d3.frecce) {
+            d3.frecciaCorrente++;
+        } else {
+            // Esaurite le frecce per questa piazzola
+            d3.piazzola++; d3.frecciaCorrente=1;
+        }
+    }
+    tkSave();
+    tkRenderScoring3D();
+};
+
+window.tk3dUndo = () => {
+    const d3=TK.session?.d3;
+    if(!d3) return;
+    // Torna indietro di un passo
+    let pi=d3.piazzola, fi=d3.frecciaCorrente-1;
+    // Trova l'ultima cella compilata
+    if(fi<=0 && pi>0) { pi--; fi=d3.frecce-1; }
+    else if(fi>0) { fi--; }
+    // Cancella '—' trailing e la cella
+    for(let c=TK.grid[pi].length-1;c>=fi;c--) TK.grid[pi][c]='';
+    d3.piazzola=pi; d3.frecciaCorrente=fi+1;
+    tkSave();
+    tkRenderScoring3D();
+};
+
+window.tkSave3D = async () => {
+    const s=TK.session,d3=s.d3;
+    const st=tkCalc3D(TK.grid,d3);
+    showModal('🪃 Frecce extra',`
+        <div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold-light)">${st.score}</div>
+        <div style="text-align:center;color:var(--muted);font-size:0.8rem;margin-bottom:0.75rem">punteggio 3D (${st.piazzoleComplete}/${d3.piazzole} piazzole)</div>
+        <label class="form-label">Frecce tirate extra (warm-up...)</label>
+        <input class="inp" id="tk-3d-extra" type="number" min="0" value="0" style="text-align:center">
+    `,[{text:'💾 Salva',cls:'btn-gold',fn:async()=>{
+        s.frecceAggiuntive=parseInt(document.getElementById('tk-3d-extra')?.value)||0;
+        const freccieTirate=st.fired+s.frecceAggiuntive;
+        const sessionData={
+            archerId:S.atleta.id,arciere:`${S.atleta.nome} ${S.atleta.cognome}`,
+            type:s.type,data:s.data,luogo:s.luogo||'',tipoLuogo:s.tipoLuogo||'',
+            distanza:s.distanza||'',tipoTarga:'3D',formatoGara:s.formatoGara||'',tipoArco:s.tipoArco||'',
+            totalScore:st.score,totalX:0,totalTen:0,totalNine:0,totalAverage:st.avg,
+            turn1Score:st.score,turn2Score:0,
+            frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:freccieTirate,
+            esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
+            noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+            notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
+            d3Config:{ente:d3.ente,piazzole:d3.piazzole,frecce:d3.frecce},
+            d3Grid:TK.grid.map(r=>JSON.stringify(r)),
+            timestamp:serverTimestamp(),createdAt:new Date().toISOString()
+        };
+        try{
+            if(!navigator.onLine) throw new Error('offline');
+            await addDoc(sessioniCol(S.asd.id),sessionData);
+            tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
+            await loadAtletaSessioni();
+            showModal('✅ Salvato!',`3D ${d3.ente}: ${st.score} pt · ${st.piazzoleComplete} piazzole`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
+        }catch(e){
+            const qk=`offline_queue_${S.atleta?.id||''}`;
+            const q=JSON.parse(localStorage.getItem(qk)||'[]');
+            q.push({asdId:S.asd.id,data:sessionData,savedAt:new Date().toISOString()});
+            localStorage.setItem(qk,JSON.stringify(q));
+            tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
+            showModal('⚠️ Salvato Offline',`3D ${d3.ente}: ${st.score} pt — Sarà sincronizzato alla riconnessione.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
+        }
+    }}]);
+};
+
+window.tkRenderScoring3D = tkRenderScoring3D;
+// ═══════════════════════════════════════════════════════════════════════
 
 window.tkNote=(volley)=>{
     const cur=TK.volleyNotes[volley]||'';
@@ -2249,13 +2486,35 @@ function renderRegistrationForm({ type='Allenamento' }) {
         </div>
         <div id="tk-sfields" class="form-section">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
-                <div><label class="form-label">Distanza *</label>
+                <div><label class="form-label">Distanza</label>
                     <select class="inp" id="tk-dist">${TK_DIST.map(o=>`<option>${o}</option>`).join('')}</select></div>
                 <div><label class="form-label">Tipo Targa *</label>
-                    <select class="inp" id="tk-targa">${TK_TARGA.map(o=>`<option>${o}</option>`).join('')}</select></div>
+                    <select class="inp" id="tk-targa" onchange="window.tkOnTargaChange(this.value)">${TK_TARGA.map(o=>`<option>${o}</option>`).join('')}</select></div>
             </div>
-            <div style="margin-top:0.6rem"><label class="form-label">Formato Frecce *</label>
+            <!-- Formato standard (nascosto per 3D) -->
+            <div id="tk-formato-wrap" style="margin-top:0.6rem"><label class="form-label">Formato Frecce *</label>
                 <select class="inp" id="tk-formato">${TK_FORMATO.map(o=>`<option>${o}</option>`).join('')}</select></div>
+            <!-- Pannello 3D (visibile solo per 3D) -->
+            <div id="tk-3d-wrap" style="display:none;margin-top:0.75rem">
+                <div style="background:rgba(201,162,39,0.07);border:1.5px solid rgba(201,162,39,0.4);border-radius:12px;padding:0.85rem">
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">🦌 Impostazioni Tiro 3D</div>
+                    <div style="display:flex;flex-direction:column;gap:0.6rem">
+                        <div><label class="form-label">Federazione *</label>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
+                                <button id="btn-fitarco" onclick="window.tk3dSetEnte('FITARCO')" style="padding:0.6rem;border-radius:10px;border:2px solid rgba(201,162,39,0.5);background:rgba(201,162,39,0.15);color:var(--gold);font-weight:700;cursor:pointer;font-size:0.88rem">🏆 FITARCO</button>
+                                <button id="btn-fiarc" onclick="window.tk3dSetEnte('FIARC')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem">🎯 FIARC</button>
+                            </div>
+                        </div>
+                        <div><label class="form-label">N° Piazzole *</label>
+                            <input class="inp" type="number" id="tk-3d-piazzole" min="1" max="100" placeholder="Es: 24" style="font-size:1.1rem;text-align:center;font-weight:700">
+                        </div>
+                        <div id="tk-3d-frecce-wrap"><label class="form-label">Frecce per piazzola *</label>
+                            <div id="tk-3d-frecce-btns" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem"></div>
+                        </div>
+                        <div id="tk-3d-info" style="font-size:0.75rem;color:var(--muted);line-height:1.5;padding:0.5rem;background:var(--dark3);border-radius:8px;display:none"></div>
+                    </div>
+                </div>
+            </div>
         </div>
         ${type==='Allenamento'?`<div class="form-section"><label class="form-label">🎯 Esercizi Consigliati</label>
             ${S.atleta?.esercizConsigliatiCoach?`<div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">
@@ -2275,11 +2534,70 @@ window.tkToggle=(checked)=>{
     if(btn)btn.textContent=checked?'▶ Continua (solo note)':'▶ Inizia Segnapunti';
 };
 
+// Gestione UI selezione targa
+window._tk3dEnte = 'FITARCO';
+window._tk3dFrec = 2; // default FITARCO = 2 frecce
+window.tkOnTargaChange = (val) => {
+    const fw = document.getElementById('tk-formato-wrap');
+    const dw = document.getElementById('tk-3d-wrap');
+    if (val === '3D') {
+        if (fw) fw.style.display = 'none';
+        if (dw) dw.style.display = 'block';
+        window.tk3dSetEnte('FITARCO'); // default
+    } else {
+        if (fw) fw.style.display = 'block';
+        if (dw) dw.style.display = 'none';
+    }
+};
+
+window.tk3dSetEnte = (ente) => {
+    window._tk3dEnte = ente;
+    // Aggiorna stile bottoni
+    const bf = document.getElementById('btn-fitarco'), bb = document.getElementById('btn-fiarc');
+    if (bf) { bf.style.borderColor = ente==='FITARCO'?'rgba(201,162,39,0.8)':'var(--border)'; bf.style.background = ente==='FITARCO'?'rgba(201,162,39,0.2)':'var(--dark3)'; bf.style.color = ente==='FITARCO'?'var(--gold)':'var(--muted)'; }
+    if (bb) { bb.style.borderColor = ente==='FIARC'?'rgba(201,162,39,0.8)':'var(--border)'; bb.style.background = ente==='FIARC'?'rgba(201,162,39,0.2)':'var(--dark3)'; bb.style.color = ente==='FIARC'?'var(--gold)':'var(--muted)'; }
+    // Mostra opzioni frecce
+    const fb = document.getElementById('tk-3d-frecce-btns');
+    const info = document.getElementById('tk-3d-info');
+    const maxFrec = ente==='FITARCO' ? [1,2] : [1,2,3];
+    const defFrec = ente==='FITARCO' ? 2 : 3;
+    window._tk3dFrec = defFrec;
+    if (fb) {
+        fb.style.gridTemplateColumns = `repeat(${maxFrec.length},1fr)`;
+        fb.innerHTML = maxFrec.map(n=>`
+            <button onclick="window.tk3dSetFrec(${n})" id="btn-f${n}" style="padding:0.5rem;border-radius:8px;border:2px solid ${n===defFrec?'rgba(201,162,39,0.8)':'var(--border)'};background:${n===defFrec?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${n===defFrec?'var(--gold)':'var(--muted)'};font-weight:700;cursor:pointer">${n} ${n===1?'freccia':'frecce'}</button>
+        `).join('');
+    }
+    if (info) {
+        info.style.display = 'block';
+        if (ente==='FITARCO') {
+            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FITARCO:</strong><br>Spot 11 · Super Kill 10 · Kill 8 · Body 5 · Mancato 0';
+        } else {
+            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FIARC:</strong><br>1ª freccia: Spot 20 · Kill 18 · Body 16<br>2ª freccia: Spot 14 · Kill 12 · Body 10<br>3ª freccia: Spot 8 · Kill 6 · Body 4<br><em>Se colpisci con la 1ª la piazzola si chiude.</em>';
+        }
+    }
+};
+
+window.tk3dSetFrec = (n) => {
+    window._tk3dFrec = n;
+    const maxFrec = window._tk3dEnte==='FITARCO' ? [1,2] : [1,2,3];
+    maxFrec.forEach(i => {
+        const b = document.getElementById(`btn-f${i}`);
+        if (b) { b.style.borderColor = i===n?'rgba(201,162,39,0.8)':'var(--border)'; b.style.background = i===n?'rgba(201,162,39,0.15)':'var(--dark3)'; b.style.color = i===n?'var(--gold)':'var(--muted)'; }
+    });
+};
+
 window.tkStart=(type)=>{
     const ns=document.getElementById('tk-noscore')?.checked||false;
     const luogo=document.getElementById('tk-luogo')?.value.trim();
     if(!luogo)return showModal('Errore','Inserisci il luogo.',[{text:'OK'}]);
-    if(!ns&&!document.getElementById('tk-formato')?.value)return showModal('Errore','Seleziona il formato frecce.',[{text:'OK'}]);
+    const targa = document.getElementById('tk-targa')?.value || '';
+    const is3D = targa === '3D';
+    if (!ns && !is3D && !document.getElementById('tk-formato')?.value) return showModal('Errore','Seleziona il formato frecce.',[{text:'OK'}]);
+    if (!ns && is3D) {
+        const piazzole = parseInt(document.getElementById('tk-3d-piazzole')?.value)||0;
+        if (!piazzole) return showModal('Errore','Inserisci il numero di piazzole.',[{text:'OK'}]);
+    }
     // Auto-carica esercizi consigliati dal coach se presenti
     const esercizDalCoach = S.atleta?.esercizConsigliatiCoach || '';
     const esercizForm = document.getElementById('tk-eserc')?.value || '';
@@ -2289,13 +2607,15 @@ window.tkStart=(type)=>{
         tipoArco:document.getElementById('tk-tipoArco')?.value||'',
         distanza:ns?'':document.getElementById('tk-dist')?.value||'',
         tipoTarga:ns?'':document.getElementById('tk-targa')?.value||'',
-        formatoGara:ns?'':document.getElementById('tk-formato')?.value||'30 frecce (3x10)',
+        formatoGara:ns?'':(is3D?`3D ${window._tk3dEnte} ${parseInt(document.getElementById('tk-3d-piazzole')?.value)||0}p ${window._tk3dFrec}f`:document.getElementById('tk-formato')?.value||'30 frecce (3x10)'),
+        d3:(!ns&&is3D)?{ente:window._tk3dEnte,piazzole:parseInt(document.getElementById('tk-3d-piazzole')?.value)||24,frecce:window._tk3dFrec,piazzola:0,frecciaCorrente:1}:null,
         esercizConsigliati:esercizForm || esercizDalCoach,
         trainingWithoutScore:ns,
         noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
     TK.turn=1;TK.volleyNotes={};window._tkPos={};
     if(ns){renderTrainingNotes();}
+    else if(is3D){tkInitGrid3D();tkSave();setHeader(`${type==='Gara'?'🏆':'🎯'} ${type} · 3D`,S.asd?.nome||'');tkRenderScoring3D();}
     else{tkInitGrid();tkSave();setHeader(`${type==='Gara'?'🏆':'🎯'} ${type} · T1`,S.asd?.nome||'');tkRenderScoring();}
 };
 
