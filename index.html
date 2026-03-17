@@ -1643,10 +1643,18 @@ function renderAtletaMenu() {
                 </div>
             </div>
 
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:1rem">
-                <div class="stat-box"><div class="stat-num">${S.sessioni.length}</div><div class="stat-label">Sessioni</div></div>
-                <div class="stat-box"><div class="stat-num">${S.sessioni.filter(x=>x.type==='Gara').length}</div><div class="stat-label">Gare</div></div>
-                <div class="stat-box"><div class="stat-num">${(()=>{const g=S.sessioni.filter(x=>x.totalScore>0);return g.length?Math.max(...g.map(x=>x.totalScore)):'—';})()}</div><div class="stat-label">Best</div></div>
+            <!-- ── I MIEI DATI ── -->
+            <div style="margin-bottom:1rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.45rem">📊 I Miei Dati</div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:0.4rem">
+                    <div class="stat-box"><div class="stat-num">${S.sessioni.length}</div><div class="stat-label">Sessioni</div></div>
+                    <div class="stat-box"><div class="stat-num">${S.sessioni.filter(x=>x.type==='Allenamento').length}</div><div class="stat-label">Allenamenti</div></div>
+                    <div class="stat-box"><div class="stat-num">${S.sessioni.filter(x=>x.type==='Gara').length}</div><div class="stat-label">Gare</div></div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.4rem">
+                    <div class="stat-box"><div class="stat-num" style="color:var(--gold-light)">${(()=>{const g=S.sessioni.filter(x=>!x.trainingWithoutScore&&x.totalScore>0);return g.length?Math.max(...g.map(x=>x.totalScore)):'—';})()}</div><div class="stat-label">Best Score</div></div>
+                    <div class="stat-box"><div class="stat-num">${S.sessioni.reduce((s,x)=>s+countArrowsForSession(x),0)}</div><div class="stat-label">Frecce Tot.</div></div>
+                </div>
             </div>
             ${lastSession ? `
             <div class="card" style="margin-bottom:1.25rem;border-color:rgba(201,162,39,0.3)">
@@ -1748,7 +1756,7 @@ async function checkNuoviMessaggi() {
         }
     } catch(e) {}
 }
-window.resetFiltri = () => { window._filtroTipo = ''; window._filtroAnno = ''; window._filtroPeriodo = ''; };
+window.resetFiltri = () => { window._filtroTipo = ''; window._filtroAnno = ''; window._filtroPeriodo = ''; window._calFiltroTipo = ''; window._calFiltroPeriodo = 'mese'; };
 
 // ════════════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════════════
@@ -2789,30 +2797,7 @@ async function renderAtletaCalendario() {
     const now = new Date();
     window._calState = { m: now.getMonth(), y: now.getFullYear() };
 
-    // ── Stat globali "I Miei Dati" ──
-    const allList  = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
-    const bestScore = allList.length>0 ? Math.max(...allList.map(s=>s.totalScore||0)) : 0;
-    const totalFrecce = S.sessioni.reduce((sum,s)=>sum+countArrowsForSession(s),0);
-    const sessCount = S.sessioni.length;
-    const garaCount = S.sessioni.filter(s=>s.type==='Gara').length;
-    const allCount  = S.sessioni.filter(s=>s.type==='Allenamento').length;
-
     render(`
-        <!-- I MIEI DATI (stat globali) -->
-        <div style="margin-bottom:1rem">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.5rem">📊 I Miei Dati</div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:0.4rem">
-                <div class="stat-box"><div class="stat-num">${sessCount}</div><div class="stat-label">Sessioni</div></div>
-                <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenamenti</div></div>
-                <div class="stat-box"><div class="stat-num">${garaCount}</div><div class="stat-label">Gare</div></div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.4rem">
-                <div class="stat-box"><div class="stat-num" style="color:var(--gold-light)">${bestScore||'—'}</div><div class="stat-label">Best Score</div></div>
-                <div class="stat-box"><div class="stat-num">${totalFrecce}</div><div class="stat-label">Frecce Tot.</div></div>
-            </div>
-        </div>
-        <div class="gold-line"></div>
-
         <!-- CALENDARIO -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
             <button class="btn btn-ghost btn-sm" onclick="window._calNav(-1)">◀ Prec.</button>
@@ -2882,41 +2867,76 @@ window._calRender = () => {
             <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best</div></div>
             <div class="stat-box"><div class="stat-num">${totFrecce}</div><div class="stat-label">Frecce</div></div>
         </div>` : `<p style="text-align:center;color:var(--muted);font-size:0.85rem">Nessuna sessione in ${MESI[m]} ${y}</p>`;
+    // ── Riepilogo dati con filtri (sotto calendario) ──
     const sessEl = document.getElementById('cal-sessions');
-    if (sessEl) {
-        if (!mSess.length) { sessEl.innerHTML = ''; return; }
-        const calFiltroTipo = window._calFiltroTipo || '';
-        let sessVis = [...mSess];
-        if (calFiltroTipo==='Gara') sessVis = sessVis.filter(ss=>ss.type==='Gara'&&!ss.trainingWithoutScore);
-        else if (calFiltroTipo==='Allenamento') sessVis = sessVis.filter(ss=>ss.type==='Allenamento'&&!ss.trainingWithoutScore);
-        else if (calFiltroTipo==='tecnico') sessVis = sessVis.filter(ss=>ss.trainingWithoutScore===true);
-        // Ordine cronologico decrescente con orario
-        sessVis.sort((a,b)=>{
-            const da=`${a.data||''}T${a.ora||'00:00'}`, db=`${b.data||''}T${b.ora||'00:00'}`;
-            return db.localeCompare(da);
-        });
-        sessEl.innerHTML = `<div class="gold-line"></div>
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 ${MESI[m]} (${mSess.length})</div>
-            <!-- Filtro tipo nel calendario -->
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.3rem;margin-bottom:0.6rem">
-                ${[['','Tutti'],['Allenamento','Allenim.'],['Gara','Gare'],['tecnico','Tecnico 🎓']].map(([v,l])=>`
-                    <button onclick="window._calFiltroTipo='${v}';window._calRender()" style="padding:0.3rem 0;font-size:0.68rem;font-weight:700;border-radius:8px;border:1.5px solid ${calFiltroTipo===v?'var(--gold)':'var(--border)'};background:${calFiltroTipo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${calFiltroTipo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
-                `).join('')}
-            </div>
-            ${sessVis.length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:1rem">Nessuna sessione per questo filtro.</p>`:
-            sessVis.map(ss=>`<div class="session-card" onclick="window.apriDettaglio('${ss.id||ss.docId||''}')" style="cursor:pointer;margin-bottom:0.4rem">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <div>
-                        <span class="badge ${ss.type==='Gara'?'badge-gold':'badge-blue'}" style="font-size:0.68rem">${ss.type}${ss.trainingWithoutScore?' 🎓':ss.quickScore?' ⚡':''}</span>
-                        <span style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-left:0.4rem">${fmtDate(ss.data)}</span>
-                        ${ss.ora?`<span style="font-size:0.7rem;color:var(--muted);margin-left:0.3rem">ore ${ss.ora}</span>`:''}
-                        <div style="font-size:0.72rem;color:var(--muted)">${ss.luogo||''} ${ss.distanza?'· '+ss.distanza:''}</div>
-                    </div>
-                    ${ss.totalScore>0?`<div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--gold-light)">${ss.totalScore}</div>`:
-                    ss.trainingWithoutScore?`<div style="font-size:0.72rem;color:var(--muted)">Tecnico</div>`:''}
-                </div>
-            </div>`).join('')}`;
+    if (!sessEl) return;
+
+    const calFiltroTipo    = window._calFiltroTipo    || '';
+    const calFiltroPeriodo = window._calFiltroPeriodo || 'mese'; // default: mese corrente
+    const anni = [...new Set(S.sessioni.map(s=>s.data?.substring(0,4)).filter(Boolean))].sort().reverse();
+    const oggi2 = new Date(); const todayStr2 = oggi2.toISOString().split('T')[0];
+
+    // Applica filtro tipo su TUTTE le sessioni
+    let sessAll = [...S.sessioni];
+    if (calFiltroTipo==='Gara')       sessAll = sessAll.filter(ss=>ss.type==='Gara'&&!ss.trainingWithoutScore);
+    else if (calFiltroTipo==='Allenamento') sessAll = sessAll.filter(ss=>ss.type==='Allenamento'&&!ss.trainingWithoutScore);
+    else if (calFiltroTipo==='tecnico') sessAll = sessAll.filter(ss=>ss.trainingWithoutScore===true);
+
+    // Applica filtro periodo
+    let sessVis = [...sessAll];
+    if (calFiltroPeriodo==='settimana') {
+        const dow=oggi2.getDay(), diff=dow===0?-6:1-dow;
+        const lun=new Date(oggi2); lun.setDate(oggi2.getDate()+diff);
+        sessVis = sessVis.filter(ss=>ss.data>=lun.toISOString().split('T')[0]&&ss.data<=todayStr2);
+    } else if (calFiltroPeriodo==='mese') {
+        const ms=`${oggi2.getFullYear()}-${String(oggi2.getMonth()+1).padStart(2,'0')}-01`;
+        sessVis = sessVis.filter(ss=>ss.data>=ms&&ss.data<=todayStr2);
+    } else if (calFiltroPeriodo && calFiltroPeriodo.length===4) {
+        sessVis = sessVis.filter(ss=>ss.data&&ss.data.startsWith(calFiltroPeriodo));
     }
+
+    // Ordine cronologico decrescente
+    sessVis.sort((a,b)=>{
+        const da=`${a.data||''}T${a.ora||'00:00'}`, db=`${b.data||''}T${b.ora||'00:00'}`;
+        return db.localeCompare(da);
+    });
+
+    sessEl.innerHTML = `<div class="gold-line"></div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.04em">📋 Riepilogo Sessioni</div>
+
+        <!-- Filtro tipo -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.3rem;margin-bottom:0.35rem">
+            ${[['','Tutti'],['Allenamento','Allenim.'],['Gara','Gare'],['tecnico','Tecnico 🎓']].map(([v,l])=>`
+                <button onclick="window._calFiltroTipo='${v}';window._calRender()" style="padding:0.3rem 0;font-size:0.68rem;font-weight:700;border-radius:8px;border:1.5px solid ${calFiltroTipo===v?'var(--gold)':'var(--border)'};background:${calFiltroTipo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${calFiltroTipo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+            `).join('')}
+        </div>
+
+        <!-- Filtro periodo -->
+        <div style="display:grid;grid-template-columns:repeat(${2+Math.min(anni.length,2)},1fr);gap:0.3rem;margin-bottom:0.65rem">
+            ${[['settimana','Sett.'],['mese','Mese'],...anni.slice(0,2).map(a=>[a,a])].map(([v,l])=>`
+                <button onclick="window._calFiltroPeriodo='${v}';window._calRender()" style="padding:0.3rem 0;font-size:0.68rem;font-weight:700;border-radius:8px;border:1.5px solid ${calFiltroPeriodo===v?'var(--gold)':'var(--border)'};background:${calFiltroPeriodo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${calFiltroPeriodo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+            `).join('')}
+        </div>
+
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem">${sessVis.length} sessione${sessVis.length!==1?'i':''} ${calFiltroPeriodo==='settimana'?'questa settimana':calFiltroPeriodo==='mese'?'questo mese':calFiltroPeriodo?'nel '+calFiltroPeriodo:''}</div>
+
+        ${sessVis.length===0
+            ? `<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:1.5rem 0">Nessuna sessione per i filtri selezionati.</p>`
+            : sessVis.map(ss=>`<div class="session-card" onclick="window.apriDettaglio('${ss.id||ss.docId||''}')" style="cursor:pointer;margin-bottom:0.4rem">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap">
+                            <span class="badge ${ss.type==='Gara'?'badge-gold':'badge-blue'}" style="font-size:0.68rem">${ss.type}${ss.trainingWithoutScore?' 🎓':ss.quickScore?' ⚡':''}</span>
+                        </div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;margin-top:0.2rem">${fmtDate(ss.data)}${ss.ora?` <span style="font-size:0.7rem;color:var(--muted)">ore ${ss.ora}</span>`:''}</div>
+                        <div style="font-size:0.72rem;color:var(--muted)">${ss.luogo||''} ${ss.distanza?'· '+ss.distanza:''} ${ss.tipoTarga?'· '+ss.tipoTarga:''}</div>
+                    </div>
+                    ${ss.totalScore>0
+                        ? `<div style="text-align:right;flex-shrink:0"><div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold-light)">${ss.totalScore}</div><div style="font-size:0.7rem;color:var(--muted)">${ss.turn1Score?'T1:'+ss.turn1Score+(ss.turn2Score?' T2:'+ss.turn2Score:''):''}</div></div>`
+                        : `<div style="font-size:0.72rem;color:var(--muted);flex-shrink:0">${ss.trainingWithoutScore?'Tecnico':'—'}</div>`}
+                </div>
+            </div>`).join('')
+        }`;
 };
 window._calDay = (dateStr) => {
     const daySess = S.sessioni.filter(ss => ss.data === dateStr);
