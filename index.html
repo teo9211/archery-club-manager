@@ -337,6 +337,8 @@ function setHeader(title, sub='', rightHtml='') {
     // Mostra freccia indietro se c'è storia di navigazione
     const backBtn = $('back-btn');
     if (backBtn) backBtn.style.display = (window._navHistory&&window._navHistory.length>1)?'inline-block':'none';
+    const menuBtn = $('app-header').querySelector('button[onclick="toggleNav()"]');
+    if (menuBtn) menuBtn.style.display = 'block';
 }
 function hideHeader() {
     $('app-header').style.display = 'none';
@@ -344,9 +346,42 @@ function hideHeader() {
     if (backBtn) backBtn.style.display = 'none';
 }
 
+function showHeaderHome() {
+    $('app-header').style.display = 'flex';
+    $('header-title').textContent = 'Archery Club Manager';
+    $('header-sub').textContent = '';
+    $('header-right').innerHTML = '';
+    const backBtn = $('back-btn');
+    if (backBtn) backBtn.style.display = 'none';
+    const menuBtn = $('app-header').querySelector('button[onclick="toggleNav()"]');
+    if (menuBtn) menuBtn.style.display = 'block';
+}
+
+function showPrivacy() {
+    showModal('🛡️ Privacy & Info', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.88rem;line-height:1.5">
+            <p><strong>Archery Club Manager</strong> è una piattaforma per la gestione delle ASD di tiro con l'arco.</p>
+            <p>I dati salvati sono utilizzati esclusivamente per le funzionalità dell'app e non vengono ceduti a terzi.</p>
+            <p><strong>Sviluppo:</strong> Progetto privato open-use.</p>
+            <p><strong>Contatti:</strong> Per info o collaborazioni puoi scrivere all'email di supporto o utilizzare la funzione "Segnala Bug".</p>
+            <div style="background:var(--dark3);padding:0.6rem;border-radius:8px;border:1px solid var(--border)">
+                ✉️ support@archeryclubmanager.it (esempio)
+            </div>
+        </div>
+    `, [{text:'Chiudi', cls:'btn-ghost'}]);
+}
+
 function buildNav() {
     let items = '', userName = '';
-    if (S.role === 'asd') {
+    if (!S.role) {
+        userName = 'Visitatore';
+        items = [
+            { icon:'🏠', label:'Home', fn:"window.setView('homeLogin')" },
+            { icon:'☕', label:'Supporta il progetto', fn:"window.showDonatePayPal()" },
+            { icon:'🐛', label:'Hai trovato un errore?', fn:"window.showBugReport()" },
+            { icon:'🛡️', label:'Privacy, Info e contattaci', fn:"window.showPrivacy()" },
+        ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
+    } else if (S.role === 'asd') {
         userName = S.asd?.nome || 'ASD';
         items = [
             { icon:'🏠', label:'Dashboard', fn:"window.setView('asdDashboard')" },
@@ -466,6 +501,22 @@ window.setView = async (view, params={}) => {
 // ════════════════════════════════════════════════════════════════════════════
 // ── HOME LOGIN (scelta ASD o login ASD) ─────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
+window._asdSearch = '';
+window._asdSearchActive = false;
+window._toggleAsdSearch = () => {
+    window._asdSearchActive = !window._asdSearchActive;
+    if (!window._asdSearchActive) window._asdSearch = '';
+    renderHomeLogin();
+    if (window._asdSearchActive) {
+        setTimeout(() => document.getElementById('asd-search-input')?.focus(), 50);
+    }
+};
+window._handleAsdSearch = (val) => {
+    window._asdSearch = val;
+    renderHomeLogin();
+    document.getElementById('asd-search-input')?.focus();
+};
+
 window.showDonatePayPal = () => {
     showModal('💳 Donazione PayPal', `
         <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;text-align:center">
@@ -534,6 +585,13 @@ async function renderMasterPanel() {
     setHeader('🔑 Pannello Sviluppatore', 'Accesso Admin');
     await loadAllAsd();
 
+    // Carica config globale
+    let globalConfig = { alertActive: false, alertTitle: '', alertMessage: '' };
+    try {
+        const confSnap = await getDoc(doc(db, `${APP_NS}/config/global`));
+        if (confSnap.exists()) globalConfig = confSnap.data();
+    } catch(e) {}
+
     // Carica bug reports
     let bugs = [];
     try {
@@ -550,6 +608,20 @@ async function renderMasterPanel() {
                 <div style="font-size:0.73rem;color:var(--muted)">Accesso completo a tutti i profili</div>
             </div>
             <button onclick="window._masterLogged=false;window.setView('homeLogin')" style="margin-left:auto;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:0.3rem 0.6rem;font-size:0.75rem;font-weight:700;cursor:pointer">🚪 Esci</button>
+        </div>
+
+        <!-- GLOBAL ALERT EDITOR -->
+        <div class="card" style="margin-bottom:1rem;border-color:#eab308">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#eab308;margin-bottom:0.6rem">📢 Popup Info Globale (Login)</div>
+            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;cursor:pointer">
+                    <input type="checkbox" id="conf-alert-active" ${globalConfig.alertActive?'checked':''}>
+                    Attiva Popup al Login
+                </label>
+                <input class="inp" id="conf-alert-title" value="${globalConfig.alertTitle||''}" placeholder="Titolo Popup (es: Nuove Funzioni)">
+                <textarea class="inp" id="conf-alert-msg" rows="3" placeholder="Messaggio...">${globalConfig.alertMessage||''}</textarea>
+                <button onclick="window._masterSaveConfig()" class="btn btn-gold btn-full btn-sm">💾 Salva Configurazione</button>
+            </div>
         </div>
 
         <!-- BUG REPORTS -->
@@ -596,6 +668,16 @@ async function renderMasterPanel() {
         </div>
     `);
 }
+
+window._masterSaveConfig = async () => {
+    const alertActive = document.getElementById('conf-alert-active')?.checked || false;
+    const alertTitle = document.getElementById('conf-alert-title')?.value || '';
+    const alertMessage = document.getElementById('conf-alert-msg')?.value || '';
+    try {
+        await setDoc(doc(db, `${APP_NS}/config/global`), { alertActive, alertTitle, alertMessage, updatedAt: serverTimestamp() });
+        showModal('✅ Salvato', 'Configurazione globale aggiornata.', [{text:'OK'}]);
+    } catch(e) { showModal('Errore', e.message, [{text:'OK'}]); }
+};
 
 window._masterDeleteBug = async (id) => {
     showModal('🗑️ Elimina Report','Segnare come risolto ed eliminare?',[
@@ -891,8 +973,13 @@ function _migMapSession(s, atletaId, atleta) {
         noteCondizioniFisiche: s.noteCondizioniFisiche || s.physicalNotes || '',
         notePreGara:  s.notePreGara || s.preNotes || '',
         notePostGara: s.notePostGara || s.postNotes || '',
-        trainingWithoutScore: s.trainingWithoutScore || (type==='Allenamento' && totalScore===0 && !s.quickScore) ? false : false,
+        trainingWithoutScore: s.trainingWithoutScore !== undefined ? s.trainingWithoutScore : (type==='Allenamento' && totalScore===0 && !s.quickScore),
         quickScore:   !!s.quickScore,
+        turn1: s.turn1 || null,
+        turn2: s.turn2 || null,
+        arrowPositions: s.arrowPositions || [],
+        volleyNotes: s.volleyNotes || {},
+        ora: s.ora || s.time || '',
         migrated:     true,
         migratedAt:   new Date().toISOString(),
         createdAt:    s.createdAt || new Date().toISOString(),
@@ -961,12 +1048,34 @@ window.showBugReport = () => {
     ]);
 };
 
-function renderHomeLogin() {
-    hideHeader();
-    const tiles = S.allAsd.length === 0
-        ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessuna ASD registrata ancora.</p>`
+async function renderHomeLogin() {
+    showHeaderHome();
+    buildNav();
+
+    // Mostra popup info se attivo
+    if (!window._homeAlertShown) {
+        window._homeAlertShown = true;
+        try {
+            const confSnap = await getDoc(doc(db, `${APP_NS}/config/global`));
+            if (confSnap.exists()) {
+                const conf = confSnap.data();
+                if (conf.alertActive && (conf.alertTitle || conf.alertMessage)) {
+                    showModal(conf.alertTitle || '📢 Info', `<div style="white-space:pre-wrap">${conf.alertMessage || ''}</div>`, [{text:'OK', cls:'btn-gold'}]);
+                }
+            }
+        } catch(e) {}
+    }
+
+    const searchFilter = (window._asdSearch || '').toLowerCase();
+    const filteredAsd = S.allAsd.filter(a =>
+        (a.nome || '').toLowerCase().includes(searchFilter) ||
+        (a.citta || '').toLowerCase().includes(searchFilter)
+    );
+
+    const tiles = filteredAsd.length === 0
+        ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">${S.allAsd.length === 0 ? 'Nessuna ASD registrata ancora.' : 'Nessuna ASD trovata con questo nome.'}</p>`
         : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.85rem">
-            ${S.allAsd.map(asd => `
+            ${filteredAsd.map(asd => `
                 <div class="asd-tile" onclick="window.setView('atletaSelect',{asdId:'${asd.id}'})">
                     <div class="asd-logo-wrap">
                         ${asd.logoBase64
@@ -994,7 +1103,13 @@ function renderHomeLogin() {
         <div style="margin-bottom:1.5rem">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.85rem">
                 <span style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem;color:var(--gold)">🏆 SELEZIONA LA TUA ASD</span>
-                <button class="btn btn-outline btn-sm" onclick="window.setView('asdLogin',{mode:'login'})">🔐 Area ASD</button>
+                <div style="display:flex;gap:0.5rem;align-items:center">
+                    <button class="btn btn-ghost btn-sm" onclick="window._toggleAsdSearch()" title="Cerca ASD">🔍</button>
+                    <button class="btn btn-outline btn-sm" onclick="window.setView('asdLogin',{mode:'login'})">🔐 Area ASD</button>
+                </div>
+            </div>
+            <div id="asd-search-container" style="display:${window._asdSearchActive?'block':'none'};margin-bottom:1rem">
+                <input class="inp" id="asd-search-input" placeholder="Cerca ASD per nome o città..." value="${window._asdSearch || ''}" oninput="window._handleAsdSearch(this.value)">
             </div>
             ${tiles}
         </div>
@@ -1002,43 +1117,6 @@ function renderHomeLogin() {
         <div style="text-align:center;padding:1rem 0;border-top:1px solid var(--border)">
             <p style="color:var(--muted);font-size:0.8rem;margin-bottom:0.6rem">Sei il responsabile di una ASD?</p>
             <button class="btn btn-outline btn-sm" onclick="window.setView('asdRegister')">➕ Registra nuova ASD</button>
-        </div>
-
-        <!-- DONAZIONE -->
-        <div style="margin-top:1.5rem;background:linear-gradient(135deg,rgba(201,162,39,0.1),rgba(201,162,39,0.04));border:2px solid rgba(201,162,39,0.4);border-radius:16px;padding:1.2rem">
-            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
-                <span style="font-size:1.8rem">☕</span>
-                <div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem;line-height:1.1">Supporta il Progetto</div>
-                    <div style="font-size:0.72rem;color:var(--muted)">Gratuito per tutti, con costi reali</div>
-                </div>
-            </div>
-            <p style="font-size:0.79rem;color:var(--text);margin-bottom:1rem;line-height:1.55">
-                Archery Club Manager è sviluppato e mantenuto da un privato, con costi reali di hosting, database e tempo.
-                Se lo usi e lo trovi utile, anche una piccola donazione aiuta a tenerlo vivo e migliorarlo. <strong style="color:var(--gold)">Grazie! 🙏</strong>
-            </p>
-            <button onclick="window.showDonatePayPal()" style="display:flex;align-items:center;justify-content:center;gap:0.6rem;width:100%;padding:0.85rem;background:rgba(0,100,200,0.15);border:1.5px solid rgba(0,100,200,0.4);border-radius:12px;color:#60a5fa;font-weight:700;cursor:pointer;transition:all 0.15s" onmouseover="this.style.background='rgba(0,100,200,0.25)'" onmouseout="this.style.background='rgba(0,100,200,0.15)'">
-                <span style="font-size:1.4rem">💳</span>
-                <span style="font-size:0.9rem">Supporta con PayPal</span>
-            </button>
-        </div>
-
-        <!-- SEGNALA ERRORI -->
-        <div style="margin-top:0.9rem;background:var(--dark3);border:1px solid var(--border);border-radius:16px;padding:1.1rem">
-            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem">
-                <span style="font-size:1.5rem">🐛</span>
-                <div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--text);font-size:0.95rem;line-height:1.1">Hai trovato un errore?</div>
-                    <div style="font-size:0.72rem;color:var(--muted)">Aiutaci a migliorare l'app</div>
-                </div>
-            </div>
-            <p style="font-size:0.77rem;color:var(--muted);margin-bottom:0.75rem;line-height:1.5">
-                Segnala bug, malfunzionamenti o suggerimenti. Essendo un <strong style="color:var(--text)">progetto privato</strong>, 
-                i tempi di risposta possono arrivare fino a <strong style="color:var(--gold)">30 giorni</strong>, ma ogni segnalazione viene letta e considerata.
-            </p>
-            <button onclick="window.showBugReport()" style="width:100%;padding:0.65rem;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:0.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:0.5rem;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
-                📝 Segnala Problema o Suggerimento
-            </button>
         </div>
 
         <!-- SALVATAGGIO LOCALE INFO -->
@@ -3242,10 +3320,14 @@ async function renderAtletaDati() {
             `).join('')}
         </div>
         <!-- Riga 2: periodo -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.3rem;margin-bottom:0.75rem">
-            ${[['','Tutto'],['settimana','Sett.'],['mese','Mese'],...anni.slice(0,2).map(a=>[a,a])].map(([v,l])=>`
-                <button onclick="window._filtroPeriodo='${v}';renderAtletaDati()" style="padding:0.3rem 0;font-size:0.73rem;font-weight:700;border-radius:8px;border:1.5px solid ${filtroPeriodo===v?'var(--gold)':'var(--border)'};background:${filtroPeriodo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${filtroPeriodo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+        <div style="display:flex;gap:0.3rem;margin-bottom:0.75rem">
+            ${[['','Tutto'],['settimana','Sett.'],['mese','Mese']].map(([v,l])=>`
+                <button onclick="window._filtroPeriodo='${v}';renderAtletaDati()" style="flex:1;padding:0.35rem 0;font-size:0.73rem;font-weight:700;border-radius:8px;border:1.5px solid ${filtroPeriodo===v?'var(--gold)':'var(--border)'};background:${filtroPeriodo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${filtroPeriodo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
             `).join('')}
+            <select class="inp" style="flex:1.2;padding:0.25rem 0.5rem;font-size:0.73rem;height:auto;border-color:${anni.includes(filtroPeriodo)?'var(--gold)':'var(--border)'};background:${anni.includes(filtroPeriodo)?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${anni.includes(filtroPeriodo)?'var(--gold)':'var(--muted)'}" onchange="window._filtroPeriodo=this.value;renderAtletaDati()">
+                <option value="" ${!anni.includes(filtroPeriodo)?'selected':''}>Anno...</option>
+                ${anni.map(a=>`<option value="${a}" ${filtroPeriodo===a?'selected':''}>${a}</option>`).join('')}
+            </select>
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
@@ -3659,10 +3741,14 @@ window._calRender = () => {
         </div>
 
         <!-- Filtro periodo -->
-        <div style="display:grid;grid-template-columns:repeat(${2+Math.min(anni.length,2)},1fr);gap:0.3rem;margin-bottom:0.65rem">
-            ${[['settimana','Sett.'],['mese','Mese'],...anni.slice(0,2).map(a=>[a,a])].map(([v,l])=>`
-                <button onclick="window._calFiltroPeriodo='${v}';window._calRender()" style="padding:0.3rem 0;font-size:0.68rem;font-weight:700;border-radius:8px;border:1.5px solid ${calFiltroPeriodo===v?'var(--gold)':'var(--border)'};background:${calFiltroPeriodo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${calFiltroPeriodo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
+        <div style="display:flex;gap:0.3rem;margin-bottom:0.65rem">
+            ${[['settimana','Sett.'],['mese','Mese']].map(([v,l])=>`
+                <button onclick="window._calFiltroPeriodo='${v}';window._calRender()" style="flex:1;padding:0.3rem 0;font-size:0.68rem;font-weight:700;border-radius:8px;border:1.5px solid ${calFiltroPeriodo===v?'var(--gold)':'var(--border)'};background:${calFiltroPeriodo===v?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${calFiltroPeriodo===v?'var(--gold)':'var(--muted)'};cursor:pointer">${l}</button>
             `).join('')}
+            <select class="inp" style="flex:1.2;padding:0.25rem 0.5rem;font-size:0.68rem;height:auto;border-color:${anni.includes(calFiltroPeriodo)?'var(--gold)':'var(--border)'};background:${anni.includes(calFiltroPeriodo)?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${anni.includes(calFiltroPeriodo)?'var(--gold)':'var(--muted)'}" onchange="window._calFiltroPeriodo=this.value;window._calRender()">
+                <option value="" ${!anni.includes(calFiltroPeriodo)?'selected':''}>Anno...</option>
+                ${anni.map(a=>`<option value="${a}" ${calFiltroPeriodo===a?'selected':''}>${a}</option>`).join('')}
+            </select>
         </div>
 
         <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem">${sessVis.length} sessione${sessVis.length!==1?'i':''} ${calFiltroPeriodo==='settimana'?'questa settimana':calFiltroPeriodo==='mese'?'questo mese':calFiltroPeriodo?'nel '+calFiltroPeriodo:''}</div>
