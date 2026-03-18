@@ -1067,8 +1067,8 @@ async function renderHomeLogin() {
     }
 
     const searchFilter = (window._asdSearch || '').toLowerCase();
-    const filteredAsd = S.allAsd.filter(a =>
-        (a.nome || '').toLowerCase().includes(searchFilter) ||
+    const filteredAsd = S.allAsd.filter(a => 
+        (a.nome || '').toLowerCase().includes(searchFilter) || 
         (a.citta || '').toLowerCase().includes(searchFilter)
     );
 
