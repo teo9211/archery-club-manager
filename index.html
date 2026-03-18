@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Archery Club Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
             --gold: #c9a227;
@@ -176,6 +175,11 @@
         /* ── SESSION CARD ── */
         .session-card { background: var(--dark2); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem; transition: border-color 0.2s; }
         .session-card:hover { border-color: rgba(201,162,39,0.4); }
+
+        /* ── UTILITIES ── */
+        .w-full { width: 100%; }
+        .border-collapse { border-collapse: collapse; }
+        .col-span-2 { grid-column: span 2 / span 2; }
     
     /* Offset header per barra offline */
     body.is-offline .app-header { top: 32px; }
@@ -975,11 +979,11 @@ function _migMapSession(s, atletaId, atleta) {
         notePostGara: s.notePostGara || s.postNotes || '',
         trainingWithoutScore: s.trainingWithoutScore !== undefined ? s.trainingWithoutScore : (type==='Allenamento' && totalScore===0 && !s.quickScore),
         quickScore:   !!s.quickScore,
-        turn1: s.turn1 || null,
-        turn2: s.turn2 || null,
-        arrowPositions: s.arrowPositions || [],
-        volleyNotes: s.volleyNotes || {},
-        ora: s.ora || s.time || '',
+        turn1: s.turn1 || s.round1_data || null,
+        turn2: s.turn2 || s.round2_data || null,
+        arrowPositions: s.arrowPositions || s.arrows_positions || [],
+        volleyNotes: s.volleyNotes || s.volleys_notes || {},
+        ora: s.ora || s.time || s.hour || '',
         migrated:     true,
         migratedAt:   new Date().toISOString(),
         createdAt:    s.createdAt || new Date().toISOString(),
