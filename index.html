@@ -3392,6 +3392,11 @@ async function renderAtletaDati() {
 
     const hasFiltri = filtroTipo || filtroPeriodo;
     render(`
+        <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+            <button class="btn btn-ghost btn-sm btn-full" onclick="window.showStampaReportModal()">🖨️ Report</button>
+            <button class="btn btn-ghost btn-sm btn-full" onclick="window.showAgendaPdfModal()">📄 Agenda</button>
+        </div>
+
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.45rem;margin-bottom:0.75rem">
             <div class="stat-box"><div class="stat-num">${sessCount}</div><div class="stat-label">Sessioni</div></div>
             <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenamenti</div></div>
@@ -4703,7 +4708,7 @@ async function renderContatoreFrecce() {
 // ═══════════════════════════════════════════════════════════════════════════
 // ── ESPORTA & BACKUP ────────────────────────────────────────────────────────
 async function renderEsportaDati() {
-    setHeader('📥 Esporta & Backup', S.atleta?.nome||'');
+    setHeader('📥 Esporta Dati', S.atleta?.nome||'');
     await loadAtletaSessioni();
     render(`
         <div class="card card-gold" style="margin-bottom:1rem">
@@ -4711,40 +4716,9 @@ async function renderEsportaDati() {
             <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Esporta tutte le sessioni in formato CSV per Excel o altri strumenti.</p>
             <button class="btn btn-gold btn-full" onclick="window.esportaCSV()">📄 Scarica CSV</button>
         </div>
-        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💾 Backup JSON Completo</div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Backup completo di profilo, sessioni, obiettivi e materiale in formato JSON.</p>
-            <button class="btn btn-outline btn-full" onclick="window.backupAtletaDati()">💾 Scarica Backup JSON</button>
-        </div>
-        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">🖨️ Stampa Report</div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.5rem">Genera un report stampabile delle sessioni.</p>
-            <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.6rem">
-                <label class="form-label">Periodo Report</label>
-                <select class="inp" id="rpt-period">
-                    <option value="all">Tutte le sessioni</option>
-                    <option value="month">Ultimo mese</option>
-                    <option value="3months">Ultimi 3 mesi</option>
-                    <option value="6months">Ultimi 6 mesi</option>
-                    <option value="year">Ultimo anno</option>
-                </select>
-            </div>
-            <button class="btn btn-outline btn-full" onclick="window.stampaReport()">🖨️ Genera e Stampa</button>
-        </div>
-        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📄 Esporta Agenda PDF</div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.5rem">Genera un PDF in formato agenda con le sessioni del periodo scelto.</p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
-                <div><label class="form-label">Da</label><input type="date" class="inp" id="pdf-da"></div>
-                <div><label class="form-label">A</label><input type="date" class="inp" id="pdf-a"></div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.35rem;margin-bottom:0.6rem">
-                <button class="btn btn-ghost btn-sm" onclick="window.setPdfPer('week')">Settimana</button>
-                <button class="btn btn-ghost btn-sm" onclick="window.setPdfPer('month')">Mese</button>
-                <button class="btn btn-ghost btn-sm" onclick="window.setPdfPer('year')">Anno</button>
-            </div>
-            <button class="btn btn-gold btn-full" onclick="window.esportaAgenda()">📥 Genera Agenda PDF</button>
-        </div>
+        <p style="font-size:0.78rem;color:var(--muted);text-align:center;padding:1rem;line-height:1.5">
+            Nota: Le opzioni di <strong>Stampa Report</strong> e <strong>Agenda PDF</strong> sono state spostate nella sezione <strong>Riepilogo Sessioni</strong>.
+        </p>
     `);
 }
 
@@ -4923,18 +4897,68 @@ window._executeRestore = async (data) => {
     }
 };
 
-window.setPdfPer = (p) => {
+
+window.showStampaReportModal = () => {
+    showModal('🖨️ Opzioni Report', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem">
+            <p style="font-size:0.85rem;color:var(--muted)">Seleziona il periodo da includere nel report stampabile:</p>
+            <div>
+                <label class="form-label">Periodo Report</label>
+                <select class="inp" id="rpt-modal-period">
+                    <option value="all">Tutte le sessioni</option>
+                    <option value="month">Ultimo mese</option>
+                    <option value="3months">Ultimi 3 mesi</option>
+                    <option value="6months">Ultimi 6 mesi</option>
+                    <option value="year">Ultimo anno</option>
+                </select>
+            </div>
+        </div>
+    `, [
+        { text: 'Annulla', cls: 'btn-ghost' },
+        { text: '🖨️ Stampa', cls: 'btn-gold', fn: () => {
+            const p = document.getElementById('rpt-modal-period')?.value;
+            window.stampaReport(p);
+        }}
+    ]);
+};
+
+window.showAgendaPdfModal = () => {
+    showModal('📄 Opzioni Agenda PDF', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem">
+            <p style="font-size:0.85rem;color:var(--muted)">Seleziona l'intervallo di date per l'agenda PDF:</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <div><label class="form-label">Da</label><input type="date" class="inp" id="pdf-modal-da"></div>
+                <div><label class="form-label">A</label><input type="date" class="inp" id="pdf-modal-a"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.35rem">
+                <button class="btn btn-ghost btn-sm" onclick="window.setPdfModalPer('week')">Settimana</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.setPdfModalPer('month')">Mese</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.setPdfModalPer('year')">Anno</button>
+            </div>
+        </div>
+    `, [
+        { text: 'Annulla', cls: 'btn-ghost' },
+        { text: '📥 Genera PDF', cls: 'btn-gold', fn: () => {
+            const da = document.getElementById('pdf-modal-da')?.value;
+            const a = document.getElementById('pdf-modal-a')?.value;
+            window.esportaAgenda(da, a);
+        }}
+    ]);
+    setTimeout(() => window.setPdfModalPer('month'), 50);
+};
+
+window.setPdfModalPer = (p) => {
     const now=new Date();let from,to;
-    if(p==='week'){const dw=now.getDay(),d=dw===0?-6:1-dw;from=new Date(now);from.setDate(now.getDate()+d);to=new Date(from);to.setDate(from.getDate()+6);}
+    if(p==='week'){const dw=now.getDay(),d=dw===0?-6:1-dow;from=new Date(now);from.setDate(now.getDate()+d);to=new Date(from);to.setDate(from.getDate()+6);}
     else if(p==='month'){from=new Date(now.getFullYear(),now.getMonth(),1);to=new Date(now.getFullYear(),now.getMonth()+1,0);}
     else{from=new Date(now.getFullYear(),0,1);to=new Date(now.getFullYear(),11,31);}
     const fmt=d=>d.toISOString().split('T')[0];
-    const fe=document.getElementById('pdf-da'),te=document.getElementById('pdf-a');
+    const fe=document.getElementById('pdf-modal-da'),te=document.getElementById('pdf-modal-a');
     if(fe)fe.value=fmt(from);if(te)te.value=fmt(to);
 };
 
-window.stampaReport = () => {
-    const period=document.getElementById('rpt-period')?.value||'all';
+window.stampaReport = (periodArg) => {
+    const period = periodArg || 'all';
     let filtered=[...S.sessioni];
     if(period!=='all'){const now=new Date(),cut=new Date();
         if(period==='month')cut.setMonth(now.getMonth()-1);
@@ -4966,8 +4990,8 @@ window.stampaReport = () => {
     pw.document.close();
 };
 
-window.esportaAgenda = () => {
-    const da=document.getElementById('pdf-da')?.value, a=document.getElementById('pdf-a')?.value;
+window.esportaAgenda = (daArg, aArg) => {
+    const da = daArg, a = aArg;
     if(!da||!a) return showModal('Errore','Seleziona un periodo.',[{text:'OK'}]);
     const filtered=S.sessioni.filter(s=>s.data>=da&&s.data<=a).sort((a,b)=>a.data.localeCompare(b.data));
     if(!filtered.length) return showModal('Attenzione','Nessuna sessione nel periodo.',[{text:'OK'}]);
