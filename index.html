@@ -1695,6 +1695,7 @@ async function renderAsdMessaggi() {
                             <select class="inp" id="msg-ob-period">
                                 <option value="monthly">Mensile</option>
                                 <option value="weekly">Settimanale</option>
+                                <option value="yearly">Annuale</option>
                             </select>
                         </div>
                         </div>
@@ -1729,11 +1730,16 @@ async function renderAsdMessaggi() {
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
                     <div>
-                        <label class="form-label">⏱️ Durata Esercizi (giorni)</label>
-                        <input class="inp" type="number" id="msg-durata" min="1" max="365" placeholder="Es: 7 (poi decadono)">
+                        <label class="form-label">⏱️ Durata Esercizi (num. sessioni)</label>
+                        <input class="inp" type="number" id="msg-durata" min="1" max="100" placeholder="Es: 5 (poi decadono)">
                     </div>
-                    <div style="display:flex;align-items:flex-end">
-                        <p style="font-size:0.72rem;color:var(--muted)">Lascia vuoto = nessuna scadenza</p>
+                    <div>
+                        <label class="form-label">Applica a:</label>
+                        <select class="inp" id="msg-eserc-filter">
+                            <option value="both">Entrambi</option>
+                            <option value="allenamento">Solo Allenamento</option>
+                            <option value="gara">Solo Gara</option>
+                        </select>
                     </div>
                 </div>
                 <button class="btn btn-gold btn-full" onclick="sendMessaggio()">📨 Invia</button>
@@ -1760,8 +1766,11 @@ async function sendMessaggio() {
     if (!testo) return showModal('Errore','Scrivi un messaggio.',[{text:'OK'}]);
 
     const durata = parseInt(document.getElementById('msg-durata')?.value)||0;
+    const esercF = document.getElementById('msg-eserc-filter')?.value||'both';
     const msgData = { destinatari: dest, testo, esercizi: eserc, mittente:'asd', createdAt: serverTimestamp() };
-    if (durata > 0) msgData.durataDays = durata;
+    if (durata > 0) msgData.esercizDurataSess = durata;
+    msgData.esercizFilter = esercF;
+
     if (obTipo && obVal > 0) {
         msgData.obiettivo = {
             type:obTipo, targetValue:obVal, title:obTitle||`Obiettivo: ${obVal}`, period:obPer,
@@ -1776,7 +1785,14 @@ async function sendMessaggio() {
         // Salva esercizi consigliati come nota nell'atleta (campo 'esercizConsigliatiCoach')
         if (eserc) {
             const atletaRef = doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`);
-            await updateDoc(atletaRef, { esercizConsigliatiCoach: eserc, esercizAggiornatiIl: new Date().toISOString().split('T')[0] }).catch(()=>{});
+            const updateObj = {
+                esercizConsigliatiCoach: eserc,
+                esercizAggiornatiIl: new Date().toISOString().split('T')[0],
+                esercizFilter: esercF
+            };
+            if (durata > 0) updateObj.esercizDurataSess = durata;
+            else delete updateObj.esercizDurataSess; // reset if no duration
+            await updateDoc(atletaRef, updateObj).catch(()=>{});
         }
         // Crea obiettivo nel profilo atleta se specificato
         if (obTipo && obVal > 0) {
@@ -2727,6 +2743,7 @@ window.tkSave3D = async () => {
         try{
             if(!navigator.onLine) throw new Error('offline');
             await addDoc(sessioniCol(S.asd.id),sessionData);
+        await tkDecrementEsercCoach();
             tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
             await loadAtletaSessioni();
             showModal('✅ Salvato!',`3D ${d3.ente}: ${st.score} pt · ${st.piazzoleComplete} piazzole`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
@@ -2799,6 +2816,7 @@ window.tkFineTurno=async(isFinal)=>{
             try{
                 if (!navigator.onLine) throw new Error('offline');
                 await addDoc(sessioniCol(S.asd.id), sessionData);
+                await tkDecrementEsercCoach();
                 tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
                 await loadAtletaSessioni();
@@ -3061,11 +3079,21 @@ function renderRegistrationForm({ type='Allenamento' }) {
                 </div>
             </div>
         </div>
-        ${type==='Allenamento'?`<div class="form-section"><label class="form-label">🎯 Esercizi Consigliati</label>
-            ${S.atleta?.esercizConsigliatiCoach?`<div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">
-                💬 <strong style="color:var(--gold)">Dal coach</strong> (${S.atleta.esercizAggiornatiIl||''}): ${S.atleta.esercizConsigliatiCoach.substring(0,100)}${S.atleta.esercizConsigliatiCoach.length>100?'…':''}
-            </div>`:''}
-            <textarea class="inp" id="tk-eserc" rows="2" placeholder="Dal coach...">${S.atleta?.esercizConsigliatiCoach||''}</textarea></div>`:''}
+        ${(()=>{
+            const showEserc = S.atleta?.esercizConsigliatiCoach &&
+                (S.atleta.esercizDurataSess === undefined || S.atleta.esercizDurataSess > 0) &&
+                (!S.atleta.esercizFilter || S.atleta.esercizFilter === 'both' || S.atleta.esercizFilter.toLowerCase() === type.toLowerCase());
+
+            if (!showEserc) return '';
+            return `<div class="form-section"><label class="form-label">🎯 Esercizi Consigliati</label>
+                <div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">
+                    💬 <strong style="color:var(--gold)">Dal coach</strong> (${S.atleta.esercizAggiornatiIl||''}): ${S.atleta.esercizConsigliatiCoach.substring(0,100)}${S.atleta.esercizConsigliatiCoach.length>100?'…':''}
+                    ${S.atleta.esercizDurataSess ? `<br>⏳ <span style="color:var(--gold)">Residuo: ${S.atleta.esercizDurataSess} sessioni</span>` : ''}
+                </div>
+                <textarea class="inp" id="tk-eserc" rows="2" placeholder="Dal coach...">${S.atleta.esercizConsigliatiCoach}</textarea>
+                <input type="hidden" id="tk-eserc-decrement" value="1">
+            </div>`;
+        })()}
         <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem">
             <button class="btn btn-gold btn-full btn-lg" id="tk-startbtn" onclick="window.tkStart('${type}')">▶ Inizia Segnapunti</button>
             <button class="btn btn-outline btn-full" onclick="window.tkStartQS('${type}')">⚡ Quick Score</button>
@@ -3153,6 +3181,7 @@ window.tkStart=(type)=>{
     // Auto-carica esercizi consigliati dal coach se presenti
     const esercizDalCoach = S.atleta?.esercizConsigliatiCoach || '';
     const esercizForm = document.getElementById('tk-eserc')?.value || '';
+    const decrementEserc = document.getElementById('tk-eserc-decrement')?.value === '1';
     TK.session={
         type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
         luogo,tipoLuogo:document.getElementById('tk-tipoLuogo')?.value||'',
@@ -3162,6 +3191,7 @@ window.tkStart=(type)=>{
         formatoGara:ns?'':(is3D?`3D ${window._tk3dEnte} ${parseInt(document.getElementById('tk-3d-piazzole')?.value)||0}p ${window._tk3dFrec}f`:document.getElementById('tk-formato')?.value||'30 frecce (3x10)'),
         d3:(!ns&&is3D)?{ente:window._tk3dEnte,piazzole:parseInt(document.getElementById('tk-3d-piazzole')?.value)||24,frecce:window._tk3dFrec,piazzola:0,frecciaCorrente:1}:null,
         esercizConsigliati:esercizForm || esercizDalCoach,
+        decrementEsercCoach: decrementEserc,
         trainingWithoutScore:ns,
         noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
@@ -3174,6 +3204,8 @@ window.tkStart=(type)=>{
 window.tkStartQS=(type)=>{
     const luogo=document.getElementById('tk-luogo')?.value.trim();
     if(!luogo)return showModal('Errore','Inserisci il luogo.',[{text:'OK'}]);
+    const esercForm = document.getElementById('tk-eserc')?.value || '';
+    const decrementEserc = document.getElementById('tk-eserc-decrement')?.value === '1';
     TK.session={
         type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
         luogo,tipoLuogo:document.getElementById('tk-tipoLuogo')?.value||'',
@@ -3181,7 +3213,8 @@ window.tkStartQS=(type)=>{
         distanza:document.getElementById('tk-dist')?.value||'',
         tipoTarga:document.getElementById('tk-targa')?.value||'',
         formatoGara:document.getElementById('tk-formato')?.value||'',
-        esercizConsigliati:document.getElementById('tk-eserc')?.value||'',
+        esercizConsigliati:esercForm,
+        decrementEsercCoach: decrementEserc,
         noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
     renderQuickScoreView();
@@ -3213,6 +3246,15 @@ function renderQuickScoreView(){
     `);
 }
 
+async function tkDecrementEsercCoach() {
+    if (!TK.session?.decrementEsercCoach || !S.atleta?.id) return;
+    if (S.atleta.esercizDurataSess === undefined) return;
+    const nuovo = Math.max(0, S.atleta.esercizDurataSess - 1);
+    const atletaRef = doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${S.atleta.id}`);
+    await updateDoc(atletaRef, { esercizDurataSess: nuovo }).catch(()=>{});
+    S.atleta.esercizDurataSess = nuovo;
+}
+
 window.tkSaveQS=async()=>{
     const t1=parseInt(document.getElementById('qs-t1')?.value)||0;
     const t2=parseInt(document.getElementById('qs-t2')?.value)||0;
@@ -3233,6 +3275,7 @@ window.tkSaveQS=async()=>{
             quickScore:true,trainingWithoutScore:false,
             timestamp:serverTimestamp(),createdAt:new Date().toISOString()
         });
+        await tkDecrementEsercCoach();
         TK.session=null;
         await loadAtletaSessioni();
         showModal('✅ Salvato!',`Punteggio: ${t1+t2} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
@@ -3271,6 +3314,7 @@ window.tkSaveTN=async()=>{
             notePreGara:'',notePostGara:'',trainingWithoutScore:true,quickScore:false,
             timestamp:serverTimestamp(),createdAt:new Date().toISOString()
         });
+        await tkDecrementEsercCoach();
         TK.session=null;
         await loadAtletaSessioni();
         showModal('✅ Salvato!','',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaMenu')}]);
@@ -4118,6 +4162,9 @@ function calcGoalProgress(goal, sessioni) {
         const dow = now.getDay();
         start = new Date(now); start.setDate(now.getDate() - (dow===0?6:dow-1)); start.setHours(0,0,0,0);
         end = new Date(start); end.setDate(start.getDate()+6); end.setHours(23,59,59,999);
+    } else if (goal.period === 'yearly') {
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
     } else {
         start = new Date(now.getFullYear(), now.getMonth(), 1);
         end = new Date(now.getFullYear(), now.getMonth()+1, 0, 23,59,59,999);
@@ -4238,6 +4285,7 @@ window.newObiettivo = () => {
                         <option value="">Seleziona periodo</option>
                         <option value="weekly">📅 Settimanale</option>
                         <option value="monthly">📆 Mensile</option>
+                        <option value="yearly">🗓️ Annuale</option>
                     </select>
                 </div>
             </div>
