@@ -2213,8 +2213,9 @@ function renderAtletaMenu() {
                     <div class="stat-box"><div class="stat-num">${S.sessioni.filter(x=>x.type==='Allenamento').length}</div><div class="stat-label">Allenamenti</div></div>
                     <div class="stat-box"><div class="stat-num">${S.sessioni.filter(x=>x.type==='Gara').length}</div><div class="stat-label">Gare</div></div>
                 </div>
-                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.4rem">
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem">
                     <div class="stat-box"><div class="stat-num" style="color:var(--gold-light)">${(()=>{const g=S.sessioni.filter(x=>!x.trainingWithoutScore&&x.totalScore>0);return g.length?Math.max(...g.map(x=>x.totalScore)):'—';})()}</div><div class="stat-label">Best Score</div></div>
+                    <div class="stat-box"><div class="stat-num" style="color:var(--gold-light)">${S.sessioni.filter(x=>x.data&&x.data.startsWith(new Date().getFullYear().toString())).reduce((s,x)=>s+countArrowsForSession(x),0)}</div><div class="stat-label">Frecce Anno</div></div>
                     <div class="stat-box"><div class="stat-num">${S.sessioni.reduce((s,x)=>s+countArrowsForSession(x),0)}</div><div class="stat-label">Frecce Tot.</div></div>
                 </div>
             </div>
@@ -3767,7 +3768,7 @@ window._calRender = () => {
             const col = ss.type==='Gara'?'#f97316':ss.trainingWithoutScore?'#a78bfa':'#3b82f6';
             return `<div style="height:4px;border-radius:2px;background:${col};margin-bottom:1px"></div>`;
         }).join('');
-        const frecce = sessions.reduce((sum,ss) => sum+(parseInt(ss.frecceAggiuntive)||0), 0);
+        const frecce = sessions.reduce((sum,ss) => sum+countArrowsForSession(ss), 0);
         grid += `<div onclick="${sessions.length>0?`window._calDay('${dateStr}')`:''}" style="min-height:56px;background:${isToday?'rgba(201,162,39,0.15)':'var(--dark3)'};border:${isToday?'2px solid var(--gold)':'1px solid var(--border)'};border-radius:6px;padding:4px;cursor:${sessions.length>0?'pointer':'default'};transition:border-color 0.15s" ${sessions.length>0?'onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'var(--border)\'"':''}>
             <div style="font-size:0.78rem;font-weight:700;color:${isToday?'var(--gold)':'var(--text)'}">${d}</div>
             ${dots}${frecce>0?`<div style="font-size:0.62rem;color:#4ade80">${frecce}🪃</div>`:''}
@@ -3777,16 +3778,21 @@ window._calRender = () => {
     const gridEl = document.getElementById('cal-grid');
     if (gridEl) gridEl.innerHTML = grid;
     const mSess = S.sessioni.filter(ss => { const dd=new Date(ss.data+'T00:00'); return dd.getMonth()===m&&dd.getFullYear()===y; });
+    const gareCount = mSess.filter(ss=>ss.type==='Gara').length;
+    const allCount  = mSess.filter(ss=>ss.type==='Allenamento').length;
     const scored = mSess.filter(ss=>(ss.totalScore||0)>0 && !ss.trainingWithoutScore);
     const bestScore = scored.length > 0 ? Math.max(...scored.map(ss=>ss.totalScore||0)) : 0;
-    const totFrecce = mSess.reduce((sum,ss)=>sum+(parseInt(ss.frecceAggiuntive)||0),0);
+    const totFrecce = mSess.reduce((sum,ss)=>sum+countArrowsForSession(ss),0);
     const statsEl = document.getElementById('cal-stats');
     if (statsEl) statsEl.innerHTML = mSess.length > 0 ? `
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.4rem;margin-bottom:0.4rem">
             <div class="stat-box"><div class="stat-num">${mSess.length}</div><div class="stat-label">Sessioni</div></div>
-            <div class="stat-box"><div class="stat-num">${gare.length}</div><div class="stat-label">Gare</div></div>
-            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Best</div></div>
-            <div class="stat-box"><div class="stat-num">${totFrecce}</div><div class="stat-label">Frecce</div></div>
+            <div class="stat-box"><div class="stat-num">${gareCount}</div><div class="stat-label">Gare</div></div>
+            <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenam.</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
+            <div class="stat-box"><div class="stat-num">${bestScore||'—'}</div><div class="stat-label">Miglior Punteggio</div></div>
+            <div class="stat-box"><div class="stat-num">${totFrecce}</div><div class="stat-label">Frecce nel Mese</div></div>
         </div>` : `<p style="text-align:center;color:var(--muted);font-size:0.85rem">Nessuna sessione in ${MESI[m]} ${y}</p>`;
     // ── Riepilogo dati con filtri (sotto calendario) ──
     const sessEl = document.getElementById('cal-sessions');
