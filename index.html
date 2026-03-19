@@ -1712,6 +1712,7 @@ async function renderAsdMessaggi() {
                                         <option value="both">Entrambi</option>
                                         <option value="t1">Solo 1° Turno</option>
                                         <option value="t2">Solo 2° Turno</option>
+                                        <option value="t1_or_t2">1° o 2° Turno</option>
                                     </select>
                                 </div>
                                 <div>
@@ -4195,10 +4196,11 @@ function calcGoalProgress(goal, sessioni) {
     if (goal.type==='score') {
         const match = rel.filter(s=>s.distanza===goal.distanza&&s.tipoTarga===goal.tipoTarga&&!s.trainingWithoutScore);
         if (match.length > 0) {
-            const scores = match.map(s => {
-                if (goal.filterTurn === 't1') return s.turn1Score || 0;
-                if (goal.filterTurn === 't2') return s.turn2Score || 0;
-                return s.totalScore || 0;
+            const scores = match.flatMap(s => {
+                if (goal.filterTurn === 't1') return [s.turn1Score || 0];
+                if (goal.filterTurn === 't2') return [s.turn2Score || 0];
+                if (goal.filterTurn === 't1_or_t2') return [s.turn1Score || 0, s.turn2Score || 0];
+                return [s.totalScore || 0];
             });
             current = Math.max(...scores);
         } else {
@@ -4239,7 +4241,7 @@ async function renderAtletaObiettivi() {
                 ${g.type==='score'?`📏 ${g.distanza} | 🎯 ${g.tipoTarga}`:''}
             </div>
             <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;flex-wrap:wrap">
-                ${g.filterTurn&&g.filterTurn!=='both'?`<span class="badge badge-gold" style="font-size:0.6rem">${g.filterTurn==='t1'?'1° Turno':'2° Turno'}</span>`:''}
+                ${g.filterTurn&&g.filterTurn!=='both'?`<span class="badge badge-gold" style="font-size:0.6rem">${g.filterTurn==='t1'?'1° Turno':g.filterTurn==='t2'?'2° Turno':'1° o 2° Turno'}</span>`:''}
                 ${g.filterType&&g.filterType!=='both'?`<span class="badge badge-blue" style="font-size:0.6rem">${g.filterType==='gara'?'Gara':'Allenamento'}</span>`:''}
                 ${g.includeQuickScore===false?`<span class="badge badge-red" style="font-size:0.6rem">No Quick Score</span>`:''}
             </div>
@@ -4307,6 +4309,7 @@ window.newObiettivo = () => {
                             <option value="both">Entrambi</option>
                             <option value="t1">Solo 1° Turno</option>
                             <option value="t2">Solo 2° Turno</option>
+                            <option value="t1_or_t2">1° o 2° Turno</option>
                         </select>
                     </div>
                     <div>
