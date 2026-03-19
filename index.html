@@ -3777,8 +3777,8 @@ window._calRender = () => {
     const gridEl = document.getElementById('cal-grid');
     if (gridEl) gridEl.innerHTML = grid;
     const mSess = S.sessioni.filter(ss => { const dd=new Date(ss.data+'T00:00'); return dd.getMonth()===m&&dd.getFullYear()===y; });
-    const gare = mSess.filter(ss=>ss.type==='Gara');
-    const bestScore = gare.length > 0 ? Math.max(...gare.map(ss=>ss.totalScore||0)) : 0;
+    const scored = mSess.filter(ss=>(ss.totalScore||0)>0 && !ss.trainingWithoutScore);
+    const bestScore = scored.length > 0 ? Math.max(...scored.map(ss=>ss.totalScore||0)) : 0;
     const totFrecce = mSess.reduce((sum,ss)=>sum+(parseInt(ss.frecceAggiuntive)||0),0);
     const statsEl = document.getElementById('cal-stats');
     if (statsEl) statsEl.innerHTML = mSess.length > 0 ? `
@@ -4996,12 +4996,27 @@ window.esportaAgenda = (daArg, aArg) => {
     if(!filtered.length) return showModal('Attenzione','Nessuna sessione nel periodo.',[{text:'OK'}]);
     const blocks=filtered.map(s=>{
         const isT=s.trainingWithoutScore,isQS=s.quickScore;
+        const nFrecce = countArrowsForSession(s);
         return `<div style="border:1px solid #333;border-radius:6px;padding:12px;margin-bottom:10px;break-inside:avoid">
             <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:8px">
                 <div><strong style="font-size:14px">${fmtDate(s.data)}</strong> &nbsp;·&nbsp; <span style="color:#c9a227">${s.type||''}${isT?' 🎓':isQS?' ⚡':''}</span></div>
                 ${!isT&&s.totalScore>0?`<div style="font-size:20px;font-weight:bold;color:#c9a227">${s.totalScore} pt</div>`:''}
             </div>
-            <div style="font-size:12px;color:#555;margin-bottom:6px">${s.luogo||''} ${s.tipoLuogo?'('+s.tipoLuogo+')':''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
+            <div style="font-size:12px;color:#555;margin-bottom:6px">
+                ${s.luogo||''} ${s.tipoLuogo?'('+s.tipoLuogo+')':''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}
+                ${nFrecce > 0 ? ` &nbsp;·&nbsp; <strong style="color:#c9a227">🪃 ${nFrecce} frecce</strong>` : ''}
+            </div>
+
+            ${!isT && s.totalScore > 0 ? `
+            <div style="background:#f9f9f9;padding:8px;border-radius:4px;margin-bottom:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11px">
+                <div><strong>Punteggio:</strong> ${s.totalScore}</div>
+                <div><strong>Turno 1:</strong> ${s.turn1Score||'—'}</div>
+                <div><strong>Turno 2:</strong> ${s.turn2Score||'—'}</div>
+                <div><strong>X:</strong> ${s.totalX||0}</div>
+                <div><strong>10:</strong> ${s.totalTen||0}</div>
+                <div><strong>9:</strong> ${s.totalNine||0}</div>
+            </div>` : ''}
+
             ${s.esercizConsigliati?`<div style="margin-top:6px"><strong style="font-size:11px;color:#c9a227">🎯 Esercizi Consigliati:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.esercizConsigliati}</div></div>`:''}
             ${s.esercizSvolti?`<div style="margin-top:6px"><strong style="font-size:11px;color:#22c55e">✅ Svolti:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.esercizSvolti}</div></div>`:''}
             ${s.noteCondizioniFisiche?`<div style="margin-top:6px"><strong style="font-size:11px;color:#3b82f6">🩺 Note Fisiche:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.noteCondizioniFisiche}</div></div>`:''}
