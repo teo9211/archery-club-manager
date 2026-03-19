@@ -3392,11 +3392,6 @@ async function renderAtletaDati() {
 
     const hasFiltri = filtroTipo || filtroPeriodo;
     render(`
-        <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
-            <button class="btn btn-ghost btn-sm btn-full" onclick="window.showStampaReportModal()">🖨️ Report</button>
-            <button class="btn btn-ghost btn-sm btn-full" onclick="window.showAgendaPdfModal()">📄 Agenda</button>
-        </div>
-
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.45rem;margin-bottom:0.75rem">
             <div class="stat-box"><div class="stat-num">${sessCount}</div><div class="stat-label">Sessioni</div></div>
             <div class="stat-box"><div class="stat-num">${allCount}</div><div class="stat-label">Allenamenti</div></div>
@@ -3828,6 +3823,10 @@ window._calRender = () => {
     });
 
     sessEl.innerHTML = `<div class="gold-line"></div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:1.25rem">
+            <button class="btn btn-ghost btn-sm btn-full" onclick="window.showStampaReportModal()">🖨️ Report</button>
+            <button class="btn btn-ghost btn-sm btn-full" onclick="window.showAgendaPdfModal()">📄 Agenda</button>
+        </div>
         <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.04em">📋 Riepilogo Sessioni</div>
 
         <!-- Filtro tipo -->
