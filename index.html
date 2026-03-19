@@ -4172,7 +4172,8 @@ function calcGoalProgress(goal, sessioni) {
     const ss = start.toISOString().split('T')[0], se = end.toISOString().split('T')[0];
 
     // Filtro base per periodo e data inizio monitoraggio
-    const limitDate = goal.startDate || ss;
+    // La data limite deve essere la più recente tra l'inizio del periodo e la data di inizio monitoraggio
+    const limitDate = (goal.startDate && goal.startDate > ss) ? goal.startDate : ss;
     let rel = sessioni.filter(s => s.data >= limitDate && s.data <= se);
 
     // Filtro per tipo sessione (Gara / Allenamento)
@@ -4700,9 +4701,9 @@ async function renderEsportaDati() {
             <button class="btn btn-gold btn-full" onclick="window.esportaCSV()">📄 Scarica CSV</button>
         </div>
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💾 Backup JSON</div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Backup completo di tutte le sessioni in formato JSON.</p>
-            <button class="btn btn-outline btn-full" onclick="window.esportaJSON()">💾 Scarica Backup JSON</button>
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💾 Backup JSON Completo</div>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Backup completo di profilo, sessioni, obiettivi e materiale in formato JSON.</p>
+            <button class="btn btn-outline btn-full" onclick="window.backupAtletaDati()">💾 Scarica Backup JSON</button>
         </div>
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">🖨️ Stampa Report</div>
@@ -4747,11 +4748,128 @@ window.esportaCSV = () => {
     showModal('✅ Scaricato!','File CSV scaricato.',[{text:'OK'}]);
 };
 
-window.esportaJSON = () => {
-    const data={exportDate:new Date().toISOString(),atleta:`${S.atleta.nome} ${S.atleta.cognome}`,asd:S.asd.nome,sessions:S.sessioni,total:S.sessioni.length};
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`backup_${S.atleta.nome}_${new Date().toISOString().split('T')[0]}.json`;a.click();
-    showModal('✅ Backup Scaricato!',`${S.sessioni.length} sessioni esportate.`,[{text:'OK'}]);
+window.backupAtletaDati = async () => {
+    showModal('⏳ Preparazione Backup...', '<div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:0.5rem">Raccolta dati in corso...</p></div>', []);
+
+    try {
+        await loadAtletaSessioni();
+        const goals = await loadObiettivi();
+        const equipment = getEquipment();
+
+        const backupData = {
+            version: "2.0",
+            exportDate: new Date().toISOString(),
+            atleta: {
+                id: S.atleta.id,
+                nome: S.atleta.nome,
+                cognome: S.atleta.cognome,
+                tipoArco: S.atleta.tipoArco || '',
+                tesseraFitarco: S.atleta.tesseraFitarco || ''
+            },
+            asd: {
+                id: S.asd.id,
+                nome: S.asd.nome
+            },
+            sessions: S.sessioni,
+            goals: goals,
+            equipment: equipment
+        };
+
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backup_completo_${S.atleta.nome}_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showModal('✅ Backup Completato!', `Tutti i tuoi dati (${S.sessioni.length} sessioni, ${goals.length} obiettivi) sono stati esportati correttamente.`, [{ text: 'OK', cls: 'btn-gold' }]);
+    } catch (e) {
+        showModal('❌ Errore Backup', 'Si è verificato un errore durante la generazione del backup: ' + e.message, [{ text: 'Chiudi', cls: 'btn-ghost' }]);
+    }
+};
+
+window.esportaJSON = window.backupAtletaDati;
+
+window.ripristinaAtletaDati = async () => {
+    const fileInput = document.getElementById('restore-file-input');
+    const file = fileInput?.files[0];
+    if (!file) return showModal('⚠️ Attenzione', 'Seleziona prima un file di backup (.json).', [{ text: 'OK' }]);
+
+    showModal('📤 Ripristino Dati', `Sei sicuro di voler ripristinare i dati dal file <strong>${file.name}</strong>?<br><br>Le sessioni e gli obiettivi esistenti non verranno cancellati, ma quelli presenti nel file verranno aggiunti se non già presenti. I dati del materiale verranno sovrascritti.`, [
+        { text: 'Annulla', cls: 'btn-ghost' },
+        { text: 'Sì, procedi', cls: 'btn-danger', fn: async () => {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data.sessions || !Array.isArray(data.sessions)) {
+                        throw new Error('Formato backup non valido.');
+                    }
+
+                    showModal('⏳ Ripristino in corso...', '<div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><p id="restore-progress">Inizio ripristino...</p></div>', []);
+
+                    let sessOk = 0, sessSkip = 0;
+                    const sessCol = sessioniCol(S.asd.id);
+                    await loadAtletaSessioni(); // ricarica memoria
+                    const existingSessDates = S.sessioni.map(s => `${s.data}_${s.totalScore}_${s.type}`);
+
+                    for (const s of data.sessions) {
+                        const key = `${s.data}_${s.totalScore}_${s.type}`;
+                        if (!existingSessDates.includes(key)) {
+                            // Rimuovi campi ID originali per evitare collisioni e associalo al nuovo atleta se necessario
+                            const newSess = { ...s };
+                            delete newSess.id; delete newSess.docId;
+                            newSess.archerId = S.atleta.id;
+                            newSess.arciere = `${S.atleta.nome} ${S.atleta.cognome}`;
+                            await addDoc(sessCol, newSess);
+                            sessOk++;
+                        } else {
+                            sessSkip++;
+                        }
+                        const p = document.getElementById('restore-progress');
+                        if (p) p.textContent = `Sessioni: ${sessOk + sessSkip}/${data.sessions.length}...`;
+                    }
+
+                    let goalOk = 0, goalSkip = 0;
+                    if (data.goals && Array.isArray(data.goals)) {
+                        const existingGoals = await loadObiettivi();
+                        const existingGoalTitles = existingGoals.map(g => g.title);
+                        const gCol = goalsCol();
+                        for (const g of data.goals) {
+                            if (!existingGoalTitles.includes(g.title)) {
+                                const newGoal = { ...g };
+                                delete newGoal.id;
+                                await addDoc(gCol, newGoal);
+                                goalOk++;
+                            } else {
+                                goalSkip++;
+                            }
+                        }
+                    }
+
+                    if (data.equipment) {
+                        localStorage.setItem(getEquipmentKey(), JSON.stringify(data.equipment));
+                    }
+
+                    showModal('✅ Ripristino Completato!', `
+                        <div style="text-align:center">
+                            <p><strong>Sessioni:</strong> ${sessOk} importate, ${sessSkip} già presenti.</p>
+                            <p><strong>Obiettivi:</strong> ${goalOk} importati, ${goalSkip} già presenti.</p>
+                            <p><strong>Materiale:</strong> Ripristinato correttamente.</p>
+                        </div>
+                    `, [{ text: 'Perfetto', cls: 'btn-gold', fn: () => window.setView('impostazioni') }]);
+
+                    await loadAtletaSessioni();
+                } catch (err) {
+                    showModal('❌ Errore Ripristino', 'Impossibile leggere il file di backup: ' + err.message, [{ text: 'OK' }]);
+                }
+            };
+            reader.readAsText(file);
+        }}
+    ]);
 };
 
 window.setPdfPer = (p) => {
@@ -4837,6 +4955,19 @@ async function renderImpostazioni() {
     const sessions = S.sessioni.filter(s=>!s.trainingWithoutScore).sort((a,b)=>b.data.localeCompare(a.data));
 
     render(`
+        <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💾 Backup & Ripristino</div>
+            <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.75rem">Esegui un backup completo dei tuoi dati (profilo, sessioni, obiettivi, materiale) o ripristinali da un file precedentemente salvato.</p>
+            <div style="display:flex;flex-direction:column;gap:0.6rem">
+                <button class="btn btn-outline btn-full" onclick="window.backupAtletaDati()">📥 Scarica Backup Completo</button>
+                <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
+                    <label class="form-label">Ripristina da file JSON</label>
+                    <input type="file" id="restore-file-input" accept=".json" class="inp" style="font-size:0.8rem;margin-bottom:0.5rem">
+                    <button class="btn btn-danger btn-full" onclick="window.ripristinaAtletaDati()">📤 Ripristina Dati</button>
+                </div>
+            </div>
+        </div>
+
         <div class="card card-gold" style="margin-bottom:1rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">✏️ Modifica Massiva Sessioni</div>
             <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.75rem">Seleziona sessioni e compila i campi da aggiornare. Lascia vuoto per non modificare.</p>
@@ -5140,14 +5271,16 @@ async function renderAsdRecords() {
     // Mostra spinner durante il caricamento massivo
     render(`<div style="display:flex;justify-content:center;padding:3rem"><div class="spinner"></div></div>`);
 
-    let allSessions = [];
-    for (const atl of S.atleti) {
-        const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
-        snap.forEach(d => {
-            const s = d.data();
-            allSessions.push({ id: d.id, athleteName: `${atl.nome} ${atl.cognome}`, ...s });
-        });
-    }
+    const snap = await getDocs(sessioniCol(S.asd.id));
+    const allSessions = snap.docs.map(d => {
+        const s = d.data();
+        const atl = S.atleti.find(a => a.id === s.archerId);
+        return {
+            id: d.id,
+            athleteName: atl ? `${atl.nome} ${atl.cognome}` : (s.arciere || 'Atleta Sconosciuto'),
+            ...s
+        };
+    });
 
     // Identifica tutte le combinazioni di distanza e targa
     const combinations = [];
