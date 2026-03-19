@@ -272,7 +272,7 @@ const APP_NS = 'club_manager_v1'; // namespace separato dalla webapp originale
 
 // ── STATE ───────────────────────────────────────────────────────────────────
 let db, auth;
-const S = {
+window.S = {
     view: 'loading',
     role: null,          // 'asd' | 'atleta' | null
     asd: null,           // { id, nome, email, ... }
@@ -393,6 +393,7 @@ function buildNav() {
             { icon:'📊', label:'Statistiche Atleti', fn:"window.setView('asdStats')" },
             { icon:'📨', label:'Messaggi',  fn:"window.setView('asdMessaggi')" },
             { icon:'⚙️', label:'Profilo ASD', fn:"window.setView('asdProfilo')" },
+            { icon:'🏆', label:'Record ASD',  fn:"window.setView('asdRecords')" },
             { icon:'💬', label:'Msg ASD→ASD',  fn:"window.setView('msgTraAsd')" },
             { icon:'📬', label:'Msg Esterni',   fn:"window.setView('asdMessaggiEsterni')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
@@ -491,6 +492,7 @@ window.setView = async (view, params={}) => {
         case 'atletaMateriale':    return renderAtletaMateriale();
         case 'msgTraAsd':          return renderMsgTraAsd();
         case 'asdMessaggiEsterni': return renderAsdMessaggiEsterni();
+        case 'asdRecords':         return renderAsdRecords();
         case 'targetStats':        return renderTargetStats();
         case 'atletaObiettivi':    return renderAtletaObiettivi();
         case 'confrontaSessioni':  return renderConfronta();
@@ -1303,6 +1305,11 @@ async function renderAsdDashboard() {
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
                     <div style="font-size:0.78rem;color:var(--muted)">Punteggi e dati atleti</div>
                 </div>
+                <div class="card card-hover" onclick="window.setView('asdRecords')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Record ASD</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Migliori punteggi assoluti</div>
+                </div>
                 <div class="card card-hover" onclick="window.setView('asdMessaggi')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">📨</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Messaggi Atleti</div>
@@ -1668,6 +1675,8 @@ async function renderAsdMessaggi() {
                 <div style="background:var(--dark3);border-left:3px solid #3d9970;border-radius:6px;padding:0.6rem">
                     <label class="form-label" style="color:#5dba94">🏅 Obiettivo da Raggiungere <span style="color:var(--muted);font-size:0.72rem">(si aggiungerà agli obiettivi dell'atleta)</span></label>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
+                            <div><label class="form-label">Data Inizio *</label>
+                                <input class="inp" type="date" id="msg-ob-start-date" value="${new Date().toISOString().split('T')[0]}"></div>
                         <div><label class="form-label">Tipo Obiettivo</label>
                             <select class="inp" id="msg-ob-tipo">
                                 <option value="">Nessuno</option>
@@ -1677,20 +1686,45 @@ async function renderAsdMessaggi() {
                                 <option value="arrows">🪃 Frecce</option>
                             </select>
                         </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
                         <div><label class="form-label">Valore Target</label>
                             <input class="inp" type="number" id="msg-ob-val" min="1" placeholder="Es: 540">
                         </div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
                         <div><label class="form-label">Periodo</label>
                             <select class="inp" id="msg-ob-period">
                                 <option value="monthly">Mensile</option>
                                 <option value="weekly">Settimanale</option>
                             </select>
                         </div>
-                        <div><label class="form-label">Titolo Obiettivo</label>
+                        </div>
+                        <div style="margin-bottom:0.4rem">
+                            <label class="form-label">Titolo Obiettivo</label>
                             <input class="inp" id="msg-ob-title" placeholder="Es: Quota 540">
                         </div>
+                        <div style="border-top:1px solid var(--border);padding-top:0.4rem">
+                            <div style="font-size:0.75rem;color:var(--gold);font-weight:700;margin-bottom:0.4rem;text-transform:uppercase">Filtri Sessioni</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
+                                <div>
+                                    <label class="form-label">Turno</label>
+                                    <select class="inp" id="msg-ob-filter-turn">
+                                        <option value="both">Entrambi</option>
+                                        <option value="t1">Solo 1° Turno</option>
+                                        <option value="t2">Solo 2° Turno</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label">Sessione</label>
+                                    <select class="inp" id="msg-ob-filter-type">
+                                        <option value="both">Entrambi</option>
+                                        <option value="gara">Solo Gara</option>
+                                        <option value="allenamento">Solo Allenamento</option>
+                                    </select>
+                                </div>
+                        </div>
+                            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;cursor:pointer">
+                                <input type="checkbox" id="msg-ob-filter-qs" checked> Includi Quick Score
+                            </label>
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
@@ -1718,13 +1752,21 @@ async function sendMessaggio() {
     const obVal   = parseInt($('msg-ob-val')?.value)||0;
     const obTitle = $('msg-ob-title')?.value.trim();
     const obPer   = $('msg-ob-period')?.value||'monthly';
+    const obStart = $('msg-ob-start-date')?.value;
+    const obTurn  = $('msg-ob-filter-turn')?.value;
+    const obTypeF = $('msg-ob-filter-type')?.value;
+    const obQs    = $('msg-ob-filter-qs')?.checked;
+
     if (!testo) return showModal('Errore','Scrivi un messaggio.',[{text:'OK'}]);
 
     const durata = parseInt(document.getElementById('msg-durata')?.value)||0;
     const msgData = { destinatari: dest, testo, esercizi: eserc, mittente:'asd', createdAt: serverTimestamp() };
     if (durata > 0) msgData.durataDays = durata;
     if (obTipo && obVal > 0) {
-        msgData.obiettivo = { type:obTipo, targetValue:obVal, title:obTitle||`Obiettivo: ${obVal}`, period:obPer };
+        msgData.obiettivo = {
+            type:obTipo, targetValue:obVal, title:obTitle||`Obiettivo: ${obVal}`, period:obPer,
+            startDate: obStart, filterTurn: obTurn, filterType: obTypeF, includeQuickScore: obQs
+        };
     }
     await addDoc(msgCol(S.asd.id), msgData);
 
@@ -1742,6 +1784,7 @@ async function sendMessaggio() {
             await addDoc(goalsRef, {
                 title: obTitle||`Obiettivo dal coach: ${obVal}`,
                 type: obTipo, targetValue: obVal, period: obPer,
+                startDate: obStart, filterTurn: obTurn, filterType: obTypeF, includeQuickScore: obQs,
                 completed: false, fromCoach: true,
                 createdAt: new Date().toISOString()
             }).catch(()=>{});
@@ -4080,11 +4123,31 @@ function calcGoalProgress(goal, sessioni) {
         end = new Date(now.getFullYear(), now.getMonth()+1, 0, 23,59,59,999);
     }
     const ss = start.toISOString().split('T')[0], se = end.toISOString().split('T')[0];
-    const rel = sessioni.filter(s => s.data >= ss && s.data <= se);
+
+    // Filtro base per periodo e data inizio monitoraggio
+    const limitDate = goal.startDate || ss;
+    let rel = sessioni.filter(s => s.data >= limitDate && s.data <= se);
+
+    // Filtro per tipo sessione (Gara / Allenamento)
+    if (goal.filterType === 'gara') rel = rel.filter(s => s.type === 'Gara');
+    else if (goal.filterType === 'allenamento') rel = rel.filter(s => s.type === 'Allenamento');
+
+    // Filtro Quick Score
+    if (goal.includeQuickScore === false) rel = rel.filter(s => !s.quickScore);
+
     let current = 0;
     if (goal.type==='score') {
         const match = rel.filter(s=>s.distanza===goal.distanza&&s.tipoTarga===goal.tipoTarga&&!s.trainingWithoutScore);
-        current = match.length>0?Math.max(...match.map(s=>s.totalScore||0)):0;
+        if (match.length > 0) {
+            const scores = match.map(s => {
+                if (goal.filterTurn === 't1') return s.turn1Score || 0;
+                if (goal.filterTurn === 't2') return s.turn2Score || 0;
+                return s.totalScore || 0;
+            });
+            current = Math.max(...scores);
+        } else {
+            current = 0;
+        }
     } else if (goal.type==='arrows') {
         current = rel.reduce((sum,s)=>sum+countArrowsForSession(s),0);
     } else if (goal.type==='sessions') {
@@ -4115,7 +4178,15 @@ async function renderAtletaObiettivi() {
                     ${!done?`<button onclick="window.deleteObiettivo('${g.id}')" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:1rem">🗑️</button>`:''}
                 </div>
             </div>
-            ${g.type==='score'?`<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.35rem">📏 ${g.distanza} | 🎯 ${g.tipoTarga}</div>`:''}
+            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.35rem">
+                ${g.startDate?`📅 dal ${fmtDate(g.startDate)} `:''}
+                ${g.type==='score'?`📏 ${g.distanza} | 🎯 ${g.tipoTarga}`:''}
+            </div>
+            <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;flex-wrap:wrap">
+                ${g.filterTurn&&g.filterTurn!=='both'?`<span class="badge badge-gold" style="font-size:0.6rem">${g.filterTurn==='t1'?'1° Turno':'2° Turno'}</span>`:''}
+                ${g.filterType&&g.filterType!=='both'?`<span class="badge badge-blue" style="font-size:0.6rem">${g.filterType==='gara'?'Gara':'Allenamento'}</span>`:''}
+                ${g.includeQuickScore===false?`<span class="badge badge-red" style="font-size:0.6rem">No Quick Score</span>`:''}
+            </div>
             <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:0.3rem">
                 <span style="color:var(--muted)">${prog.current} / ${prog.target} ${g.type==='arrows'?'frecce':g.type==='score'?'pt':'sessioni'}</span>
                 <span style="color:${done?'#5dba94':'var(--gold)'};font-weight:700">${pct}%</span>
@@ -4139,28 +4210,60 @@ window.newObiettivo = () => {
         <div style="display:flex;flex-direction:column;gap:0.6rem">
             <div><label class="form-label">Titolo *</label><input class="inp" id="ob-title" placeholder="Es: Raggiungere 540/600"></div>
             <div><label class="form-label">Descrizione</label><textarea class="inp" id="ob-desc" rows="2" placeholder="Dettagli (opzionale)"></textarea></div>
-            <div><label class="form-label">Tipo Obiettivo *</label>
-                <select class="inp" id="ob-type" onchange="window.toggleObFields()">
-                    <option value="">Seleziona tipo</option>
-                    <option value="score">🎯 Punteggio Target</option>
-                    <option value="sessions">📅 Numero Sessioni</option>
-                    <option value="training">🎓 Allenamenti</option>
-                    <option value="arrows">🪃 Frecce da Tirare</option>
-                </select>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
+                <div><label class="form-label">Data Inizio Monitoraggio *</label>
+                    <input class="inp" type="date" id="ob-start-date" value="${new Date().toISOString().split('T')[0]}"></div>
+                <div><label class="form-label">Tipo Obiettivo *</label>
+                    <select class="inp" id="ob-type" onchange="window.toggleObFields()">
+                        <option value="">Seleziona tipo</option>
+                        <option value="score">🎯 Punteggio Target</option>
+                        <option value="sessions">📅 Numero Sessioni</option>
+                        <option value="training">🎓 Allenamenti</option>
+                        <option value="arrows">🪃 Frecce da Tirare</option>
+                    </select>
+                </div>
             </div>
             <div id="ob-score-fields" style="display:none;display:flex;flex-direction:column;gap:0.4rem">
-                <div><label class="form-label">Distanza</label>
-                    <select class="inp" id="ob-dist"><option value="">Seleziona</option>${TK_DIST.map(d=>`<option>${d}</option>`).join('')}</select></div>
-                <div><label class="form-label">Tipo Targa</label>
-                    <select class="inp" id="ob-targa"><option value="">Seleziona</option>${TK_TARGA.map(t=>`<option>${t}</option>`).join('')}</select></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
+                    <div><label class="form-label">Distanza</label>
+                        <select class="inp" id="ob-dist"><option value="">Seleziona</option>${TK_DIST.map(d=>`<option>${d}</option>`).join('')}</select></div>
+                    <div><label class="form-label">Tipo Targa</label>
+                        <select class="inp" id="ob-targa"><option value="">Seleziona</option>${TK_TARGA.map(t=>`<option>${t}</option>`).join('')}</select></div>
+                </div>
             </div>
-            <div><label class="form-label">Valore Target *</label><input class="inp" type="number" id="ob-target" min="1" placeholder="Es: 540"></div>
-            <div><label class="form-label">Periodo *</label>
-                <select class="inp" id="ob-period">
-                    <option value="">Seleziona periodo</option>
-                    <option value="weekly">📅 Settimanale</option>
-                    <option value="monthly">📆 Mensile</option>
-                </select>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
+                <div><label class="form-label">Valore Target *</label><input class="inp" type="number" id="ob-target" min="1" placeholder="Es: 540"></div>
+                <div><label class="form-label">Periodo *</label>
+                    <select class="inp" id="ob-period">
+                        <option value="">Seleziona periodo</option>
+                        <option value="weekly">📅 Settimanale</option>
+                        <option value="monthly">📆 Mensile</option>
+                    </select>
+                </div>
+            </div>
+            <div style="background:var(--dark3);padding:0.6rem;border-radius:8px;border:1px solid var(--border)">
+                <div style="font-size:0.75rem;color:var(--gold);font-weight:700;margin-bottom:0.4rem;text-transform:uppercase">Filtri Sessioni</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
+                    <div>
+                        <label class="form-label">Turno</label>
+                        <select class="inp" id="ob-filter-turn">
+                            <option value="both">Entrambi</option>
+                            <option value="t1">Solo 1° Turno</option>
+                            <option value="t2">Solo 2° Turno</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Sessione</label>
+                        <select class="inp" id="ob-filter-type">
+                            <option value="both">Entrambi</option>
+                            <option value="gara">Solo Gara</option>
+                            <option value="allenamento">Solo Allenamento</option>
+                        </select>
+                    </div>
+                </div>
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;cursor:pointer">
+                    <input type="checkbox" id="ob-filter-qs" checked> Includi Quick Score
+                </label>
             </div>
         </div>
     `, [{text:'Annulla',cls:'btn-ghost'},{text:'Crea',cls:'btn-gold',fn:window.saveObiettivo}]);
@@ -4180,8 +4283,25 @@ window.saveObiettivo = async () => {
     const type = document.getElementById('ob-type')?.value;
     const target = parseInt(document.getElementById('ob-target')?.value)||0;
     const period = document.getElementById('ob-period')?.value;
-    if (!title||!type||!target||!period) return showModal('Errore','Compila tutti i campi obbligatori.',[{text:'OK'}]);
-    const goal = {title,description:document.getElementById('ob-desc')?.value.trim()||'',type,targetValue:target,period,completed:false,createdAt:new Date().toISOString()};
+    const startDate = document.getElementById('ob-start-date')?.value;
+    const filterTurn = document.getElementById('ob-filter-turn')?.value;
+    const filterType = document.getElementById('ob-filter-type')?.value;
+    const filterQs = document.getElementById('ob-filter-qs')?.checked;
+
+    if (!title||!type||!target||!period||!startDate) return showModal('Errore','Compila tutti i campi obbligatori.',[{text:'OK'}]);
+    const goal = {
+        title,
+        description: document.getElementById('ob-desc')?.value.trim()||'',
+        type,
+        targetValue: target,
+        period,
+        startDate,
+        filterTurn,
+        filterType,
+        includeQuickScore: filterQs,
+        completed: false,
+        createdAt: new Date().toISOString()
+    };
     if (type==='score') {
         const dist=document.getElementById('ob-dist')?.value, targa=document.getElementById('ob-targa')?.value;
         if (!dist||!targa) return showModal('Errore','Seleziona distanza e targa.',[{text:'OK'}]);
@@ -4962,6 +5082,177 @@ window.renderAsdAtleti    = renderAsdAtleti;
 window.renderAsdStats     = renderAsdStats;
 window.renderAsdMessaggi  = renderAsdMessaggi;
 window.renderAsdProfilo   = renderAsdProfilo;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ASD: RECORD & DASHBOARD ─────────────────────────────────────────────────
+async function renderAsdRecords() {
+    setHeader('🏆 Record ASD', S.asd?.nome || '');
+    await loadAtleti();
+
+    // Mostra spinner durante il caricamento massivo
+    render(`<div style="display:flex;justify-content:center;padding:3rem"><div class="spinner"></div></div>`);
+
+    let allSessions = [];
+    for (const atl of S.atleti) {
+        const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
+        snap.forEach(d => {
+            const s = d.data();
+            allSessions.push({ id: d.id, athleteName: `${atl.nome} ${atl.cognome}`, ...s });
+        });
+    }
+
+    // Identifica tutte le combinazioni di distanza e targa
+    const combinations = [];
+    allSessions.forEach(s => {
+        if (!s.distanza || !s.tipoTarga) return;
+        const key = `${s.distanza}|${s.tipoTarga}`;
+        if (!combinations.includes(key)) combinations.push(key);
+    });
+    combinations.sort();
+
+    // Funzione per generare la Dashboard dei Record Assoluti
+    const buildDashboard = () => {
+        let html = `<div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">🎖️ Record Assoluti per Categoria</div>`;
+
+        if (combinations.length === 0) {
+            return html + `<p style="text-align:center;color:var(--muted);padding:1rem">Nessun dato sufficiente per calcolare i record.</p>`;
+        }
+
+        combinations.forEach(comb => {
+            const [dist, targa] = comb.split('|');
+            const filtered = allSessions.filter(s => s.distanza === dist && s.tipoTarga === targa && !s.trainingWithoutScore);
+            if (!filtered.length) return;
+
+            const bestTotal = filtered.reduce((prev, curr) => (curr.totalScore || 0) > (prev.totalScore || 0) ? curr : prev);
+            const bestT1    = filtered.reduce((prev, curr) => (curr.turn1Score || 0) > (prev.turn1Score || 0) ? curr : prev);
+            const bestT2    = filtered.reduce((prev, curr) => (curr.turn2Score || 0) > (prev.turn2Score || 0) ? curr : prev);
+
+            html += `
+            <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-bottom:0.6rem;display:flex;justify-content:space-between">
+                    <span>📏 ${dist} — 🎯 ${targa}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem">
+                    <div style="text-align:center">
+                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase">Assoluto</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:900;color:var(--gold-light)">${bestTotal.totalScore || 0}</div>
+                        <div style="font-size:0.7rem;font-weight:700">${bestTotal.athleteName}</div>
+                        <div style="font-size:0.6rem;color:var(--muted)">${fmtDate(bestTotal.data)}</div>
+                    </div>
+                    <div style="text-align:center;border-left:1px solid var(--border);border-right:1px solid var(--border)">
+                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase">Miglior T1</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--text)">${bestT1.turn1Score || 0}</div>
+                        <div style="font-size:0.7rem">${bestT1.athleteName}</div>
+                        <div style="font-size:0.6rem;color:var(--muted)">${fmtDate(bestT1.data)}</div>
+                    </div>
+                    <div style="text-align:center">
+                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase">Miglior T2</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--text)">${bestT2.turn2Score || 0}</div>
+                        <div style="font-size:0.7rem">${bestT2.athleteName}</div>
+                        <div style="font-size:0.6rem;color:var(--muted)">${fmtDate(bestT2.data)}</div>
+                    </div>
+                </div>
+            </div>`;
+        });
+        return html;
+    };
+
+    // UI State per i filtri del Ranking
+    window._recFilter = { turn:'both', type:'both', dist:'', targa:'' };
+
+    const buildRanking = () => {
+        const f = window._recFilter;
+        let filtered = allSessions.filter(s => !s.trainingWithoutScore);
+
+        if (f.type === 'gara') filtered = filtered.filter(s => s.type === 'Gara');
+        else if (f.type === 'allenamento') filtered = filtered.filter(s => s.type === 'Allenamento');
+
+        if (f.dist)  filtered = filtered.filter(s => s.distanza === f.dist);
+        if (f.targa) filtered = filtered.filter(s => s.tipoTarga === f.targa);
+
+        const getVal = (s) => {
+            if (f.turn === 't1') return s.turn1Score || 0;
+            if (f.turn === 't2') return s.turn2Score || 0;
+            return s.totalScore || 0;
+        };
+
+        filtered.sort((a,b) => getVal(b) - getVal(a));
+
+        const dists  = [...new Set(allSessions.map(s => s.distanza).filter(Boolean))].sort();
+        const targhe = [...new Set(allSessions.map(s => s.tipoTarga).filter(Boolean))].sort();
+
+        let html = `
+        <div class="gold-line"></div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.8rem;font-size:1.1rem">📊 Classifica Atleti</div>
+
+        <div style="background:var(--dark2);padding:0.75rem;border-radius:12px;border:1px solid var(--border);margin-bottom:1rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+                <div>
+                    <label class="form-label">Turno</label>
+                    <select class="inp" onchange="window._recFilter.turn=this.value; window._recUpdateRanking()">
+                        <option value="both" ${f.turn==='both'?'selected':''}>Totale (T1+T2)</option>
+                        <option value="t1" ${f.turn==='t1'?'selected':''}>Solo 1° Turno</option>
+                        <option value="t2" ${f.turn==='t2'?'selected':''}>Solo 2° Turno</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Tipo</label>
+                    <select class="inp" onchange="window._recFilter.type=this.value; window._recUpdateRanking()">
+                        <option value="both" ${f.type==='both'?'selected':''}>Gara + Alln.</option>
+                        <option value="gara" ${f.type==='gara'?'selected':''}>Solo Gara</option>
+                        <option value="allenamento" ${f.type==='allenamento'?'selected':''}>Solo Alln.</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <div>
+                    <label class="form-label">Distanza</label>
+                    <select class="inp" onchange="window._recFilter.dist=this.value; window._recUpdateRanking()">
+                        <option value="">Tutte</option>
+                        ${dists.map(d => `<option value="${d}" ${f.dist===d?'selected':''}>${d}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Targa</label>
+                    <select class="inp" onchange="window._recFilter.targa=this.value; window._recUpdateRanking()">
+                        <option value="">Tutte</option>
+                        ${targhe.map(t => `<option value="${t}" ${f.targa===t?'selected':''}>${t}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="rec-ranking-list">
+            ${filtered.length === 0 ? `<p style="text-align:center;color:var(--muted);padding:2rem">Nessun punteggio trovato con questi filtri.</p>` :
+            filtered.map((s, idx) => `
+                <div class="session-card" style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.8rem">
+                    <div style="width:24px;font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">${idx+1}</div>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.athleteName}</div>
+                        <div style="font-size:0.7rem;color:var(--muted)">${fmtDate(s.data)} · ${s.distanza} · ${s.tipoTarga}</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:900;color:var(--gold-light)">${getVal(s)}</div>
+                        <div style="font-size:0.65rem;color:var(--muted)">${s.type}${s.quickScore?' ⚡':''}</div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>`;
+        return html;
+    };
+
+    window._recUpdateRanking = () => {
+        const container = document.getElementById('rec-ranking-container');
+        if (container) container.innerHTML = buildRanking();
+    };
+
+    render(`
+        <div id="rec-dashboard-container">${buildDashboard()}</div>
+        <div id="rec-ranking-container">${buildRanking()}</div>
+    `);
+}
+
+window.renderAsdRecords = renderAsdRecords;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ── SALVATAGGIO ROBUSTO: beforeunload + coda offline ──────────────────────
