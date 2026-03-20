@@ -2146,6 +2146,7 @@ window.doAtletaLogin = async function() {
 function logoutAtleta() {
     localStorage.removeItem('acm_atleta_session');
     S.role = null; S.asd = null; S.atleta = null; S.sessioni = [];
+    window._calState = null;
     buildNav();
     window.setView('homeLogin');
 }
@@ -3716,8 +3717,12 @@ window.eliminaSessione = async (sessionId, dataStr) => {
 async function renderAtletaCalendario() {
     setHeader('📅 Calendario', S.atleta?.nome||'');
     await loadAtletaSessioni();
-    const now = new Date();
-    window._calState = { m: now.getMonth(), y: now.getFullYear() };
+
+    // Mantieni lo stato se già esistente (per tornare allo stesso mese)
+    if (!window._calState) {
+        const now = new Date();
+        window._calState = { m: now.getMonth(), y: now.getFullYear() };
+    }
 
     render(`
         <!-- CALENDARIO -->
