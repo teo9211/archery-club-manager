@@ -4904,68 +4904,102 @@ async function renderAtletaGrafici() {
     setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
     await loadAtletaSessioni();
 
+    const now = new Date();
+    const currentYear = now.getFullYear().toString();
+    const currentMonth = `${currentYear}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
     window._grState = window._grState || {
-        periodMode: 'month',
-        type: 'both',
-        selected: [],
-        chartType: 'line',
-        dist: '',
-        targa: '',
-        arco: ''
+        perf: { type:'both', chartType:'line', dist:'', targa:'', arco:'', year:currentYear, month:'', week:'', compare:[], best:'' },
+        dist: { type:'both', dist:'', targa:'', arco:'', year:currentYear, month:'', week:'', best:'' }
     };
     const st = window._grState;
 
-    // Get unique values for filters
+    // Helper: extract unique years/months from data
+    const history = { years: [], monthsByYear: {}, weeksByMonth: {} };
+    S.sessioni.forEach(s => {
+        if (!s.data) return;
+        const d = new Date(s.data + 'T00:00');
+        const y = d.getFullYear().toString();
+        const m = `${y}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        if (!history.years.includes(y)) history.years.push(y);
+        if (!history.monthsByYear[y]) history.monthsByYear[y] = [];
+        if (!history.monthsByYear[y].includes(m)) history.monthsByYear[y].push(m);
+        // Weeks would need a more complex generator, let's stick to 1-5 for month
+    });
+    history.years.sort().reverse();
+    Object.values(history.monthsByYear).forEach(arr => arr.sort().reverse());
+
     const allDists = [...new Set(S.sessioni.map(s => s.distanza).filter(Boolean))].sort();
     const allTarghe = [...new Set(S.sessioni.map(s => s.tipoTarga).filter(Boolean))].sort();
     const allArchi = [...new Set(S.sessioni.map(s => s.tipoArco).filter(Boolean))].sort();
 
-    // Group history into selectable chunks
-    const history = { month: [], year: [], week: [] };
-    S.sessioni.forEach(s => {
-        if (!s.data) return;
-        const d = new Date(s.data + 'T00:00');
-        const mKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const yKey = `${d.getFullYear()}`;
-        if (!history.month.includes(mKey)) history.month.push(mKey);
-        if (!history.year.includes(yKey)) history.year.push(yKey);
-    });
-    history.month.sort().reverse();
-    history.year.sort().reverse();
-
-    function getPeriodData(mode, key, filters) {
-        let start, end, label;
-        if (mode === 'year') {
-            start = new Date(parseInt(key), 0, 1);
-            end = new Date(parseInt(key), 11, 31, 23, 59, 59);
-            label = key;
-        } else { // month
-            const [y, m] = key.split('-').map(Number);
-            start = new Date(y, m - 1, 1);
-            end = new Date(y, m, 0, 23, 59, 59);
-            label = MESI[m-1] + ' ' + y;
-        }
-
+    function getFilteredData(config) {
         let rel = S.sessioni.filter(s => {
-            const sd = new Date(s.data + 'T00:00');
-            if (sd < start || sd > end || s.trainingWithoutScore) return false;
-            if (filters.type !== 'both' && s.type?.toLowerCase() !== filters.type) return false;
-            if (filters.dist && s.distanza !== filters.dist) return false;
-            if (filters.targa && s.tipoTarga !== filters.targa) return false;
-            if (filters.arco && s.tipoArco !== filters.arco) return false;
+            if (s.trainingWithoutScore) return false;
+            if (config.type !== 'both' && s.type?.toLowerCase() !== config.type) return false;
+            if (config.dist && s.distanza !== config.dist) return false;
+            if (config.targa && s.tipoTarga !== config.targa) return false;
+            if (config.arco && s.tipoArco !== config.arco) return false;
             return true;
         });
 
+        if (config.best === 'total') {
+            // No time filter
+        } else if (config.best === 'bestYear') {
+            const years = {};
+            rel.forEach(s => { const y = s.data.substring(0,4); years[y] = (years[y]||0) + (s.totalScore||0); });
+            const bestY = Object.entries(years).sort((a,b)=>b[1]-a[1])[0]?.[0];
+            rel = rel.filter(s => s.data.startsWith(bestY));
+        } else if (config.best === 'bestMonth') {
+            const months = {};
+            rel.forEach(s => { const m = s.data.substring(0,7); months[m] = (months[m]||0) + (s.totalScore||0); });
+            const bestM = Object.entries(months).sort((a,b)=>b[1]-a[1])[0]?.[0];
+            rel = rel.filter(s => s.data.startsWith(bestM));
+        } else if (config.best === 'bestWeek') {
+            const weeks = {};
+            rel.forEach(s => {
+                const sd = new Date(s.data + 'T00:00');
+                const mKey = s.data.substring(0,7);
+                const day = sd.getDate();
+                const wNum = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+                const wKey = `${mKey}-w${wNum}`;
+                weeks[wKey] = (weeks[wKey]||0) + (s.totalScore||0);
+            });
+            const bestWKey = Object.entries(weeks).sort((a,b)=>b[1]-a[1])[0]?.[0];
+            if (bestWKey) {
+                const [mKey, wStr] = bestWKey.split('-w');
+                rel = rel.filter(s => {
+                    const sd = new Date(s.data + 'T00:00');
+                    const day = sd.getDate();
+                    const wNum = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+                    return s.data.startsWith(mKey) && wNum === parseInt(wStr);
+                });
+            }
+        } else {
+            const sdFilter = (s) => {
+                const sd = new Date(s.data + 'T00:00');
+                if (config.week) {
+                    const day = sd.getDate();
+                    const weekNum = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+                    return `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}` === config.month && weekNum === parseInt(config.week);
+                }
+                if (config.month) return `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}` === config.month;
+                if (config.year) return sd.getFullYear().toString() === config.year;
+                return true;
+            };
+            rel = rel.filter(sdFilter);
+        }
+
         rel.sort((a,b) => a.data.localeCompare(b.data));
-        return { rel, label, key };
+        return rel;
     }
 
-    // Determine default selected if empty
-    if (st.selected.length === 0 && history[st.periodMode].length > 0) {
-        st.selected = [history[st.periodMode][0]];
+    function getLabel(config) {
+        if (config.best) return config.best === 'total' ? 'Totale' : config.best === 'bestYear' ? 'Miglior Anno' : config.best === 'bestMonth' ? 'Miglior Mese' : 'Miglior Sett.';
+        if (config.week) return `Sett. ${config.week} (${config.month})`;
+        if (config.month) { const [y, m] = config.month.split('-'); return MESI[m-1] + ' ' + y; }
+        return config.year || 'Tutto';
     }
-
-    const series = st.selected.map(key => getPeriodData(st.periodMode, key, st));
 
     function drawMultiChart(allSeries) {
         const h = 220, w = 340, padL = 30, padB = 40, padT = 20, padR = 20;
@@ -5023,84 +5057,123 @@ async function renderAtletaGrafici() {
 
     const legend = series.map((s,i) => `<div style="display:flex;align-items:center;gap:5px;font-size:0.75rem"><div style="width:12px;height:3px;background:${['var(--gold)', '#60a5fa', '#34d399', '#f87171'][i%4]}"></div> ${s.label}</div>`).join('');
 
-    render(`
-        <div class="card" style="margin-bottom:1rem">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem">
-                <div><label class="form-label">Modalità</label>
-                    <select class="inp" onchange="window._grState.periodMode=this.value; window._grState.selected=[]; renderAtletaGrafici()">
-                        <option value="month" ${st.periodMode==='month'?'selected':''}>Mese</option>
-                        <option value="year" ${st.periodMode==='year'?'selected':''}>Anno</option>
+    const renderFilters = (id, config) => {
+        const months = history.monthsByYear[config.year] || [];
+        return `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+                <div><label class="form-label">Anno</label>
+                    <select class="inp" onchange="window._grState.${id}.year=this.value; renderAtletaGrafici()">
+                        ${history.years.map(y=>`<option value="${y}" ${config.year===y?'selected':''}>${y}</option>`).join('')}
                     </select>
                 </div>
-                <div><label class="form-label">Tipo Sessione</label>
-                    <select class="inp" onchange="window._grState.type=this.value;renderAtletaGrafici()">
-                        <option value="both" ${st.type==='both'?'selected':''}>Tutti</option>
-                        <option value="gara" ${st.type==='gara'?'selected':''}>Solo Gara</option>
-                        <option value="allenamento" ${st.type==='allenamento'?'selected':''}>Solo Allenam.</option>
-                    </select>
-                </div>
-                <div><label class="form-label">Grafico</label>
-                    <select class="inp" onchange="window._grState.chartType=this.value;renderAtletaGrafici()">
-                        <option value="line" ${st.chartType==='line'?'selected':''}>Linee</option>
-                        <option value="bar" ${st.chartType==='bar'?'selected':''}>Barre</option>
+                <div><label class="form-label">Mese</label>
+                    <select class="inp" onchange="window._grState.${id}.month=this.value; renderAtletaGrafici()">
+                        <option value="">Tutti</option>
+                        ${months.map(m=>`<option value="${m}" ${config.month===m?'selected':''}>${MESI[parseInt(m.split('-')[1])-1]}</option>`).join('')}
                     </select>
                 </div>
             </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;margin-bottom:0.75rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+                <div><label class="form-label">Settimana</label>
+                    <select class="inp" ${!config.month?'disabled':''} onchange="window._grState.${id}.week=this.value; renderAtletaGrafici()">
+                        <option value="">Tutte</option>
+                        ${[1,2,3,4].map(w=>`<option value="${w}" ${config.week==w?'selected':''}>${w===1?'1-7':w===2?'8-14':w===3?'15-21':'22+'}</option>`).join('')}
+                    </select>
+                </div>
+                <div><label class="form-label">Filtro Rapido / Best</label>
+                    <select class="inp" onchange="window._grState.${id}.best=this.value; renderAtletaGrafici()">
+                        <option value="" ${!config.best?'selected':''}>Nessuno</option>
+                        <option value="total" ${config.best==='total'?'selected':''}>Totale Storico</option>
+                        <option value="bestYear" ${config.best==='bestYear'?'selected':''}>Miglior Anno</option>
+                        <option value="bestMonth" ${config.best==='bestMonth'?'selected':''}>Miglior Mese</option>
+                        <option value="bestWeek" ${config.best==='bestWeek'?'selected':''}>Miglior Settimana</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;margin-bottom:0.5rem">
                 <div><label class="form-label">Distanza</label>
-                    <select class="inp" onchange="window._grState.dist=this.value;renderAtletaGrafici()">
-                        <option value="">Tutte</option>${allDists.map(d=>`<option value="${d}" ${st.dist===d?'selected':''}>${d}</option>`).join('')}
+                    <select class="inp" onchange="window._grState.${id}.dist=this.value;renderAtletaGrafici()">
+                        <option value="">Tutte</option>${allDists.map(d=>`<option value="${d}" ${config.dist===d?'selected':''}>${d}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Targa</label>
-                    <select class="inp" onchange="window._grState.targa=this.value;renderAtletaGrafici()">
-                        <option value="">Tutte</option>${allTarghe.map(t=>`<option value="${t}" ${st.targa===t?'selected':''}>${t}</option>`).join('')}
+                    <select class="inp" onchange="window._grState.${id}.targa=this.value;renderAtletaGrafici()">
+                        <option value="">Tutte</option>${allTarghe.map(t=>`<option value="${t}" ${config.targa===t?'selected':''}>${t}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Arco</label>
-                    <select class="inp" onchange="window._grState.arco=this.value;renderAtletaGrafici()">
-                        <option value="">Tutti</option>${allArchi.map(a=>`<option value="${a}" ${st.arco===a?'selected':''}>${a}</option>`).join('')}
+                    <select class="inp" onchange="window._grState.${id}.arco=this.value;renderAtletaGrafici()">
+                        <option value="">Tutti</option>${allArchi.map(a=>`<option value="${a}" ${config.arco===a?'selected':''}>${a}</option>`).join('')}
                     </select>
                 </div>
             </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <div><label class="form-label">Tipo Sessione</label>
+                    <select class="inp" onchange="window._grState.${id}.type=this.value;renderAtletaGrafici()">
+                        <option value="both" ${config.type==='both'?'selected':''}>Gara + Alln.</option>
+                        <option value="gara" ${config.type==='gara'?'selected':''}>Solo Gara</option>
+                        <option value="allenamento" ${config.type==='allenamento'?'selected':''}>Solo Allenam.</option>
+                    </select>
+                </div>
+                ${id==='perf'?`<div><label class="form-label">Grafico</label>
+                    <select class="inp" onchange="window._grState.${id}.chartType=this.value;renderAtletaGrafici()">
+                        <option value="line" ${config.chartType==='line'?'selected':''}>Linee</option>
+                        <option value="bar" ${config.chartType==='bar'?'selected':''}>Barre</option>
+                    </select>
+                </div>`:''}
+            </div>
+        `;
+    };
 
-            <div style="margin-bottom:1rem">
-                <label class="form-label">Seleziona periodi da confrontare (max 3)</label>
-                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;max-height:80px;overflow-y:auto;background:var(--dark3);padding:0.4rem;border-radius:8px">
-                    ${history[st.periodMode].map(key => {
-                        const active = st.selected.includes(key);
-                        const label = st.periodMode === 'year' ? key : (MESI[parseInt(key.split('-')[1])-1] + ' ' + key.split('-')[0].substring(2));
-                        return `<button class="btn ${active?'btn-gold':'btn-ghost'} btn-sm" style="font-size:0.65rem;padding:0.2rem 0.4rem"
-                                onclick="window.toggleSelectPeriod('${key}')">${label}</button>`;
-                    }).join('')}
+    const perfData = getFilteredData(st.perf);
+    const distData = getFilteredData(st.dist);
+
+    render(`
+        <!-- SEZIONE PERFORMANCE -->
+        <div class="card" style="margin-bottom:1.5rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">📈 Andamento Punteggio</div>
+            ${renderFilters('perf', st.perf)}
+
+            <div style="margin:1rem 0">
+                <label class="form-label">Confronta Periodi (scelta libera)</label>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                    ${history.monthsByYear[st.perf.year]?.map(m => {
+                        const active = st.perf.compare.includes(m);
+                        const label = MESI[parseInt(m.split('-')[1])-1];
+                        return `<button class="btn ${active?'btn-gold':'btn-ghost'} btn-sm" style="font-size:0.65rem"
+                                onclick="window.togglePerfCompare('${m}')">${label}</button>`;
+                    }).join('') || ''}
                 </div>
             </div>
 
-            <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem">
-                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:0.85rem;text-align:center">Andamento Punteggio</div>
-                ${drawMultiChart(series)}
-                <div style="display:flex;justify-content:center;gap:15px;margin-top:1rem;flex-wrap:wrap">
-                    ${legend}
-                </div>
-            </div>
-
-            <div class="gold-line"></div>
             <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem;margin-top:1rem">
-                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:0.85rem;text-align:center">Distribuzione Frecce</div>
-                ${drawDistributionPie(series)}
+                ${(() => {
+                    const series = [{ rel: perfData, label: getLabel(st.perf) }];
+                    st.perf.compare.forEach(m => series.push({ rel: getFilteredData({...st.perf, month:m, compare:[], best:''}), label: getLabel({...st.perf, month:m}) }));
+                    return drawMultiChart(series);
+                })()}
+            </div>
+        </div>
+
+        <!-- SEZIONE DISTRIBUZIONE -->
+        <div class="card" style="margin-bottom:1rem">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">🎯 Distribuzione Frecce</div>
+            ${renderFilters('dist', st.dist)}
+
+            <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem;margin-top:1rem">
+                ${drawDistributionPie([{ rel: distData }])}
             </div>
         </div>
     `);
 }
 
-window.toggleSelectPeriod = (key) => {
-    const idx = window._grState.selected.indexOf(key);
+window.togglePerfCompare = (m) => {
+    const idx = window._grState.perf.compare.indexOf(m);
     if (idx === -1) {
-        if (window._grState.selected.length >= 3) window._grState.selected.shift();
-        window._grState.selected.push(key);
+        if (window._grState.perf.compare.length >= 2) window._grState.perf.compare.shift();
+        window._grState.perf.compare.push(m);
     } else {
-        if (window._grState.selected.length > 1) window._grState.selected.splice(idx, 1);
+        window._grState.perf.compare.splice(idx, 1);
     }
     renderAtletaGrafici();
 };
