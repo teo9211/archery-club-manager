@@ -269,6 +269,7 @@ const firebaseConfig = {
     appId: "1:959832767060:web:1c356fe08f6b7402a2cbc1"
 };
 const APP_NS = 'club_manager_v1'; // namespace separato dalla webapp originale
+const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 
 // ── STATE ───────────────────────────────────────────────────────────────────
 let db, auth;
@@ -499,7 +500,7 @@ window.setView = async (view, params={}) => {
         case 'confrontaSessioni':  return renderConfronta();
         case 'contatoreFrecce':    return renderContatoreFrecce();
         case 'esportaDati':        return renderEsportaDati();
-        case 'atletaGrafici':      return renderAtletaGrafici();
+        case 'atletaGrafici':      return window.renderAtletaGrafici();
         case 'impostazioni':       return renderImpostazioni();
         case 'masterPanel':        return window._masterLogged?renderMasterPanel():window.setView('homeLogin');
         default: renderHomeLogin();
@@ -2133,8 +2134,9 @@ function logoutAtleta() {
 }
 window.logoutAtleta = logoutAtleta;
 
-async function loadAtletaSessioni() {
+async function loadAtletaSessioni(force = false) {
     if (!S.asd || !S.atleta) return;
+    if (S.sessioni.length > 0 && !force) return; // Skip if already loaded
     const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',S.atleta.id)));
     S.sessioni = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
 }
@@ -3914,7 +3916,6 @@ window._calNav = (d) => {
     if (window._calState.m < 0)  { window._calState.m = 11; window._calState.y--; }
     window._calRender();
 };
-const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 window._calRender = () => {
     const { m, y } = window._calState;
     const titleEl = document.getElementById('cal-title');
@@ -4900,42 +4901,100 @@ async function renderEsportaDati() {
     `);
 }
 
-async function renderAtletaGrafici() {
-    setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+window.drawMultiChart = function(allSeries, chartType) {
+    const h = 220, w = 340, padL = 30, padB = 40, padT = 20, padR = 20;
+    const cw = w - padL - padR, ch = h - padB - padT;
+    const allPoints = allSeries.flatMap(s => s.rel.map(x => x.totalScore || 0));
+    if (allPoints.length === 0) return `<div style="text-align:center;padding:2rem;color:var(--muted)">Nessun dato per i filtri selezionati.</div>`;
+    const maxS = Math.max(...allPoints, 300) + 20;
+    const minS = Math.max(0, Math.min(...allPoints, 200) - 20);
+    const range = maxS - minS;
+    const colors = ['var(--gold)', '#60a5fa', '#34d399', '#f87171'];
+    let html = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;overflow:visible">`;
+    for(let i=0; i<=4; i++) {
+        const val = Math.round(minS + (range * i / 4));
+        const y = h - padB - ((val - minS) * ch / range);
+        html += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="rgba(255,255,255,0.1)" /><text x="${padL-5}" y="${y+4}" font-size="9" fill="var(--muted)" text-anchor="end">${val}</text>`;
+    }
+    allSeries.forEach((ser, sIdx) => {
+        if (ser.rel.length < 1) return;
+        const color = colors[sIdx % colors.length];
+        const maxLen = ser.rel.length;
+        if (chartType === 'bar') {
+            const barW = (cw / maxLen) * 0.8;
+            const seriesOffset = (sIdx - (allSeries.length-1)/2) * (barW / allSeries.length);
+            ser.rel.forEach((s, i) => {
+                const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1)) - (barW/2) + (allSeries.length > 1 ? seriesOffset : 0);
+                const valH = ((s.totalScore||0) - minS) * ch / range;
+                html += `<rect x="${x}" y="${h - padB - valH}" width="${allSeries.length > 1 ? barW/allSeries.length : barW}" height="${valH}" fill="${color}" opacity="0.8" rx="1" />`;
+            });
+        } else {
+            const pts = ser.rel.map((s, i) => {
+                const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1));
+                const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
+                return `${x},${y}`;
+            }).join(' ');
+            html += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" />`;
+            ser.rel.forEach((s, i) => {
+                const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1));
+                const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
+                html += `<circle cx="${x}" cy="${y}" r="3" fill="${color}" />`;
+            });
+        }
+    });
+    return html + `</svg>`;
+};
 
+window.renderAtletaGrafici = async function() {
+    if (typeof S === 'undefined' || !S.atleta) {
+        console.warn('S.atleta undefined, skipping renderAtletaGrafici');
+        return;
+    }
     const now = new Date();
     const currentYear = now.getFullYear().toString();
     const currentMonth = `${currentYear}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
+    // Initialize state early with defaults to avoid undefined errors during async load
     window._grState = window._grState || {
-        perf: { type:'both', chartType:'line', dist:'', targa:'', arco:'', year:currentYear, month:'', week:'', compare:[], best:'' },
-        dist: { type:'both', dist:'', targa:'', arco:'', year:currentYear, month:'', week:'', best:'' }
+        perf: { type:'both', chartType:'line', dist:'', targa:'', arco:'', year:currentYear, month:currentMonth, week:'', compare:[], best:'' },
+        dist: { type:'both', dist:'', targa:'', arco:'', year:currentYear, month:currentMonth, week:'', best:'' }
     };
-    const st = window._grState;
 
-    // Helper: extract unique years/months from data
-    const history = { years: [], monthsByYear: {}, weeksByMonth: {} };
+    setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+
+    const history = { years: [], monthsByYear: {} };
     S.sessioni.forEach(s => {
         if (!s.data) return;
-        const d = new Date(s.data + 'T00:00');
-        const y = d.getFullYear().toString();
-        const m = `${y}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const y = s.data.substring(0,4);
+        const m = s.data.substring(0,7);
         if (!history.years.includes(y)) history.years.push(y);
         if (!history.monthsByYear[y]) history.monthsByYear[y] = [];
         if (!history.monthsByYear[y].includes(m)) history.monthsByYear[y].push(m);
-        // Weeks would need a more complex generator, let's stick to 1-5 for month
     });
     history.years.sort().reverse();
     Object.values(history.monthsByYear).forEach(arr => arr.sort().reverse());
+
+    // Update state with latest available data if not already set by user
+    const latestYear = history.years[0] || currentYear;
+    const latestMonth = (history.monthsByYear[latestYear] || [])[0] || currentMonth;
+
+    if (!window._grState._initialized) {
+        window._grState.perf.year = latestYear;
+        window._grState.perf.month = latestMonth;
+        window._grState.dist.year = latestYear;
+        window._grState.dist.month = latestMonth;
+        window._grState._initialized = true;
+    }
+    const st = window._grState;
 
     const allDists = [...new Set(S.sessioni.map(s => s.distanza).filter(Boolean))].sort();
     const allTarghe = [...new Set(S.sessioni.map(s => s.tipoTarga).filter(Boolean))].sort();
     const allArchi = [...new Set(S.sessioni.map(s => s.tipoArco).filter(Boolean))].sort();
 
-    function getFilteredData(config) {
+    const getFilteredData = (config) => {
         let rel = S.sessioni.filter(s => {
-            if (s.trainingWithoutScore) return false;
+            if (s.trainingWithoutScore === true) return false;
             if (config.type !== 'both' && s.type?.toLowerCase() !== config.type) return false;
             if (config.dist && s.distanza !== config.dist) return false;
             if (config.targa && s.tipoTarga !== config.targa) return false;
@@ -4943,26 +5002,21 @@ async function renderAtletaGrafici() {
             return true;
         });
 
-        if (config.best === 'total') {
-            // No time filter
-        } else if (config.best === 'bestYear') {
-            const years = {};
-            rel.forEach(s => { const y = s.data.substring(0,4); years[y] = (years[y]||0) + (s.totalScore||0); });
+        if (config.best === 'total') { /* no time filter */ }
+        else if (config.best === 'bestYear') {
+            const years = {}; rel.forEach(s => { const y = s.data.substring(0,4); years[y] = (years[y]||0) + (s.totalScore||0); });
             const bestY = Object.entries(years).sort((a,b)=>b[1]-a[1])[0]?.[0];
             rel = rel.filter(s => s.data.startsWith(bestY));
         } else if (config.best === 'bestMonth') {
-            const months = {};
-            rel.forEach(s => { const m = s.data.substring(0,7); months[m] = (months[m]||0) + (s.totalScore||0); });
+            const months = {}; rel.forEach(s => { const m = s.data.substring(0,7); months[m] = (months[m]||0) + (s.totalScore||0); });
             const bestM = Object.entries(months).sort((a,b)=>b[1]-a[1])[0]?.[0];
             rel = rel.filter(s => s.data.startsWith(bestM));
         } else if (config.best === 'bestWeek') {
             const weeks = {};
             rel.forEach(s => {
                 const sd = new Date(s.data + 'T00:00');
-                const mKey = s.data.substring(0,7);
-                const day = sd.getDate();
-                const wNum = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
-                const wKey = `${mKey}-w${wNum}`;
+                const wNum = sd.getDate() <= 7 ? 1 : sd.getDate() <= 14 ? 2 : sd.getDate() <= 21 ? 3 : 4;
+                const wKey = s.data.substring(0,7) + '-w' + wNum;
                 weeks[wKey] = (weeks[wKey]||0) + (s.totalScore||0);
             });
             const bestWKey = Object.entries(weeks).sort((a,b)=>b[1]-a[1])[0]?.[0];
@@ -4970,104 +5024,45 @@ async function renderAtletaGrafici() {
                 const [mKey, wStr] = bestWKey.split('-w');
                 rel = rel.filter(s => {
                     const sd = new Date(s.data + 'T00:00');
-                    const day = sd.getDate();
-                    const wNum = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
+                    const wNum = sd.getDate() <= 7 ? 1 : sd.getDate() <= 14 ? 2 : sd.getDate() <= 21 ? 3 : 4;
                     return s.data.startsWith(mKey) && wNum === parseInt(wStr);
                 });
             }
         } else {
-            const sdFilter = (s) => {
-                const sd = new Date(s.data + 'T00:00');
+            rel = rel.filter(s => {
+                if (!s.data) return false;
                 if (config.week) {
-                    const day = sd.getDate();
-                    const weekNum = day <= 7 ? 1 : day <= 14 ? 2 : day <= 21 ? 3 : 4;
-                    return `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}` === config.month && weekNum === parseInt(config.week);
+                    const sd = new Date(s.data + 'T00:00');
+                    const wNum = sd.getDate() <= 7 ? 1 : sd.getDate() <= 14 ? 2 : sd.getDate() <= 21 ? 3 : 4;
+                    return config.month && s.data.startsWith(config.month) && wNum === parseInt(config.week);
                 }
-                if (config.month) return `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}` === config.month;
-                if (config.year) return sd.getFullYear().toString() === config.year;
+                if (config.month) return s.data.startsWith(config.month);
+                if (config.year) return s.data.startsWith(config.year);
                 return true;
-            };
-            rel = rel.filter(sdFilter);
+            });
         }
-
         rel.sort((a,b) => a.data.localeCompare(b.data));
         return rel;
-    }
+    };
 
-    function getLabel(config) {
+    const getLabel = (config) => {
         if (config.best) return config.best === 'total' ? 'Totale' : config.best === 'bestYear' ? 'Miglior Anno' : config.best === 'bestMonth' ? 'Miglior Mese' : 'Miglior Sett.';
         if (config.week) return `Sett. ${config.week} (${config.month})`;
         if (config.month) { const [y, m] = config.month.split('-'); return MESI[m-1] + ' ' + y; }
         return config.year || 'Tutto';
-    }
-
-    function drawMultiChart(allSeries) {
-        const h = 220, w = 340, padL = 30, padB = 40, padT = 20, padR = 20;
-        const cw = w - padL - padR, ch = h - padB - padT;
-
-        const allPoints = allSeries.flatMap(s => s.rel.map(x => x.totalScore || 0));
-        if (allPoints.length === 0) return `<div style="text-align:center;padding:2rem;color:var(--muted)">Nessun dato per i filtri selezionati.</div>`;
-
-        const maxS = Math.max(...allPoints, 300) + 20;
-        const minS = Math.max(0, Math.min(...allPoints, 200) - 20);
-        const range = maxS - minS;
-
-        const colors = ['var(--gold)', '#60a5fa', '#34d399', '#f87171'];
-        let html = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;overflow:visible">`;
-
-        // Y Grid
-        for(let i=0; i<=4; i++) {
-            const val = Math.round(minS + (range * i / 4));
-            const y = h - padB - ((val - minS) * ch / range);
-            html += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="rgba(255,255,255,0.1)" />
-                     <text x="${padL-5}" y="${y+4}" font-size="9" fill="var(--muted)" text-anchor="end">${val}</text>`;
-        }
-
-        allSeries.forEach((ser, sIdx) => {
-            if (ser.rel.length < 1) return;
-            const color = colors[sIdx % colors.length];
-            const maxLen = ser.rel.length;
-
-            if (st.chartType === 'bar') {
-                const barW = (cw / maxLen) * 0.8;
-                const seriesOffset = (sIdx - (allSeries.length-1)/2) * (barW / allSeries.length);
-
-                ser.rel.forEach((s, i) => {
-                    const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1)) - (barW/2) + seriesOffset;
-                    const valH = ((s.totalScore||0) - minS) * ch / range;
-                    html += `<rect x="${x}" y="${h - padB - valH}" width="${barW/allSeries.length}" height="${valH}" fill="${color}" opacity="0.8" rx="1" />`;
-                });
-            } else {
-                const pts = ser.rel.map((s, i) => {
-                    const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1));
-                    const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
-                    return `${x},${y}`;
-                }).join(' ');
-                html += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" />`;
-                ser.rel.forEach((s, i) => {
-                    const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1));
-                    const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
-                    html += `<circle cx="${x}" cy="${y}" r="3" fill="${color}" />`;
-                });
-            }
-        });
-        html += `</svg>`;
-        return html;
-    }
-
-    const legend = series.map((s,i) => `<div style="display:flex;align-items:center;gap:5px;font-size:0.75rem"><div style="width:12px;height:3px;background:${['var(--gold)', '#60a5fa', '#34d399', '#f87171'][i%4]}"></div> ${s.label}</div>`).join('');
+    };
 
     const renderFilters = (id, config) => {
         const months = history.monthsByYear[config.year] || [];
         return `
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
                 <div><label class="form-label">Anno</label>
-                    <select class="inp" onchange="window._grState.${id}.year=this.value; renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.year=this.value; window.renderAtletaGrafici()">
                         ${history.years.map(y=>`<option value="${y}" ${config.year===y?'selected':''}>${y}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Mese</label>
-                    <select class="inp" onchange="window._grState.${id}.month=this.value; renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.month=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutti</option>
                         ${months.map(m=>`<option value="${m}" ${config.month===m?'selected':''}>${MESI[parseInt(m.split('-')[1])-1]}</option>`).join('')}
                     </select>
@@ -5075,13 +5070,13 @@ async function renderAtletaGrafici() {
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
                 <div><label class="form-label">Settimana</label>
-                    <select class="inp" ${!config.month?'disabled':''} onchange="window._grState.${id}.week=this.value; renderAtletaGrafici()">
+                    <select class="inp" ${!config.month?'disabled':''} onchange="window._grState.${id}.week=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutte</option>
                         ${[1,2,3,4].map(w=>`<option value="${w}" ${config.week==w?'selected':''}>${w===1?'1-7':w===2?'8-14':w===3?'15-21':'22+'}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Filtro Rapido / Best</label>
-                    <select class="inp" onchange="window._grState.${id}.best=this.value; renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.best=this.value; window.renderAtletaGrafici()">
                         <option value="" ${!config.best?'selected':''}>Nessuno</option>
                         <option value="total" ${config.best==='total'?'selected':''}>Totale Storico</option>
                         <option value="bestYear" ${config.best==='bestYear'?'selected':''}>Miglior Anno</option>
@@ -5092,31 +5087,31 @@ async function renderAtletaGrafici() {
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;margin-bottom:0.5rem">
                 <div><label class="form-label">Distanza</label>
-                    <select class="inp" onchange="window._grState.${id}.dist=this.value;renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.dist=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutte</option>${allDists.map(d=>`<option value="${d}" ${config.dist===d?'selected':''}>${d}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Targa</label>
-                    <select class="inp" onchange="window._grState.${id}.targa=this.value;renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.targa=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutte</option>${allTarghe.map(t=>`<option value="${t}" ${config.targa===t?'selected':''}>${t}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Arco</label>
-                    <select class="inp" onchange="window._grState.${id}.arco=this.value;renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.arco=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutti</option>${allArchi.map(a=>`<option value="${a}" ${config.arco===a?'selected':''}>${a}</option>`).join('')}
                     </select>
                 </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
                 <div><label class="form-label">Tipo Sessione</label>
-                    <select class="inp" onchange="window._grState.${id}.type=this.value;renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.type=this.value; window.renderAtletaGrafici()">
                         <option value="both" ${config.type==='both'?'selected':''}>Gara + Alln.</option>
                         <option value="gara" ${config.type==='gara'?'selected':''}>Solo Gara</option>
                         <option value="allenamento" ${config.type==='allenamento'?'selected':''}>Solo Allenam.</option>
                     </select>
                 </div>
                 ${id==='perf'?`<div><label class="form-label">Grafico</label>
-                    <select class="inp" onchange="window._grState.${id}.chartType=this.value;renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.${id}.chartType=this.value; window.renderAtletaGrafici()">
                         <option value="line" ${config.chartType==='line'?'selected':''}>Linee</option>
                         <option value="bar" ${config.chartType==='bar'?'selected':''}>Barre</option>
                     </select>
@@ -5127,47 +5122,40 @@ async function renderAtletaGrafici() {
 
     const perfData = getFilteredData(st.perf);
     const distData = getFilteredData(st.dist);
+    const perfSeries = [{ rel: perfData, label: getLabel(st.perf) }];
+    st.perf.compare.forEach(m => perfSeries.push({ rel: getFilteredData({...st.perf, month:m, compare:[], best:''}), label: getLabel({...st.perf, month:m}) }));
+    const perfLegend = perfSeries.map((s,i) => `<div style="display:flex;align-items:center;gap:5px;font-size:0.75rem"><div style="width:12px;height:3px;background:${['var(--gold)', '#60a5fa', '#34d399', '#f87171'][i%4]}"></div> ${s.label}</div>`).join('');
 
     render(`
-        <!-- SEZIONE PERFORMANCE -->
         <div class="card" style="margin-bottom:1.5rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">📈 Andamento Punteggio</div>
             ${renderFilters('perf', st.perf)}
-
             <div style="margin:1rem 0">
                 <label class="form-label">Confronta Periodi (scelta libera)</label>
                 <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
                     ${history.monthsByYear[st.perf.year]?.map(m => {
                         const active = st.perf.compare.includes(m);
                         const label = MESI[parseInt(m.split('-')[1])-1];
-                        return `<button class="btn ${active?'btn-gold':'btn-ghost'} btn-sm" style="font-size:0.65rem"
-                                onclick="window.togglePerfCompare('${m}')">${label}</button>`;
+                        return `<button class="btn ${active?'btn-gold':'btn-ghost'} btn-sm" style="font-size:0.65rem" onclick="window.togglePerfCompare('${m}')">${label}</button>`;
                     }).join('') || ''}
                 </div>
             </div>
-
             <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem;margin-top:1rem">
-                ${(() => {
-                    const series = [{ rel: perfData, label: getLabel(st.perf) }];
-                    st.perf.compare.forEach(m => series.push({ rel: getFilteredData({...st.perf, month:m, compare:[], best:''}), label: getLabel({...st.perf, month:m}) }));
-                    return drawMultiChart(series);
-                })()}
+                ${window.drawMultiChart(perfSeries, st.perf.chartType)}
+                <div style="display:flex;justify-content:center;gap:15px;margin-top:1rem;flex-wrap:wrap">${perfLegend}</div>
             </div>
         </div>
-
-        <!-- SEZIONE DISTRIBUZIONE -->
         <div class="card" style="margin-bottom:1rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">🎯 Distribuzione Frecce</div>
             ${renderFilters('dist', st.dist)}
-
             <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem;margin-top:1rem">
-                ${drawDistributionPie([{ rel: distData }])}
+                ${window.drawDistributionPie([{ rel: distData }])}
             </div>
         </div>
     `);
-}
+};
 
-window.togglePerfCompare = (m) => {
+window.togglePerfCompare = function(m) {
     const idx = window._grState.perf.compare.indexOf(m);
     if (idx === -1) {
         if (window._grState.perf.compare.length >= 2) window._grState.perf.compare.shift();
@@ -5175,10 +5163,10 @@ window.togglePerfCompare = (m) => {
     } else {
         window._grState.perf.compare.splice(idx, 1);
     }
-    renderAtletaGrafici();
+    window.renderAtletaGrafici();
 };
 
-function drawDistributionPie(allSeries) {
+window.drawDistributionPie = function(allSeries) {
     const counts = { 'X': 0, '10': 0, '9': 0, '8': 0, '7': 0, '6': 0, '5': 0, '4': 0, '3': 0, '2': 0, '1': 0, 'M': 0 };
     let total = 0;
 
@@ -5244,7 +5232,7 @@ function drawDistributionPie(allSeries) {
         <svg viewBox="0 0 160 160" style="width:140px;height:140px;flex-shrink:0">${paths}</svg>
         ${legend}
     </div>`;
-}
+};
 
 window.esportaCSV = () => {
     if (!S.sessioni.length) return showModal('Attenzione','Nessuna sessione da esportare.',[{text:'OK'}]);
@@ -5473,7 +5461,7 @@ window.showAgendaPdfModal = () => {
 
 window.setPdfModalPer = (p) => {
     const now=new Date();let from,to;
-    if(p==='week'){const dw=now.getDay(),d=dw===0?-6:1-dow;from=new Date(now);from.setDate(now.getDate()+d);to=new Date(from);to.setDate(from.getDate()+6);}
+    if(p==='week'){const dw=now.getDay(),d=dw===0?-6:1-dw;from=new Date(now);from.setDate(now.getDate()+d);to=new Date(from);to.setDate(from.getDate()+6);}
     else if(p==='month'){from=new Date(now.getFullYear(),now.getMonth(),1);to=new Date(now.getFullYear(),now.getMonth()+1,0);}
     else{from=new Date(now.getFullYear(),0,1);to=new Date(now.getFullYear(),11,31);}
     const fmt=d=>d.toISOString().split('T')[0];
@@ -5886,7 +5874,14 @@ async function renderAsdRecords() {
     await loadAtleti();
 
     // Esegui una singola query per tutte le sessioni della ASD
-    const snap = await getDocs(collection(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni`));
+    let snap;
+    try {
+        snap = await getDocs(collection(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni`));
+    } catch (e) {
+        console.error("Error loading ASD sessions:", e);
+        render(`<div style="text-align:center;padding:2rem;color:var(--danger)">Errore durante il caricamento dei record.</div>`);
+        return;
+    }
     const allSessions = snap.docs.map(d => {
         const s = d.data();
         const atl = S.atleti.find(a => a.id === s.archerId);
