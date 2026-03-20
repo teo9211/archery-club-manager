@@ -1575,28 +1575,7 @@ window.asdDettaglioSessione = async (sessionId) => {
     const snap = await getDoc(snapRef);
     if (!snap.exists()) return;
     const s = { id: snap.id, ...snap.data() };
-    const noteBlock = (emoji, color, label, text) => !text ? '' :
-        `<div style="background:var(--dark3);border-left:3px solid ${color};border-radius:6px;padding:0.5rem 0.6rem;margin-top:0.4rem">
-            <div style="font-size:0.7rem;font-weight:700;color:${color};margin-bottom:0.2rem">${emoji} ${label}</div>
-            <div style="font-size:0.83rem;color:var(--text);white-space:pre-wrap">${text}</div>
-        </div>`;
-    showModal(`📋 ${fmtDate(s.data)} — ${s.type||'Sessione'}`, `
-        <div style="display:flex;flex-direction:column;gap:0.3rem;font-size:0.85rem">
-            ${s.totalScore>0?`<div style="text-align:center;background:var(--dark3);border-radius:8px;padding:0.5rem;margin-bottom:0.3rem">
-                <div style="font-family:'Rajdhani',sans-serif;font-size:2rem;font-weight:900;color:var(--gold-light)">${s.totalScore}</div>
-                <div style="font-size:0.7rem;color:var(--muted)">pt ${s.totalX!=null?'· X:'+s.totalX+' · 10:'+s.totalTen+' · 9:'+s.totalNine:''} ${s.totalAverage?'· Media:'+parseFloat(s.totalAverage).toFixed(2):''}</div>
-                ${(s.turn1Score||s.turn2Score)?`<div style="font-size:0.75rem;color:var(--text)">T1: ${s.turn1Score||0}${s.turn2Score?' · T2: '+s.turn2Score:''}</div>`:''}
-            </div>`:''}
-            <div style="font-size:0.78rem;color:var(--muted)">${s.luogo||''} ${s.tipoLuogo?'('+s.tipoLuogo+')':''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
-            ${s.tipoArco?`<div style="font-size:0.78rem;color:var(--muted)">🏹 ${s.tipoArco}</div>`:''}
-            ${s.frecceAggiuntive>0?`<div style="font-size:0.78rem;color:var(--muted)">🪃 Frecce extra: ${s.frecceAggiuntive}</div>`:''}
-            ${noteBlock('🎯','var(--gold)','Esercizi Consigliati', s.esercizConsigliati)}
-            ${noteBlock('✅','#3d9970','Esercizi Svolti', s.esercizSvolti)}
-            ${noteBlock('🩺','#2980b9','Note e Condizioni Fisiche', s.noteCondizioniFisiche)}
-            ${noteBlock('📝','#e5a400','Note Pre-Gara', s.notePreGara)}
-            ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
-        </div>
-    `, [{ text:'Chiudi', cls:'btn-ghost' }]);
+    window.setView('detailedSummary', { sessione: s });
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3636,8 +3615,46 @@ async function renderDettaglioSessione(params) {
     const hasTurn2 = s.turn2 && s.turn2.summary && (s.turn2.summary.score > 0 || s.turn2.summary.fired > 0);
     const sid = s.id || s.docId || '';
 
+    const t1Sum = s.turn1?.summary || { score: s.turn1Score || 0, X: 0, Ten: 0, Nine: 0, fired: 0 };
+    const t2Sum = s.turn2?.summary || { score: s.turn2Score || 0, X: 0, Ten: 0, Nine: 0, fired: 0 };
+    const t1Avg = t1Sum.fired > 0 ? (t1Sum.score / t1Sum.fired).toFixed(2) : (s.turn1Score && s.formatoGara ? (s.turn1Score / (parseInt(s.formatoGara)||36)).toFixed(2) : '—');
+    const t2Avg = t2Sum.fired > 0 ? (t2Sum.score / t2Sum.fired).toFixed(2) : (s.turn2Score && s.formatoGara ? (s.turn2Score / (parseInt(s.formatoGara)||36)).toFixed(2) : '—');
+
+    // Line chart logic
+    function getLineChart(session) {
+        if (isTec) return '';
+        let allVolleys = [];
+        if (isQS) {
+            if (session.turn1Score > 0) allVolleys.push(session.turn1Score);
+            if (session.turn2Score > 0) allVolleys.push(session.turn2Score);
+        } else {
+            const t1Grid = deserializeGrid(session.turn1).filter(r => r && r.some(sc => sc !== '' && sc !== undefined));
+            const t2Grid = deserializeGrid(session.turn2).filter(r => r && r.some(sc => sc !== '' && sc !== undefined));
+            allVolleys = [...t1Grid, ...t2Grid].map(r => calcVolley(r, 0).parz);
+        }
+        if (allVolleys.length < 2) return '';
+
+        const maxV = Math.max(...allVolleys, 10);
+        const pad = 20, w = 280, h = 100;
+        const pts = allVolleys.map((v, i) => `${pad + (i * (w - 2 * pad) / (allVolleys.length - 1))},${h - pad - (v * (h - 2 * pad) / maxV)}`).join(' ');
+
+        return `<div class="card" style="margin-top:1rem;background:var(--dark3)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:0.85rem">Progressione Volée</div>
+            <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;overflow:visible">
+                <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2" />
+                ${allVolleys.map((v, i) => `<circle cx="${pad + (i * (w - 2 * pad) / (allVolleys.length - 1))}" cy="${h - pad - (v * (h - 2 * pad) / maxV)}" r="2" fill="var(--gold-light)" />`).join('')}
+            </svg>
+        </div>`;
+    }
+
+    const backFn = S.role === 'asd' ? `window.setView('asdAtletaDetail', {atletaId:'${s.archerId}'})` : `window.setView('atletaDati')`;
+    const backTxt = S.role === 'asd' ? '← Atleta' : '← I Miei Dati';
+
     render(`
-        <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaDati')" style="margin-bottom:1rem">← I Miei Dati</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <button class="btn btn-ghost btn-sm" onclick="${backFn}">${backTxt}</button>
+            <button class="btn btn-outline btn-sm" onclick="window.esportaDettaglioPDF()">🖨️ PDF</button>
+        </div>
 
         <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap">
             <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type}${isTec?' 🎓':isQS?' ⚡':''}</span>
@@ -3646,11 +3663,30 @@ async function renderDettaglioSessione(params) {
         </div>
 
         ${!isTec&&s.totalScore>0 ? `
-        <div style="text-align:center;background:linear-gradient(135deg,var(--dark3),var(--dark2));border:2px solid var(--gold);border-radius:14px;padding:1.2rem;margin-bottom:1rem">
-            <div style="font-family:'Rajdhani',sans-serif;font-size:3rem;font-weight:900;color:var(--gold-light)">${s.totalScore}</div>
-            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">PUNTEGGIO TOTALE</div>
-            ${(s.turn1Score||s.turn2Score) ? `<div style="font-size:0.85rem;color:var(--text)">T1: <strong>${s.turn1Score||0}</strong>${s.turn2Score?' · T2: <strong>'+s.turn2Score+'</strong>':''}</div>` : ''}
-            ${s.totalX!=null ? `<div style="font-size:0.82rem;color:var(--gold);margin-top:0.2rem">X: ${s.totalX} · 10: ${s.totalTen||0} · 9: ${s.totalNine||0}${s.totalAverage?' · Media: '+parseFloat(s.totalAverage).toFixed(2):''}</div>` : ''}
+        <div style="background:linear-gradient(135deg,var(--dark3),var(--dark2));border:2px solid var(--gold);border-radius:14px;padding:1.2rem;margin-bottom:1rem">
+            <div style="text-align:center;margin-bottom:1rem">
+                <div style="font-family:'Rajdhani',sans-serif;font-size:3rem;font-weight:900;color:var(--gold-light)">${s.totalScore}</div>
+                <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">PUNTEGGIO TOTALE</div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                <div style="background:rgba(0,0,0,0.2);padding:0.6rem;border-radius:8px;border:1px solid var(--border)">
+                    <div style="font-size:0.65rem;color:var(--gold);font-weight:700;text-transform:uppercase">Turno 1</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700">${s.turn1Score||0} <span style="font-size:0.7rem;color:var(--muted)">pt</span></div>
+                    <div style="font-size:0.7rem;color:var(--text);margin-top:2px">Media: ${t1Avg}</div>
+                    <div style="font-size:0.7rem;color:var(--muted)">X:${t1Sum.X||0} 10:${t1Sum.Ten||0} 9:${t1Sum.Nine||0}</div>
+                </div>
+                ${s.turn2Score > 0 ? `
+                <div style="background:rgba(0,0,0,0.2);padding:0.6rem;border-radius:8px;border:1px solid var(--border)">
+                    <div style="font-size:0.65rem;color:var(--gold);font-weight:700;text-transform:uppercase">Turno 2</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700">${s.turn2Score} <span style="font-size:0.7rem;color:var(--muted)">pt</span></div>
+                    <div style="font-size:0.7rem;color:var(--text);margin-top:2px">Media: ${t2Avg}</div>
+                    <div style="font-size:0.7rem;color:var(--muted)">X:${t2Sum.X||0} 10:${t2Sum.Ten||0} 9:${t2Sum.Nine||0}</div>
+                </div>` : ''}
+            </div>
+            <div style="margin-top:0.75rem;text-align:center;font-size:0.8rem;color:var(--gold)">
+                TOTALE: X:${s.totalX||0} · 10:${s.totalTen||0} · 9:${s.totalNine||0} · Media: ${s.totalAverage?parseFloat(s.totalAverage).toFixed(2):'—'}
+            </div>
         </div>` : ''}
 
         <div class="form-section">
@@ -3686,9 +3722,10 @@ async function renderDettaglioSessione(params) {
         ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
         ${s.note && !s.noteCondizioniFisiche ? noteBlock('📝','var(--muted)','Note', s.note) : ''}
 
-        ${!isTec && !isQS && (s.turn1||s.turn2) ? `
+        ${!isTec && (isQS || s.turn1 || s.turn2) ? `
         <div class="gold-line"></div>
-        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📋 Segnapunti Dettagliato</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📊 Statistiche Avanzate</div>
+        ${getLineChart(s)}
         ${renderGrid(s.turn1, 'Primo Turno')}
         ${hasTurn2 ? renderGrid(s.turn2, 'Secondo Turno') : ''}
         ` : ''}
@@ -3698,6 +3735,112 @@ async function renderDettaglioSessione(params) {
         </div>
     `);
 }
+
+window.esportaDettaglioPDF = () => {
+    const s = S._detailSession;
+    if (!s) return;
+
+    const isTec = !!s.trainingWithoutScore;
+    const isQS  = !!s.quickScore && !isTec;
+
+    function deserializeGrid(turn) {
+        if (!turn || !turn.grid) return [];
+        return turn.grid.map(r => Array.isArray(r) ? r : (() => { try { return JSON.parse(r); } catch(e) { return []; } })());
+    }
+    function calcVolley(row) {
+        const v = row.filter(sc => sc !== '' && sc !== undefined);
+        let p = 0; v.forEach(sc => { p += (sc==='X'?10:sc==='M'?0:parseInt(sc)||0); });
+        return { scores: v, parz: p };
+    }
+    function getGridHtml(turn, title) {
+        if (!turn) return '';
+        const grid = deserializeGrid(turn);
+        const filled = grid.filter(r => r && r.some(sc => sc !== '' && sc !== undefined));
+        if (!filled.length) return '';
+        const volleys = filled.map(r => calcVolley(r));
+        const numCols = Math.max(...volleys.map(v => v.scores.length), 1);
+
+        let html = `<h3>${title}</h3><table class="pdf-score"><thead><tr><th>Vol.</th>${Array(numCols).fill(0).map((_,i)=>`<th>${i+1}</th>`).join('')}<th>Tot</th></tr></thead><tbody>`;
+        volleys.forEach((v, i) => {
+            const padded = [...v.scores]; while(padded.length < numCols) padded.push('');
+            html += `<tr><td>${i+1}</td>${padded.map(sc=>`<td>${sc||''}</td>`).join('')}<td><strong>${v.parz}</strong></td></tr>`;
+        });
+        const sm = turn.summary || {};
+        html += `<tr class="tot-row"><td colspan="${1+numCols}">Totale</td><td>${sm.score||0}</td></tr></tbody></table>`;
+        return html;
+    }
+
+    const t1Sum = s.turn1?.summary || { score: s.turn1Score || 0, X: 0, Ten: 0, Nine: 0, fired: 0 };
+    const t2Sum = s.turn2?.summary || { score: s.turn2Score || 0, X: 0, Ten: 0, Nine: 0, fired: 0 };
+    const t1Avg = t1Sum.fired > 0 ? (t1Sum.score / t1Sum.fired).toFixed(2) : '—';
+    const t2Avg = t2Sum.fired > 0 ? (t2Sum.score / t2Sum.fired).toFixed(2) : '—';
+
+    const pw = window.open('', '', 'width=850,height=900');
+    pw.document.write(`<!DOCTYPE html><html><head><title>Sessione ${fmtDate(s.data)}</title>
+    <style>
+        body{font-family:Arial,sans-serif;padding:30px;color:#333;line-height:1.4}
+        .header{border-bottom:3px solid #c9a227;padding-bottom:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+        h1{margin:0;color:#c9a227;font-size:24px}
+        h2{color:#c9a227;border-bottom:1px solid #ddd;padding-bottom:5px;margin-top:25px;font-size:18px}
+        h3{font-size:15px;margin-bottom:10px}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px}
+        .stat-box{background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:12px}
+        .stat-label{font-size:11px;color:#777;text-transform:uppercase;font-weight:bold}
+        .stat-val{font-size:20px;font-weight:bold;color:#c9a227}
+        .pdf-score{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px}
+        .pdf-score th, .pdf-score td{border:1px solid #ddd;padding:6px;text-align:center}
+        .pdf-score th{background:#f0f0f0;font-weight:bold}
+        .tot-row{background:#fff9e6;font-weight:bold}
+        .notes-area{background:#fffef0;border-left:4px solid #c9a227;padding:10px;margin-top:10px;white-space:pre-wrap;font-size:13px}
+        @media print{button{display:none}}
+    </style></head><body>
+    <div class="header">
+        <div><h1>🏹 Dettaglio Sessione</h1><div style="font-size:14px;color:#666">${s.type} · ${fmtDate(s.data)} ${s.ora?`ore ${s.ora}`:''}</div></div>
+        <div style="text-align:right"><strong>Atleta:</strong> ${S.atleta.nome} ${S.atleta.cognome}<br><strong>ASD:</strong> ${S.asd.nome}</div>
+    </div>
+
+    <div class="grid">
+        <div class="stat-box" style="grid-column: span 2; text-align:center">
+            <div class="stat-label">Punteggio Totale</div>
+            <div class="stat-val" style="font-size:32px">${s.totalScore||'—'}</div>
+            <div style="font-size:12px;color:#666">Media: ${s.totalAverage?parseFloat(s.totalAverage).toFixed(2):'—'} · X:${s.totalX||0} 10:${s.totalTen||0} 9:${s.totalNine||0}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Turno 1</div>
+            <div class="stat-val">${s.turn1Score||0}</div>
+            <div style="font-size:12px;color:#666">Media: ${t1Avg} · X:${t1Sum.X} 10:${t1Sum.Ten} 9:${t1Sum.Nine}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Turno 2</div>
+            <div class="stat-val">${s.turn2Score||0}</div>
+            <div style="font-size:12px;color:#666">Media: ${t2Avg} · X:${t2Sum.X} 10:${t2Sum.Ten} 9:${t2Sum.Nine}</div>
+        </div>
+    </div>
+
+    <h2>ℹ️ Informazioni Tecniche</h2>
+    <div class="grid">
+        <div><strong>Luogo:</strong> ${s.luogo||'—'} (${s.tipoLuogo||'—'})</div>
+        <div><strong>Tipo Arco:</strong> ${s.tipoArco||'—'}</div>
+        <div><strong>Distanza:</strong> ${s.distanza||'—'}</div>
+        <div><strong>Targa:</strong> ${s.tipoTarga||'—'}</div>
+    </div>
+
+    ${s.esercizConsigliati ? `<h2>🎯 Esercizi Consigliati</h2><div class="notes-area">${s.esercizConsigliati}</div>` : ''}
+    ${s.esercizSvolti || s.trainingContent ? `<h2>✅ Esercizi Svolti</h2><div class="notes-area">${s.esercizSvolti || s.trainingContent}</div>` : ''}
+    ${s.noteCondizioniFisiche ? `<h2>🩺 Note e Condizioni Fisiche</h2><div class="notes-area">${s.noteCondizioniFisiche}</div>` : ''}
+    ${s.notePreGara ? `<h2>📝 Note Pre-Gara</h2><div class="notes-area">${s.notePreGara}</div>` : ''}
+    ${s.notePostGara ? `<h2>🏆 Note Post-Gara</h2><div class="notes-area">${s.notePostGara}</div>` : ''}
+
+    ${!isTec && !isQS ? `
+        <h2>📊 Tabellone Punteggi</h2>
+        ${getGridHtml(s.turn1, 'Primo Turno')}
+        ${getGridHtml(s.turn2, 'Secondo Turno')}
+    ` : ''}
+
+    <button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;padding:12px 24px;background:#c9a227;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.2)">🖨️ Stampa PDF</button>
+    </body></html>`);
+    pw.document.close();
+};
 
 window.eliminaSessione = async (sessionId, dataStr) => {
     showModal('🗑️ Elimina Sessione', `Eliminare la sessione del <strong>${dataStr}</strong>?<br><br>⚠️ Azione irreversibile.`, [
