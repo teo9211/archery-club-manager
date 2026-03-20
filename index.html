@@ -409,6 +409,7 @@ function buildNav() {
             { icon:'🏅', label:'Obiettivi',         fn:"window.setView('atletaObiettivi')" },
             { icon:'⚖️', label:'Confronta',         fn:"window.setView('confrontaSessioni')" },
             { icon:'🪃', label:'Contatore Frecce',  fn:"window.setView('contatoreFrecce')" },
+            { icon:'📊', label:'Grafici e Analisi', fn:"window.setView('atletaGrafici')" },
             { icon:'📅', label:'Calendario',        fn:"window.setView('atletaCalendario')" },
             { icon:'🏹', label:'Materiale',         fn:"window.setView('atletaMateriale')" },
             { icon:'📥', label:'Esporta & Backup',  fn:"window.setView('esportaDati')" },
@@ -498,6 +499,7 @@ window.setView = async (view, params={}) => {
         case 'confrontaSessioni':  return renderConfronta();
         case 'contatoreFrecce':    return renderContatoreFrecce();
         case 'esportaDati':        return renderEsportaDati();
+        case 'atletaGrafici':      return renderAtletaGrafici();
         case 'impostazioni':       return renderImpostazioni();
         case 'masterPanel':        return window._masterLogged?renderMasterPanel():window.setView('homeLogin');
         default: renderHomeLogin();
@@ -2263,6 +2265,12 @@ function renderAtletaMenu() {
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Frecce</div>
                     <div style="font-size:0.75rem;color:var(--muted)">Contatore frecce</div>
                 </button>
+
+                <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('atletaGrafici')">
+                    <div style="font-size:1.6rem;margin-bottom:0.3rem">📊</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Grafici</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Analisi avanzata</div>
+                </button>
                 <button class="card card-hover" style="text-align:left;border:1px solid var(--border);cursor:pointer" onclick="window.setView('esportaDati')">
                     <div style="font-size:1.6rem;margin-bottom:0.3rem">📥</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Esporta</div>
@@ -3634,16 +3642,34 @@ async function renderDettaglioSessione(params) {
         }
         if (allVolleys.length < 2) return '';
 
-        const maxV = Math.max(...allVolleys, 10);
-        const pad = 20, w = 280, h = 100;
-        const pts = allVolleys.map((v, i) => `${pad + (i * (w - 2 * pad) / (allVolleys.length - 1))},${h - pad - (v * (h - 2 * pad) / maxV)}`).join(' ');
+        const maxV = Math.max(...allVolleys, 10) + 2;
+        const padL = 25, padB = 20, padT = 10, padR = 10, w = 300, h = 150;
+        const chartW = w - padL - padR, chartH = h - padB - padT;
+        const pts = allVolleys.map((v, i) => `${padL + (i * chartW / (allVolleys.length - 1))},${h - padB - (v * chartH / maxV)}`).join(' ');
+
+        let gridLines = '';
+        for(let i=0; i<=5; i++) {
+            const val = Math.round(maxV * i / 5);
+            const y = h - padB - (val * chartH / maxV);
+            gridLines += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
+                          <text x="${padL-5}" y="${y+3}" font-size="8" fill="var(--muted)" text-anchor="end">${val}</text>`;
+        }
 
         return `<div class="card" style="margin-top:1rem;background:var(--dark3)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem;font-size:0.85rem">Progressione Volée</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem;font-size:0.85rem">Progressione Punteggio</div>
             <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;overflow:visible">
-                <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2" />
-                ${allVolleys.map((v, i) => `<circle cx="${pad + (i * (w - 2 * pad) / (allVolleys.length - 1))}" cy="${h - pad - (v * (h - 2 * pad) / maxV)}" r="2" fill="var(--gold-light)" />`).join('')}
+                ${gridLines}
+                <line x1="${padL}" y1="${h-padB}" x2="${w-padR}" y2="${h-padB}" stroke="var(--border)" stroke-width="1.5" />
+                <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${h-padB}" stroke="var(--border)" stroke-width="1.5" />
+                <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linejoin="round" />
+                ${allVolleys.map((v, i) => {
+                    const x = padL + (i * chartW / (allVolleys.length - 1));
+                    const y = h - padB - (v * chartH / maxV);
+                    return `<circle cx="${x}" cy="${y}" r="3" fill="var(--gold-light)" />
+                            <text x="${x}" y="${h-padB+12}" font-size="8" fill="var(--muted)" text-anchor="middle">${isQS ? (i===0?'T1':'T2') : i+1}</text>`;
+                }).join('')}
             </svg>
+            <div style="text-align:center;font-size:0.7rem;color:var(--muted);margin-top:0.4rem">${isQS?'Turni':'Volée'}</div>
         </div>`;
     }
 
@@ -4874,6 +4900,155 @@ async function renderEsportaDati() {
         </p>
     `);
 }
+
+async function renderAtletaGrafici() {
+    setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
+    await loadAtletaSessioni();
+
+    window._grState = window._grState || { period: 'month', type: 'both', compare: [] };
+    const st = window._grState;
+
+    function getPeriodData(period, offset = 0, type = 'both') {
+        const now = new Date();
+        let start, end, label;
+        if (period === 'week') {
+            const d = new Date(); d.setDate(d.getDate() - (d.getDay()||7) + 1 - (offset*7));
+            start = new Date(d.setHours(0,0,0,0));
+            end = new Date(d.setDate(d.getDate()+6)); end.setHours(23,59,59,999);
+            label = `Settimana ${offset===0?'corr.':'-'+offset}`;
+        } else if (period === 'year') {
+            start = new Date(now.getFullYear() - offset, 0, 1);
+            end = new Date(now.getFullYear() - offset, 11, 31, 23, 59, 59, 999);
+            label = `${now.getFullYear() - offset}`;
+        } else { // month
+            start = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+            end = new Date(now.getFullYear(), now.getMonth() - offset + 1, 0, 23, 59, 59, 999);
+            label = MESI[start.getMonth()] + ' ' + start.getFullYear();
+        }
+
+        let rel = S.sessioni.filter(s => {
+            const sd = new Date(s.data + 'T00:00');
+            return sd >= start && sd <= end && !s.trainingWithoutScore;
+        });
+        if (type === 'gara') rel = rel.filter(s => s.type === 'Gara');
+        if (type === 'allenamento') rel = rel.filter(s => s.type === 'Allenamento');
+
+        rel.sort((a,b) => a.data.localeCompare(b.data));
+        return { rel, label };
+    }
+
+    const series = [];
+    series.push(getPeriodData(st.period, 0, st.type));
+    st.compare.forEach(off => series.push(getPeriodData(st.period, off, st.type)));
+
+    function drawMultiChart(allSeries) {
+        const h = 200, w = 340, padL = 30, padB = 30, padT = 20, padR = 20;
+        const cw = w - padL - padR, ch = h - padB - padT;
+
+        const allPoints = allSeries.flatMap(s => s.rel.map(x => x.totalScore || 0));
+        if (allPoints.length === 0) return `<div style="text-align:center;padding:2rem;color:var(--muted)">Nessun dato per il periodo.</div>`;
+
+        const maxS = Math.max(...allPoints, 300) + 20;
+        const minS = Math.max(0, Math.min(...allPoints, 200) - 20);
+        const range = maxS - minS;
+
+        const maxLen = Math.max(...allSeries.map(s => s.rel.length), 2);
+        const colors = ['var(--gold)', '#60a5fa', '#34d399', '#f87171'];
+
+        let html = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;overflow:visible">`;
+        // Grid & Axes
+        for(let i=0; i<=4; i++) {
+            const val = Math.round(minS + (range * i / 4));
+            const y = h - padB - ((val - minS) * ch / range);
+            html += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="rgba(255,255,255,0.1)" />
+                     <text x="${padL-5}" y="${y+4}" font-size="9" fill="var(--muted)" text-anchor="end">${val}</text>`;
+        }
+
+        // X Axis labels (Sessions)
+        const sampleSeries = allSeries[0].rel;
+        if (sampleSeries.length > 0) {
+            const step = Math.max(1, Math.floor(sampleSeries.length / 5));
+            for(let i=0; i<sampleSeries.length; i+=step) {
+                const x = padL + (i * cw / (maxLen - 1));
+                const date = new Date(sampleSeries[i].data + 'T00:00');
+                const label = st.period === 'year' ? (date.getMonth()+1) : date.getDate();
+                html += `<text x="${x}" y="${h-10}" font-size="8" fill="var(--muted)" text-anchor="middle">${label}</text>`;
+            }
+        }
+
+        allSeries.forEach((ser, sIdx) => {
+            if (ser.rel.length < 1) return;
+            const pts = ser.rel.map((s, i) => {
+                const x = padL + (i * cw / (maxLen - 1));
+                const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
+                return `${x},${y}`;
+            }).join(' ');
+
+            html += `<polyline points="${pts}" fill="none" stroke="${colors[sIdx%colors.length]}" stroke-width="2.5" stroke-linejoin="round" opacity="${sIdx===0?1:0.6}" />`;
+            ser.rel.forEach((s, i) => {
+                const x = padL + (i * cw / (maxLen - 1));
+                const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
+                html += `<circle cx="${x}" cy="${y}" r="3" fill="${colors[sIdx%colors.length]}" />`;
+            });
+        });
+        html += `</svg>`;
+        return html;
+    }
+
+    const legend = series.map((s,i) => `<div style="display:flex;align-items:center;gap:5px;font-size:0.75rem"><div style="width:12px;height:3px;background:${['var(--gold)', '#60a5fa', '#34d399', '#f87171'][i%4]}"></div> ${s.label}</div>`).join('');
+
+    render(`
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem">
+                <div><label class="form-label">Periodo</label>
+                    <select class="inp" onchange="window._grState.period=this.value;renderAtletaGrafici()">
+                        <option value="week" ${st.period==='week'?'selected':''}>Settimana</option>
+                        <option value="month" ${st.period==='month'?'selected':''}>Mese</option>
+                        <option value="year" ${st.period==='year'?'selected':''}>Anno</option>
+                    </select>
+                </div>
+                <div><label class="form-label">Tipo Sessione</label>
+                    <select class="inp" onchange="window._grState.type=this.value;renderAtletaGrafici()">
+                        <option value="both" ${st.type==='both'?'selected':''}>Tutti</option>
+                        <option value="gara" ${st.type==='gara'?'selected':''}>Solo Gara</option>
+                        <option value="allenamento" ${st.type==='allenamento'?'selected':''}>Solo Allenam.</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-bottom:1rem">
+                <label class="form-label">Confronta con periodi precedenti</label>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                    ${[1, 2, 3].map(off => `
+                        <button class="btn ${st.compare.includes(off)?'btn-gold':'btn-ghost'} btn-sm"
+                                onclick="window.toggleCompare(${off})">${st.period==='week'?'Sett.':st.period==='year'?'Anno':'Mese'} -${off}</button>
+                    `).join('')}
+                    ${st.compare.length > 0 ? `<button class="btn btn-danger btn-sm" onclick="window._grState.compare=[];renderAtletaGrafici()">Resetta</button>` : ''}
+                </div>
+            </div>
+
+            <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem">
+                ${drawMultiChart(series)}
+                <div style="display:flex;justify-content:center;gap:15px;margin-top:1rem;flex-wrap:wrap">
+                    ${legend}
+                </div>
+            </div>
+        </div>
+
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💡 Suggerimenti Analisi</div>
+        <p style="font-size:0.8rem;color:var(--muted);line-height:1.4">
+            Usa i pulsanti di confronto per sovrapporre i dati dei periodi passati.
+            La linea <strong style="color:var(--gold)">oro</strong> rappresenta il periodo corrente, le altre i periodi precedenti.
+        </p>
+    `);
+}
+
+window.toggleCompare = (off) => {
+    const idx = window._grState.compare.indexOf(off);
+    if (idx === -1) window._grState.compare.push(off);
+    else window._grState.compare.splice(idx, 1);
+    renderAtletaGrafici();
+};
 
 window.esportaCSV = () => {
     if (!S.sessioni.length) return showModal('Attenzione','Nessuna sessione da esportare.',[{text:'OK'}]);
