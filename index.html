@@ -4956,8 +4956,8 @@ window.renderAtletaGrafici = async function() {
 
     // Initialize state early with defaults to avoid undefined errors during async load
     window._grState = window._grState || {
-        perf: { type:'both', chartType:'line', dist:'', targa:'', arco:'', year:currentYear, month:currentMonth, week:'', compare:[], best:'' },
-        dist: { type:'both', dist:'', targa:'', arco:'', year:currentYear, month:currentMonth, week:'', best:'' }
+        perf: { filterLevel:'year', type:'both', chartType:'line', dist:'', targa:'', arco:'', year:currentYear, month:currentMonth, week:'', compare:[], best:'' },
+        dist: { filterLevel:'all', type:'both', dist:'', targa:'', arco:'', year:currentYear, month:currentMonth, week:'', best:'' }
     };
 
     setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
@@ -4995,22 +4995,23 @@ window.renderAtletaGrafici = async function() {
     const getFilteredData = (config) => {
         let rel = S.sessioni.filter(s => {
             if (s.trainingWithoutScore === true) return false;
-            if (config.type !== 'both' && s.type?.toLowerCase() !== config.type) return false;
+            const sType = (s.type || 'Allenamento').toLowerCase();
+            if (config.type !== 'both' && sType !== config.type) return false;
             if (config.dist && s.distanza !== config.dist) return false;
             if (config.targa && s.tipoTarga !== config.targa) return false;
             if (config.arco && s.tipoArco !== config.arco) return false;
             return true;
         });
 
-        if (config.best === 'total') { /* no time filter */ }
+        if (config.best === 'total' || config.filterLevel === 'all') { /* no time filter */ }
         else if (config.best === 'bestYear') {
             const years = {}; rel.forEach(s => { const y = s.data.substring(0,4); years[y] = (years[y]||0) + (s.totalScore||0); });
             const bestY = Object.entries(years).sort((a,b)=>b[1]-a[1])[0]?.[0];
-            rel = rel.filter(s => s.data.startsWith(bestY));
+            if (bestY) rel = rel.filter(s => s.data.startsWith(bestY));
         } else if (config.best === 'bestMonth') {
             const months = {}; rel.forEach(s => { const m = s.data.substring(0,7); months[m] = (months[m]||0) + (s.totalScore||0); });
             const bestM = Object.entries(months).sort((a,b)=>b[1]-a[1])[0]?.[0];
-            rel = rel.filter(s => s.data.startsWith(bestM));
+            if (bestM) rel = rel.filter(s => s.data.startsWith(bestM));
         } else if (config.best === 'bestWeek') {
             const weeks = {};
             rel.forEach(s => {
@@ -5031,13 +5032,18 @@ window.renderAtletaGrafici = async function() {
         } else {
             rel = rel.filter(s => {
                 if (!s.data) return false;
-                if (config.week) {
+                if (config.filterLevel === 'week' || config.week) {
                     const sd = new Date(s.data + 'T00:00');
                     const wNum = sd.getDate() <= 7 ? 1 : sd.getDate() <= 14 ? 2 : sd.getDate() <= 21 ? 3 : 4;
-                    return config.month && s.data.startsWith(config.month) && wNum === parseInt(config.week);
+                    const weekToMatch = config.week || '1';
+                    return config.month && s.data.startsWith(config.month) && wNum === parseInt(weekToMatch);
                 }
-                if (config.month) return s.data.startsWith(config.month);
-                if (config.year) return s.data.startsWith(config.year);
+                if (config.filterLevel === 'month' || config.month) {
+                    return config.month && s.data.startsWith(config.month);
+                }
+                if (config.filterLevel === 'year' || config.year) {
+                    return config.year && s.data.startsWith(config.year);
+                }
                 return true;
             });
         }
@@ -5046,76 +5052,144 @@ window.renderAtletaGrafici = async function() {
     };
 
     const getLabel = (config) => {
-        if (config.best) return config.best === 'total' ? 'Totale' : config.best === 'bestYear' ? 'Miglior Anno' : config.best === 'bestMonth' ? 'Miglior Mese' : 'Miglior Sett.';
-        if (config.week) return `Sett. ${config.week} (${config.month})`;
-        if (config.month) { const [y, m] = config.month.split('-'); return MESI[m-1] + ' ' + y; }
-        return config.year || 'Tutto';
+        if (config.best) return config.best === 'bestYear' ? 'Miglior Anno' : config.best === 'bestMonth' ? 'Miglior Mese' : 'Miglior Sett.';
+        if (config.filterLevel === 'all') return 'Totale';
+        if (config.filterLevel === 'week') return `Sett. ${config.week||'1'} (${config.month})`;
+        if (config.filterLevel === 'month') { const [y, m] = (config.month||'-').split('-'); return (MESI[parseInt(m)-1] || 'Mese') + ' ' + y; }
+        return config.year || 'Anno';
     };
 
-    const renderFilters = (id, config) => {
+    const renderPerfFilters = (config) => {
         const months = history.monthsByYear[config.year] || [];
         return `
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
-                <div><label class="form-label">Anno</label>
-                    <select class="inp" onchange="window._grState.${id}.year=this.value; window.renderAtletaGrafici()">
-                        ${history.years.map(y=>`<option value="${y}" ${config.year===y?'selected':''}>${y}</option>`).join('')}
-                    </select>
-                </div>
-                <div><label class="form-label">Mese</label>
-                    <select class="inp" onchange="window._grState.${id}.month=this.value; window.renderAtletaGrafici()">
-                        <option value="">Tutti</option>
-                        ${months.map(m=>`<option value="${m}" ${config.month===m?'selected':''}>${MESI[parseInt(m.split('-')[1])-1]}</option>`).join('')}
-                    </select>
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
-                <div><label class="form-label">Settimana</label>
-                    <select class="inp" ${!config.month?'disabled':''} onchange="window._grState.${id}.week=this.value; window.renderAtletaGrafici()">
-                        <option value="">Tutte</option>
-                        ${[1,2,3,4].map(w=>`<option value="${w}" ${config.week==w?'selected':''}>${w===1?'1-7':w===2?'8-14':w===3?'15-21':'22+'}</option>`).join('')}
+                <div><label class="form-label">Livello Filtro</label>
+                    <select class="inp" onchange="window._grState.perf.filterLevel=this.value; window.renderAtletaGrafici()">
+                        <option value="year" ${config.filterLevel==='year'?'selected':''}>Anno Completo</option>
+                        <option value="month" ${config.filterLevel==='month'?'selected':''}>Mese</option>
+                        <option value="week" ${config.filterLevel==='week'?'selected':''}>Settimana</option>
                     </select>
                 </div>
                 <div><label class="form-label">Filtro Rapido / Best</label>
-                    <select class="inp" onchange="window._grState.${id}.best=this.value; window.renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.perf.best=this.value; window.renderAtletaGrafici()">
                         <option value="" ${!config.best?'selected':''}>Nessuno</option>
-                        <option value="total" ${config.best==='total'?'selected':''}>Totale Storico</option>
                         <option value="bestYear" ${config.best==='bestYear'?'selected':''}>Miglior Anno</option>
                         <option value="bestMonth" ${config.best==='bestMonth'?'selected':''}>Miglior Mese</option>
                         <option value="bestWeek" ${config.best==='bestWeek'?'selected':''}>Miglior Settimana</option>
                     </select>
                 </div>
             </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+                <div><label class="form-label">Anno</label>
+                    <select class="inp" onchange="window._grState.perf.year=this.value; window.renderAtletaGrafici()">
+                        ${history.years.map(y=>`<option value="${y}" ${config.year===y?'selected':''}>${y}</option>`).join('')}
+                    </select>
+                </div>
+                ${config.filterLevel!=='year' ? `
+                <div><label class="form-label">Mese</label>
+                    <select class="inp" onchange="window._grState.perf.month=this.value; window.renderAtletaGrafici()">
+                        ${months.map(m=>`<option value="${m}" ${config.month===m?'selected':''}>${MESI[parseInt(m.split('-')[1])-1]}</option>`).join('')}
+                    </select>
+                </div>` : '<div></div>'}
+                ${config.filterLevel==='week' ? `
+                <div><label class="form-label">Settimana</label>
+                    <select class="inp" onchange="window._grState.perf.week=this.value; window.renderAtletaGrafici()">
+                        ${[1,2,3,4].map(w=>`<option value="${w}" ${config.week==w?'selected':''}>${w===1?'1-7':w===2?'8-14':w===3?'15-21':'22+'}</option>`).join('')}
+                    </select>
+                </div>` : '<div></div>'}
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;margin-bottom:0.5rem">
                 <div><label class="form-label">Distanza</label>
-                    <select class="inp" onchange="window._grState.${id}.dist=this.value; window.renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.perf.dist=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutte</option>${allDists.map(d=>`<option value="${d}" ${config.dist===d?'selected':''}>${d}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Targa</label>
-                    <select class="inp" onchange="window._grState.${id}.targa=this.value; window.renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.perf.targa=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutte</option>${allTarghe.map(t=>`<option value="${t}" ${config.targa===t?'selected':''}>${t}</option>`).join('')}
                     </select>
                 </div>
                 <div><label class="form-label">Arco</label>
-                    <select class="inp" onchange="window._grState.${id}.arco=this.value; window.renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.perf.arco=this.value; window.renderAtletaGrafici()">
                         <option value="">Tutti</option>${allArchi.map(a=>`<option value="${a}" ${config.arco===a?'selected':''}>${a}</option>`).join('')}
                     </select>
                 </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
                 <div><label class="form-label">Tipo Sessione</label>
-                    <select class="inp" onchange="window._grState.${id}.type=this.value; window.renderAtletaGrafici()">
+                    <select class="inp" onchange="window._grState.perf.type=this.value; window.renderAtletaGrafici()">
                         <option value="both" ${config.type==='both'?'selected':''}>Gara + Alln.</option>
                         <option value="gara" ${config.type==='gara'?'selected':''}>Solo Gara</option>
                         <option value="allenamento" ${config.type==='allenamento'?'selected':''}>Solo Allenam.</option>
                     </select>
                 </div>
-                ${id==='perf'?`<div><label class="form-label">Grafico</label>
-                    <select class="inp" onchange="window._grState.${id}.chartType=this.value; window.renderAtletaGrafici()">
+                <div><label class="form-label">Grafico</label>
+                    <select class="inp" onchange="window._grState.perf.chartType=this.value; window.renderAtletaGrafici()">
                         <option value="line" ${config.chartType==='line'?'selected':''}>Linee</option>
                         <option value="bar" ${config.chartType==='bar'?'selected':''}>Barre</option>
                     </select>
-                </div>`:''}
+                </div>
+            </div>
+        `;
+    };
+
+    const renderDistFilters = (config) => {
+        const months = history.monthsByYear[config.year] || [];
+        return `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+                <div><label class="form-label">Filtro</label>
+                    <select class="inp" onchange="window._grState.dist.filterLevel=this.value; window.renderAtletaGrafici()">
+                        <option value="all" ${config.filterLevel==='all'?'selected':''}>Tutti gli anni</option>
+                        <option value="year" ${config.filterLevel==='year'?'selected':''}>Anno specifico</option>
+                        <option value="month" ${config.filterLevel==='month'?'selected':''}>Mese specifico</option>
+                    </select>
+                </div>
+                <div><label class="form-label">Filtro Rapido / Best</label>
+                    <select class="inp" onchange="window._grState.dist.best=this.value; window.renderAtletaGrafici()">
+                        <option value="" ${!config.best?'selected':''}>Nessuno</option>
+                        <option value="bestYear" ${config.best==='bestYear'?'selected':''}>Miglior Anno</option>
+                        <option value="bestMonth" ${config.best==='bestMonth'?'selected':''}>Miglior Mese</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+                ${config.filterLevel!=='all' ? `
+                <div><label class="form-label">Anno</label>
+                    <select class="inp" onchange="window._grState.dist.year=this.value; window.renderAtletaGrafici()">
+                        ${history.years.map(y=>`<option value="${y}" ${config.year===y?'selected':''}>${y}</option>`).join('')}
+                    </select>
+                </div>` : ''}
+                ${config.filterLevel==='month' ? `
+                <div><label class="form-label">Mese</label>
+                    <select class="inp" onchange="window._grState.dist.month=this.value; window.renderAtletaGrafici()">
+                        ${months.map(m=>`<option value="${m}" ${config.month===m?'selected':''}>${MESI[parseInt(m.split('-')[1])-1]}</option>`).join('')}
+                    </select>
+                </div>` : ''}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;margin-bottom:0.5rem">
+                <div><label class="form-label">Distanza</label>
+                    <select class="inp" onchange="window._grState.dist.dist=this.value; window.renderAtletaGrafici()">
+                        <option value="">Tutte</option>${allDists.map(d=>`<option value="${d}" ${config.dist===d?'selected':''}>${d}</option>`).join('')}
+                    </select>
+                </div>
+                <div><label class="form-label">Targa</label>
+                    <select class="inp" onchange="window._grState.dist.targa=this.value; window.renderAtletaGrafici()">
+                        <option value="">Tutte</option>${allTarghe.map(t=>`<option value="${t}" ${config.targa===t?'selected':''}>${t}</option>`).join('')}
+                    </select>
+                </div>
+                <div><label class="form-label">Arco</label>
+                    <select class="inp" onchange="window._grState.dist.arco=this.value; window.renderAtletaGrafici()">
+                        <option value="">Tutti</option>${allArchi.map(a=>`<option value="${a}" ${config.arco===a?'selected':''}>${a}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="form-label">Tipo Sessione</label>
+                <select class="inp" onchange="window._grState.dist.type=this.value; window.renderAtletaGrafici()">
+                    <option value="both" ${config.type==='both'?'selected':''}>Gara + Alln.</option>
+                    <option value="gara" ${config.type==='gara'?'selected':''}>Solo Gara</option>
+                    <option value="allenamento" ${config.type==='allenamento'?'selected':''}>Solo Allenam.</option>
+                </select>
             </div>
         `;
     };
@@ -5123,21 +5197,42 @@ window.renderAtletaGrafici = async function() {
     const perfData = getFilteredData(st.perf);
     const distData = getFilteredData(st.dist);
     const perfSeries = [{ rel: perfData, label: getLabel(st.perf) }];
-    st.perf.compare.forEach(m => perfSeries.push({ rel: getFilteredData({...st.perf, month:m, compare:[], best:''}), label: getLabel({...st.perf, month:m}) }));
+    st.perf.compare.forEach((comp, idx) => {
+        if (comp.year && comp.month) {
+            perfSeries.push({ rel: getFilteredData({...st.perf, filterLevel:'month', year:comp.year, month:comp.month, best:''}), label: getLabel({filterLevel:'month', month:comp.month}) });
+        }
+    });
     const perfLegend = perfSeries.map((s,i) => `<div style="display:flex;align-items:center;gap:5px;font-size:0.75rem"><div style="width:12px;height:3px;background:${['var(--gold)', '#60a5fa', '#34d399', '#f87171'][i%4]}"></div> ${s.label}</div>`).join('');
 
     render(`
         <div class="card" style="margin-bottom:1.5rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">📈 Andamento Punteggio</div>
-            ${renderFilters('perf', st.perf)}
-            <div style="margin:1rem 0">
-                <label class="form-label">Confronta Periodi (scelta libera)</label>
-                <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
-                    ${history.monthsByYear[st.perf.year]?.map(m => {
-                        const active = st.perf.compare.includes(m);
-                        const label = MESI[parseInt(m.split('-')[1])-1];
-                        return `<button class="btn ${active?'btn-gold':'btn-ghost'} btn-sm" style="font-size:0.65rem" onclick="window.togglePerfCompare('${m}')">${label}</button>`;
-                    }).join('') || ''}
+            ${renderPerfFilters(st.perf)}
+            <div style="margin:1rem 0; border-top: 1px solid var(--border); padding-top: 1rem">
+                <label class="form-label">Confronta Periodi (max 3)</label>
+                <div style="display:grid;grid-template-columns:1fr;gap:0.5rem">
+                    ${[0,1,2].map(i => {
+                        const comp = st.perf.compare[i] || { year:'', month:'' };
+                        const months = history.monthsByYear[comp.year] || [];
+                        return `
+                        <div style="display:grid;grid-template-columns:1fr 1fr 40px;gap:0.4rem;align-items:end">
+                            <div>
+                                <label class="form-label" style="font-size:0.65rem">Anno comp. ${i+1}</label>
+                                <select class="inp btn-sm" onchange="window.updatePerfCompare(${i}, 'year', this.value)">
+                                    <option value="">—</option>
+                                    ${history.years.map(y=>`<option value="${y}" ${comp.year===y?'selected':''}>${y}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:0.65rem">Mese comp. ${i+1}</label>
+                                <select class="inp btn-sm" onchange="window.updatePerfCompare(${i}, 'month', this.value)">
+                                    <option value="">—</option>
+                                    ${months.map(m=>`<option value="${m}" ${comp.month===m?'selected':''}>${MESI[parseInt(m.split('-')[1])-1]}</option>`).join('')}
+                                </select>
+                            </div>
+                            <button class="btn btn-danger btn-sm" onclick="window.updatePerfCompare(${i}, 'clear', '')">✕</button>
+                        </div>`;
+                    }).join('')}
                 </div>
             </div>
             <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem;margin-top:1rem">
@@ -5147,7 +5242,7 @@ window.renderAtletaGrafici = async function() {
         </div>
         <div class="card" style="margin-bottom:1rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">🎯 Distribuzione Frecce</div>
-            ${renderFilters('dist', st.dist)}
+            ${renderDistFilters(st.dist)}
             <div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:1rem;margin-top:1rem">
                 ${window.drawDistributionPie([{ rel: distData }])}
             </div>
@@ -5155,13 +5250,13 @@ window.renderAtletaGrafici = async function() {
     `);
 };
 
-window.togglePerfCompare = function(m) {
-    const idx = window._grState.perf.compare.indexOf(m);
-    if (idx === -1) {
-        if (window._grState.perf.compare.length >= 2) window._grState.perf.compare.shift();
-        window._grState.perf.compare.push(m);
+window.updatePerfCompare = function(idx, field, val) {
+    if (!window._grState.perf.compare) window._grState.perf.compare = [];
+    if (!window._grState.perf.compare[idx]) window._grState.perf.compare[idx] = { year:'', month:'' };
+    if (field === 'clear') {
+        window._grState.perf.compare[idx] = { year:'', month:'' };
     } else {
-        window._grState.perf.compare.splice(idx, 1);
+        window._grState.perf.compare[idx][field] = val;
     }
     window.renderAtletaGrafici();
 };
