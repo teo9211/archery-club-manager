@@ -4902,41 +4902,77 @@ async function renderEsportaDati() {
 }
 
 window.drawMultiChart = function(allSeries, chartType) {
-    const h = 220, w = 340, padL = 30, padB = 40, padT = 20, padR = 20;
+    const h = 220, w = 340, padL = 35, padB = 40, padT = 20, padR = 20;
     const cw = w - padL - padR, ch = h - padB - padT;
     const allPoints = allSeries.flatMap(s => s.rel.map(x => x.totalScore || 0));
     if (allPoints.length === 0) return `<div style="text-align:center;padding:2rem;color:var(--muted)">Nessun dato per i filtri selezionati.</div>`;
-    const maxS = Math.max(...allPoints, 300) + 20;
-    const minS = Math.max(0, Math.min(...allPoints, 200) - 20);
-    const range = maxS - minS;
+
+    const maxPoints = Math.max(...allPoints, 10);
+    const minPoints = Math.min(...allPoints, maxPoints);
+    const maxS = Math.max(maxPoints + 20, 300);
+    const minS = Math.max(0, Math.min(minPoints - 20, 200));
+    const range = maxS - minS || 1;
+
     const colors = ['var(--gold)', '#60a5fa', '#34d399', '#f87171'];
     let html = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;overflow:visible">`;
+
+    // Plot area background
+    html += `<rect x="${padL}" y="${padT}" width="${cw}" height="${ch}" fill="rgba(255,255,255,0.03)" />`;
+
+    const globalMaxLen = Math.max(...allSeries.map(s => s.rel.length), 1);
+    const slotW = cw / globalMaxLen;
+
+    // Grid lines
     for(let i=0; i<=4; i++) {
         const val = Math.round(minS + (range * i / 4));
         const y = h - padB - ((val - minS) * ch / range);
-        html += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="rgba(255,255,255,0.1)" /><text x="${padL-5}" y="${y+4}" font-size="9" fill="var(--muted)" text-anchor="end">${val}</text>`;
+        // Horizontal
+        html += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="rgba(255,255,255,0.1)" />`;
+        html += `<text x="${padL-5}" y="${y+4}" font-size="8" fill="var(--muted)" text-anchor="end">${val}</text>`;
     }
+
+    if (chartType === 'bar' || globalMaxLen <= 20) {
+        for (let i = 1; i < globalMaxLen; i++) {
+            const x = padL + i * slotW;
+            html += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${h - padB}" stroke="rgba(255,255,255,0.05)" />`;
+        }
+    }
+
+    // X Axis labels (optional markers)
+    if (globalMaxLen > 1 && globalMaxLen <= 15) {
+        for (let i = 0; i < globalMaxLen; i++) {
+            const x = padL + (i + 0.5) * slotW;
+            html += `<text x="${x}" y="${h - padB + 12}" font-size="7" fill="var(--muted)" text-anchor="middle">S${i+1}</text>`;
+        }
+    }
+
+    // Chart border
+    html += `<rect x="${padL}" y="${padT}" width="${cw}" height="${ch}" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1" />`;
+
     allSeries.forEach((ser, sIdx) => {
         if (ser.rel.length < 1) return;
         const color = colors[sIdx % colors.length];
-        const maxLen = ser.rel.length;
+
         if (chartType === 'bar') {
-            const barW = (cw / maxLen) * 0.8;
-            const seriesOffset = (sIdx - (allSeries.length-1)/2) * (barW / allSeries.length);
+            const barGroupW = slotW * 0.7;
+            const singleBarW = barGroupW / allSeries.length;
             ser.rel.forEach((s, i) => {
-                const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1)) - (barW/2) + (allSeries.length > 1 ? seriesOffset : 0);
+                const groupCenterX = padL + (i + 0.5) * slotW;
+                const groupOffset = (sIdx - (allSeries.length - 1) / 2) * singleBarW;
+                const x = groupCenterX + groupOffset - (singleBarW / 2);
                 const valH = ((s.totalScore||0) - minS) * ch / range;
-                html += `<rect x="${x}" y="${h - padB - valH}" width="${allSeries.length > 1 ? barW/allSeries.length : barW}" height="${valH}" fill="${color}" opacity="0.8" rx="1" />`;
+                const hRect = Math.max(0, valH);
+                html += `<rect x="${x}" y="${h - padB - hRect}" width="${singleBarW}" height="${hRect}" fill="${color}" opacity="0.8" rx="1" />`;
             });
         } else {
             const pts = ser.rel.map((s, i) => {
-                const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1));
+                const x = padL + (i + 0.5) * slotW;
                 const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
                 return `${x},${y}`;
             }).join(' ');
             html += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" />`;
             ser.rel.forEach((s, i) => {
-                const x = padL + (i * cw / (maxLen > 1 ? maxLen - 1 : 1));
+                const x = padL + (i + 0.5) * slotW;
                 const y = h - padB - (((s.totalScore||0) - minS) * ch / range);
                 html += `<circle cx="${x}" cy="${y}" r="3" fill="${color}" />`;
             });
