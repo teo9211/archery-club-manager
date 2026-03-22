@@ -328,6 +328,7 @@ const asdCol    = ()  => collection(db, `${APP_NS}/data/asd`);
 const atletiCol = (asdId) => collection(db, `${APP_NS}/data/asd/${asdId}/atleti`);
 const sessioniCol = (asdId, atletaId) => collection(db, `${APP_NS}/data/asd/${asdId}/sessioni`);
 const msgCol    = (asdId) => collection(db, `${APP_NS}/data/asd/${asdId}/messaggi`);
+const equipmentRef = (asdId, atletaId) => doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}/equipment/current`);
 
 // ── NAVIGATION ──────────────────────────────────────────────────────────────
 window.toggleNav = () => { $('nav-drawer').classList.toggle('open'); $('nav-overlay').classList.toggle('show'); };
@@ -491,7 +492,11 @@ window.setView = async (view, params={}) => {
         case 'dataSummary':        return renderAtletaDati();
         case 'detailedSummary':    return renderDettaglioSessione(params);
         case 'atletaCalendario':   return renderAtletaCalendario();
-        case 'atletaMateriale':    return renderAtletaMateriale();
+        case 'atletaMateriale':
+            const eqSnap = await getDoc(equipmentRef(S.asd.id, S.atleta.id));
+            S.equipment = eqSnap.exists() ? eqSnap.data() : getEquipment(); // fallback to local
+            window._eqEditMode = false;
+            return renderAtletaMateriale();
         case 'msgTraAsd':          return renderMsgTraAsd();
         case 'asdMessaggiEsterni': return renderAsdMessaggiEsterni();
         case 'asdRecords':         return renderAsdRecords();
@@ -2134,9 +2139,8 @@ function logoutAtleta() {
 }
 window.logoutAtleta = logoutAtleta;
 
-async function loadAtletaSessioni(force = false) {
+async function loadAtletaSessioni() {
     if (!S.asd || !S.atleta) return;
-    if (S.sessioni.length > 0 && !force) return; // Skip if already loaded
     const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',S.atleta.id)));
     S.sessioni = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
 }
@@ -2860,6 +2864,7 @@ window.tkFineTurno=async(isFinal)=>{
                                grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{},arrowPositions:s.turn1?.arrowPositions||[]},
                         timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                     });
+                    await tkDecrementEsercCoach();
                     tkClearDraft();
                     TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
                     await loadAtletaSessioni();
@@ -4066,12 +4071,13 @@ window._calDay = (dateStr) => {
 function getEquipmentKey() { return `archery_equip_${S.atleta?.id||'default'}`; }
 function getEquipment() { try { return JSON.parse(localStorage.getItem(getEquipmentKey()))||{}; } catch(e) { return {}; } }
 function arrowCardHtml(a,i,isActive) {
-    return `<div onclick="window.eqSelectArrow(${i})" style="background:var(--dark3);border:2px solid ${isActive?'var(--gold)':'var(--border)'};border-radius:10px;padding:0.75rem;cursor:pointer">
+    const edit = window._eqEditMode;
+    return `<div onclick="${edit ? 'window.eqSelectArrow('+i+')' : ''}" style="background:var(--dark3);border:2px solid ${isActive?'var(--gold)':'var(--border)'};border-radius:10px;padding:0.75rem;cursor:${edit?'pointer':'default'}">
         <div style="display:flex;justify-content:space-between;align-items:start">
             <span style="font-weight:700;color:var(--text);font-size:0.88rem">${a.nome||'Freccia '+(i+1)}</span>
             <div style="display:flex;gap:4px;align-items:center">
                 ${isActive?`<span style="font-size:0.62rem;background:var(--gold);color:#000;padding:1px 6px;border-radius:10px;font-weight:700">Attiva</span>`:''}
-                <button onclick="event.stopPropagation();window.eqDeleteArrow(${i})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0">✕</button>
+                ${edit ? `<button onclick="event.stopPropagation();window.eqDeleteArrow(${i})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0">✕</button>` : ''}
             </div>
         </div>
         <div style="font-size:0.73rem;color:var(--gold)">${a.modello||'-'} | Spine: ${a.spine||'-'}</div>
@@ -4080,31 +4086,31 @@ function arrowCardHtml(a,i,isActive) {
 }
 function arrowDetailHtml(a,i) {
     if (!a) return '';
+    const edit = window._eqEditMode;
     return `<div id="arrow-detail-${i}" style="background:var(--dark3);border:1px solid var(--gold);border-radius:10px;padding:1rem;margin-top:0.75rem">
-        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">✏️ ${a.nome||'Freccia '+(i+1)}</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">${edit?'✏️':'👁️'} ${a.nome||'Freccia '+(i+1)}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
-            <div><label class="form-label">Nome</label><input class="inp" id="arr-nome-${i}" value="${a.nome||''}" placeholder="Es: Gara"></div>
-            <div><label class="form-label">Modello</label><input class="inp" id="arr-modello-${i}" value="${a.modello||''}" placeholder="Easton X10"></div>
-            <div><label class="form-label">Spine</label><input class="inp" id="arr-spine-${i}" value="${a.spine||''}" placeholder="Es: 500"></div>
-            <div><label class="form-label">Lunghezza (")</label><input class="inp" id="arr-lunghezza-${i}" value="${a.lunghezza||''}" placeholder='29"'></div>
-            <div><label class="form-label">Diametro (mm)</label><input class="inp" id="arr-diametro-${i}" value="${a.diametro||''}" placeholder="5.5"></div>
-            <div><label class="form-label">Punta (grani)</label><input class="inp" type="number" id="arr-pesoPunta-${i}" value="${a.pesoPunta||''}" placeholder="100"></div>
-            <div><label class="form-label">Cocche</label><input class="inp" id="arr-cocca-${i}" value="${a.cocca||''}"></div>
-            <div><label class="form-label">Alette (tipo/marca)</label><input class="inp" id="arr-alette-${i}" value="${a.alette||''}" placeholder="Es: Spin Wings 40mm"></div>
-            <div><label class="form-label">Colore alette</label><input class="inp" id="arr-coloreAlette-${i}" value="${a.coloreAlette||''}" placeholder="Es: trasparente, blu..."></div>
-            <div><label class="form-label">Note</label><input class="inp" id="arr-note-${i}" value="${a.note||''}"></div>
+            <div><label class="form-label">Nome</label><input class="inp" id="arr-nome-${i}" value="${a.nome||''}" placeholder="Es: Gara" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Modello</label><input class="inp" id="arr-modello-${i}" value="${a.modello||''}" placeholder="Easton X10" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Spine</label><input class="inp" id="arr-spine-${i}" value="${a.spine||''}" placeholder="Es: 500" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Lunghezza (")</label><input class="inp" id="arr-lunghezza-${i}" value="${a.lunghezza||''}" placeholder='29"' ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Diametro (mm)</label><input class="inp" id="arr-diametro-${i}" value="${a.diametro||''}" placeholder="5.5" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Punta (grani)</label><input class="inp" type="number" id="arr-pesoPunta-${i}" value="${a.pesoPunta||''}" placeholder="100" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Cocche</label><input class="inp" id="arr-cocca-${i}" value="${a.cocca||''}" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Alette (tipo/marca)</label><input class="inp" id="arr-alette-${i}" value="${a.alette||''}" placeholder="Es: Spin Wings 40mm" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Colore alette</label><input class="inp" id="arr-coloreAlette-${i}" value="${a.coloreAlette||''}" placeholder="Es: trasparente, blu..." ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Note</label><input class="inp" id="arr-note-${i}" value="${a.note||''}" ${!edit?'disabled':''}></div>
         </div>
-        <button class="btn btn-gold btn-full" style="margin-top:0.6rem" onclick="window.eqSaveArrow(${i})">💾 Salva Freccia</button>
     </div>`;
 }
 function bowCardHtml(b,i,isActive) {
-    const bowTypes=['Ricurvo','Compound','Longbow','Barebow','Altro'];
-    return `<div onclick="window.eqSelectBow(${i})" style="background:var(--dark3);border:2px solid ${isActive?'var(--gold)':'var(--border)'};border-radius:10px;padding:0.75rem;cursor:pointer">
+    const edit = window._eqEditMode;
+    return `<div onclick="${edit ? 'window.eqSelectBow('+i+')' : ''}" style="background:var(--dark3);border:2px solid ${isActive?'var(--gold)':'var(--border)'};border-radius:10px;padding:0.75rem;cursor:${edit?'pointer':'default'}">
         <div style="display:flex;justify-content:space-between;align-items:start">
             <span style="font-weight:700;color:var(--text);font-size:0.88rem">${b.nome||'Arco '+(i+1)}</span>
             <div style="display:flex;gap:4px;align-items:center">
                 ${isActive?`<span style="font-size:0.62rem;background:var(--gold);color:#000;padding:1px 6px;border-radius:10px;font-weight:700">Attivo</span>`:''}
-                <button onclick="event.stopPropagation();window.eqDeleteBow(${i})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0">✕</button>
+                ${edit ? `<button onclick="event.stopPropagation();window.eqDeleteBow(${i})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0">✕</button>` : ''}
             </div>
         </div>
         <div style="font-size:0.73rem;color:var(--gold)">${b.tipo||'-'} | ${b.braccetto||'-'}</div>
@@ -4114,58 +4120,44 @@ function bowCardHtml(b,i,isActive) {
 function bowDetailHtml(b,i) {
     if (!b) return '';
     const bowTypes=['Ricurvo','Compound','Longbow','Barebow','Altro'];
+    const edit = window._eqEditMode;
     return `<div id="bow-detail-${i}" style="background:var(--dark3);border:1px solid var(--gold);border-radius:10px;padding:1rem;margin-top:0.75rem">
-        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">✏️ ${b.nome||'Arco '+(i+1)}</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">${edit?'✏️':'👁️'} ${b.nome||'Arco '+(i+1)}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
-            <div><label class="form-label">Nome/Etichetta</label><input class="inp" id="bow-nome-${i}" value="${b.nome||''}" placeholder="Es: Gara, Indoor..."></div>
+            <div><label class="form-label">Nome/Etichetta</label><input class="inp" id="bow-nome-${i}" value="${b.nome||''}" placeholder="Es: Gara, Indoor..." ${!edit?'disabled':''}></div>
             <div><label class="form-label">Tipo Arco</label>
-                <select class="inp" id="bow-tipo-${i}">${bowTypes.map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
-            <div><label class="form-label">Riser</label><input class="inp" id="bow-braccetto-${i}" value="${b.braccetto||''}" placeholder="Hoyt Xceed"></div>
-            <div><label class="form-label">Flettenti</label><input class="inp" id="bow-marcaArco-${i}" value="${b.marcaArco||''}" placeholder="Uukha VX+"></div>
-            <div><label class="form-label">Misura arco</label><input class="inp" id="bow-misuraArco-${i}" value="${b.misuraArco||''}" placeholder='25"'></div>
-            <div><label class="form-label">Libbre (lb)</label><input class="inp" type="number" id="bow-libbre-${i}" value="${b.libbre||''}" placeholder="40"></div>
-            <div><label class="form-label">Allungo (poll.)</label><input class="inp" type="number" id="bow-allungo-${i}" value="${b.allungo||''}" placeholder="28.5" step="0.5"></div>
-            <div><label class="form-label">Note</label><input class="inp" id="bow-note-${i}" value="${b.note||''}"></div>
+                <select class="inp" id="bow-tipo-${i}" ${!edit?'disabled':''}>${bowTypes.map(t=>`<option value="${t}" ${b.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+            <div><label class="form-label">Riser</label><input class="inp" id="bow-braccetto-${i}" value="${b.braccetto||''}" placeholder="Hoyt Xceed" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Flettenti</label><input class="inp" id="bow-marcaArco-${i}" value="${b.marcaArco||''}" placeholder="Uukha VX+" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Misura arco</label><input class="inp" id="bow-misuraArco-${i}" value="${b.misuraArco||''}" placeholder='25"' ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Libbraggio reale (lb)</label><input class="inp" type="number" id="bow-libbre-${i}" value="${b.libbre||''}" placeholder="40" ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Allungo (")</label><input class="inp" id="bow-allungo-${i}" value="${b.allungo||''}" placeholder='28"' ${!edit?'disabled':''}></div>
+            <div><label class="form-label">Note</label><input class="inp" id="bow-note-${i}" value="${b.note||''}" ${!edit?'disabled':''}></div>
         </div>
-        <button class="btn btn-gold btn-full" style="margin-top:0.6rem" onclick="window.eqSaveBow(${i})">💾 Salva Arco</button>
     </div>`;
 }
 window.eqSelectBow = (idx) => {
-    const eq=getEquipment(); eq.activeBowIdx=idx; localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const eq = S.equipment || {};
+    eq.activeBowIdx = idx;
+    S.equipment = eq;
     const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=(eq.bows||[]).map((b,i)=>bowCardHtml(b,i,i===idx)).join('');
     const dc=document.getElementById('bow-detail-container'); if(dc) dc.innerHTML=bowDetailHtml((eq.bows||[])[idx],idx);
 };
 window.eqAddBow = () => {
-    const eq=getEquipment(); if(!eq.bows)eq.bows=[];
+    const eq = S.equipment || {}; if(!eq.bows) eq.bows = [];
     eq.bows.push({nome:'',tipo:'Ricurvo',braccetto:'',marcaArco:'',misuraArco:'',libbre:'',allungo:'',note:''});
-    const ni=eq.bows.length-1; eq.activeBowIdx=ni;
-    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const ni = eq.bows.length - 1; eq.activeBowIdx = ni;
+    S.equipment = eq;
     const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=eq.bows.map((b,i)=>bowCardHtml(b,i,i===ni)).join('');
     const dc=document.getElementById('bow-detail-container'); if(dc) dc.innerHTML=bowDetailHtml(eq.bows[ni],ni);
-};
-window.eqSaveBow = (idx) => {
-    const eq=getEquipment(); if(!eq.bows)eq.bows=[];
-    eq.bows[idx]={
-        nome:document.getElementById(`bow-nome-${idx}`)?.value||'',
-        tipo:document.getElementById(`bow-tipo-${idx}`)?.value||'',
-        braccetto:document.getElementById(`bow-braccetto-${idx}`)?.value||'',
-        marcaArco:document.getElementById(`bow-marcaArco-${idx}`)?.value||'',
-        misuraArco:document.getElementById(`bow-misuraArco-${idx}`)?.value||'',
-        libbre:document.getElementById(`bow-libbre-${idx}`)?.value||'',
-        allungo:document.getElementById(`bow-allungo-${idx}`)?.value||'',
-        note:document.getElementById(`bow-note-${idx}`)?.value||'',
-    };
-    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
-    const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=eq.bows.map((b,i)=>bowCardHtml(b,i,i===idx)).join('');
-    showModal('✅ Salvato!',`Arco "${eq.bows[idx].nome||'Arco '+(idx+1)}" salvato.`,[{text:'OK'}]);
 };
 window.eqDeleteBow = (idx) => {
     showModal('Elimina Arco','Sei sicuro?',[
         {text:'Annulla',cls:'btn-ghost'},
         {text:'Elimina',cls:'btn-danger',fn:()=>{
-            const eq=getEquipment(); eq.bows.splice(idx,1);
+            const eq = S.equipment || {}; eq.bows.splice(idx,1);
             eq.activeBowIdx=Math.max(0,(eq.activeBowIdx||0)-(idx<=(eq.activeBowIdx||0)?1:0));
-            localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+            S.equipment = eq;
             const bows=eq.bows||[]; const act=eq.activeBowIdx||0;
             const bl=document.getElementById('bows-list'); if(bl) bl.innerHTML=bows.map((b,i)=>bowCardHtml(b,i,i===act)).join('');
             const dc=document.getElementById('bow-detail-container'); if(dc) dc.innerHTML=bows.length>0?bowDetailHtml(bows[act]||bows[0],act):'';
@@ -4174,18 +4166,27 @@ window.eqDeleteBow = (idx) => {
 };
 function renderAtletaMateriale() {
     setHeader('🏹 Materiale', S.atleta?.nome||'');
-    const eq = getEquipment();
+    const eq = S.equipment || {};
     const arrows = eq.arrows || [];
     const activeArrow = eq.activeArrowIdx || 0;
-    const bowTypes = ['Ricurvo','Compound','Longbow','Barebow','Altro'];
+    const edit = window._eqEditMode;
+
     render(`
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-bottom:1rem">
+            ${!edit ?
+                `<button class="btn btn-gold btn-sm" onclick="window.eqStartEdit()">✏️ Modifica</button>` :
+                `<button class="btn btn-ghost btn-sm" onclick="window.eqCancelEdit()">Annulla</button>
+                 <button class="btn btn-gold btn-sm" onclick="window.eqSave()">💾 Salva Materiale</button>`
+            }
+        </div>
+
         <!-- ARCHI MULTIPLI -->
         <div class="card card-gold" style="margin-bottom:1rem">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
                 <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold)">🏹 Archi</div>
-                <button class="btn btn-gold btn-sm" onclick="window.eqAddBow()">+ Aggiungi</button>
+                ${edit ? `<button class="btn btn-gold btn-sm" onclick="window.eqAddBow()">+ Aggiungi</button>` : ''}
             </div>
-            ${(eq.bows||[]).length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:0.5rem">Nessun arco configurato. Premi "+ Aggiungi".</p>`:''}
+            ${(eq.bows||[]).length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:0.5rem">Nessun arco configurato.</p>`:''}
             <div id="bows-list" style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
                 ${(eq.bows||[]).map((b,i)=>bowCardHtml(b,i,i===(eq.activeBowIdx||0))).join('')}
             </div>
@@ -4196,7 +4197,7 @@ function renderAtletaMateriale() {
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
                 <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold)">🪃 Frecce</div>
-                <button class="btn btn-gold btn-sm" onclick="window.eqAddArrow()">+ Aggiungi</button>
+                ${edit ? `<button class="btn btn-gold btn-sm" onclick="window.eqAddArrow()">+ Aggiungi</button>` : ''}
             </div>
             ${arrows.length===0?`<p style="text-align:center;color:var(--muted);font-size:0.83rem;padding:1rem">Nessuna freccia configurata.</p>`:''}
             <div id="arrows-list" style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
@@ -4207,86 +4208,114 @@ function renderAtletaMateriale() {
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
             <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold);margin-bottom:0.6rem">🔭 Mirino & Accessori</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.45rem">
-                <div><label class="form-label">Mirino</label><input class="inp" id="eq-mirino" value="${eq.mirino||''}" placeholder="Marca/modello"></div>
-                <div><label class="form-label">Stabilizzatori</label><input class="inp" id="eq-stabilizzatori" value="${eq.stabilizzatori||''}" placeholder="Es: Cartel"></div>
-                <div><label class="form-label">Corda</label><input class="inp" id="eq-corda" value="${eq.corda||''}" placeholder="Marca/materiale"></div>
-                <div><label class="form-label">Peso Totale (g)</label><input class="inp" type="number" id="eq-pesoTotale" value="${eq.pesoTotale||''}" placeholder="Con accessori"></div>
+                <div><label class="form-label">Mirino</label><input class="inp" id="eq-mirino" value="${eq.mirino||''}" placeholder="Marca/modello" ${!edit?'disabled':''}></div>
+                <div><label class="form-label">Stabilizzatori</label><input class="inp" id="eq-stabilizzatori" value="${eq.stabilizzatori||''}" placeholder="Es: Cartel" ${!edit?'disabled':''}></div>
+                <div><label class="form-label">Corda</label><input class="inp" id="eq-corda" value="${eq.corda||''}" placeholder="Marca/materiale" ${!edit?'disabled':''}></div>
+                <div><label class="form-label">Peso Totale (g)</label><input class="inp" type="number" id="eq-pesoTotale" value="${eq.pesoTotale||''}" placeholder="Con accessori" ${!edit?'disabled':''}></div>
             </div>
             <div style="margin-top:0.45rem"><label class="form-label">Note Tecniche / Setup</label>
-                <textarea class="inp" id="eq-note" rows="3" placeholder="Regolazioni, impostazioni...">${eq.note||''}</textarea></div>
+                <textarea class="inp" id="eq-note" rows="3" placeholder="Regolazioni, impostazioni..." ${!edit?'disabled':''}>${eq.note||''}</textarea></div>
         </div>
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
             <div style="font-family:'Rajdhani',sans-serif;font-size:1.05rem;font-weight:700;color:var(--gold);margin-bottom:0.6rem">⚙️ Impostazioni Tecniche</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.45rem">
-                <div><label class="form-label">Tiller (mm)</label><input class="inp" id="eq-tiller" value="${eq.tiller||''}" placeholder="+2"></div>
-                <div><label class="form-label">Brace Height</label><input class="inp" id="eq-braceHeight" value="${eq.braceHeight||''}" placeholder="230"></div>
-                <div><label class="form-label">Bottone</label><input class="inp" id="eq-plung" value="${eq.plung||''}" placeholder="0.5"></div>
+                <div><label class="form-label">Tiller (mm)</label><input class="inp" id="eq-tiller" value="${eq.tiller||''}" placeholder="+2" ${!edit?'disabled':''}></div>
+                <div><label class="form-label">Brace Height</label><input class="inp" id="eq-braceHeight" value="${eq.braceHeight||''}" placeholder="230" ${!edit?'disabled':''}></div>
+                <div><label class="form-label">Bottone</label><input class="inp" id="eq-plung" value="${eq.plung||''}" placeholder="0.5" ${!edit?'disabled':''}></div>
             </div>
             <div style="margin-top:0.6rem">
                 <label class="form-label">📏 Scala Mirino per Distanza (mm)</label>
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.35rem;margin-top:0.3rem">
                     ${['18','25','40','50','60','70'].map(d=>`<div>
                         <label class="form-label">${d}m</label>
-                        <input class="inp" id="eq-mirino-${d}" value="${(eq.scalaMirino&&eq.scalaMirino[d])||''}" placeholder="mm" style="text-align:center">
+                        <input class="inp" id="eq-mirino-${d}" value="${(eq.scalaMirino&&eq.scalaMirino[d])||''}" placeholder="mm" style="text-align:center" ${!edit?'disabled':''}>
                     </div>`).join('')}
                 </div>
             </div>
             <div style="margin-top:0.5rem"><label class="form-label">Ultimo aggiornamento setup</label>
-                <input class="inp" type="date" id="eq-dataSetup" value="${eq.dataSetup||''}"></div>
+                <input class="inp" type="date" id="eq-dataSetup" value="${eq.dataSetup||''}" ${!edit?'disabled':''}></div>
         </div>
-        <button class="btn btn-gold btn-full btn-lg" onclick="window.eqSave()">💾 Salva Configurazione</button>
+        ${edit ? `<button class="btn btn-gold btn-full btn-lg" onclick="window.eqSave()">💾 Salva Materiale</button>` : ''}
     `);
 }
+window.eqStartEdit = () => {
+    window._eqOriginal = JSON.parse(JSON.stringify(S.equipment || {}));
+    window._eqEditMode = true;
+    renderAtletaMateriale();
+};
+window.eqCancelEdit = () => {
+    S.equipment = window._eqOriginal || S.equipment;
+    window._eqEditMode = false;
+    renderAtletaMateriale();
+};
 window.eqSelectArrow = (idx) => {
-    const eq=getEquipment(); eq.activeArrowIdx=idx; localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const eq = S.equipment || {};
+    eq.activeArrowIdx = idx;
+    S.equipment = eq;
     const al=document.getElementById('arrows-list'); if(al) al.innerHTML=eq.arrows.map((a,i)=>arrowCardHtml(a,i,i===idx)).join('');
     const dc=document.getElementById('arrow-detail-container'); if(dc) dc.innerHTML=arrowDetailHtml(eq.arrows[idx],idx);
 };
 window.eqAddArrow = () => {
-    const eq=getEquipment(); if(!eq.arrows)eq.arrows=[];
+    const eq = S.equipment || {}; if(!eq.arrows) eq.arrows = [];
     eq.arrows.push({nome:'',modello:'',spine:'',lunghezza:'',diametro:'',pesoPunta:'',cocca:'',note:''});
-    const ni=eq.arrows.length-1; eq.activeArrowIdx=ni;
-    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+    const ni = eq.arrows.length - 1; eq.activeArrowIdx = ni;
+    S.equipment = eq;
     const al=document.getElementById('arrows-list'); if(al) al.innerHTML=eq.arrows.map((a,i)=>arrowCardHtml(a,i,i===ni)).join('');
     const dc=document.getElementById('arrow-detail-container'); if(dc) dc.innerHTML=arrowDetailHtml(eq.arrows[ni],ni);
-};
-window.eqSaveArrow = (idx) => {
-    const eq=getEquipment(); if(!eq.arrows)eq.arrows=[];
-    eq.arrows[idx]={
-        nome:document.getElementById(`arr-nome-${idx}`)?.value||'',
-        modello:document.getElementById(`arr-modello-${idx}`)?.value||'',
-        spine:document.getElementById(`arr-spine-${idx}`)?.value||'',
-        lunghezza:document.getElementById(`arr-lunghezza-${idx}`)?.value||'',
-        diametro:document.getElementById(`arr-diametro-${idx}`)?.value||'',
-        pesoPunta:document.getElementById(`arr-pesoPunta-${idx}`)?.value||'',
-        cocca:document.getElementById(`arr-cocca-${idx}`)?.value||'',
-        alette:document.getElementById(`arr-alette-${idx}`)?.value||'',
-        coloreAlette:document.getElementById(`arr-coloreAlette-${idx}`)?.value||'',
-        note:document.getElementById(`arr-note-${idx}`)?.value||'',
-    };
-    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
-    const al=document.getElementById('arrows-list'); if(al) al.innerHTML=eq.arrows.map((a,i)=>arrowCardHtml(a,i,i===idx)).join('');
-    showModal('✅ Salvato!',`Freccia "${eq.arrows[idx].nome||'Tipologia '+(idx+1)}" salvata.`,[{text:'OK'}]);
 };
 window.eqDeleteArrow = (idx) => {
     showModal('Elimina Freccia','Sei sicuro di voler eliminare questa tipologia?',[
         {text:'Annulla',cls:'btn-ghost'},
         {text:'Elimina',cls:'btn-danger',fn:()=>{
-            const eq=getEquipment(); eq.arrows.splice(idx,1);
+            const eq = S.equipment || {}; eq.arrows.splice(idx,1);
             eq.activeArrowIdx=Math.max(0,(eq.activeArrowIdx||0)-(idx<=(eq.activeArrowIdx||0)?1:0));
-            localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
+            S.equipment = eq;
             const arrows=eq.arrows; const act=eq.activeArrowIdx;
             const al=document.getElementById('arrows-list'); if(al) al.innerHTML=arrows.map((a,i)=>arrowCardHtml(a,i,i===act)).join('');
             const dc=document.getElementById('arrow-detail-container'); if(dc) dc.innerHTML=arrows.length>0?arrowDetailHtml(arrows[act]||arrows[0],act):'';
         }}
     ]);
 };
-window.eqSave = () => {
-    const existing=getEquipment();
+window.eqSave = async () => {
+    const eq = S.equipment || {};
     const scalaMirino={};
     ['18','25','40','50','60','70'].forEach(d=>{scalaMirino[d]=document.getElementById(`eq-mirino-${d}`)?.value||'';});
-    const eq={...existing,
-                mirino:document.getElementById('eq-mirino')?.value||'',
+
+    // Update active arrow if detail is visible
+    if (eq.arrows && eq.arrows.length > 0) {
+        const i = eq.activeArrowIdx || 0;
+        eq.arrows[i] = {
+            nome:document.getElementById(`arr-nome-${i}`)?.value||'',
+            modello:document.getElementById(`arr-modello-${i}`)?.value||'',
+            spine:document.getElementById(`arr-spine-${i}`)?.value||'',
+            lunghezza:document.getElementById(`arr-lunghezza-${i}`)?.value||'',
+            diametro:document.getElementById(`arr-diametro-${i}`)?.value||'',
+            pesoPunta:document.getElementById(`arr-pesoPunta-${i}`)?.value||'',
+            cocca:document.getElementById(`arr-cocca-${i}`)?.value||'',
+            alette:document.getElementById(`arr-alette-${i}`)?.value||'',
+            coloreAlette:document.getElementById(`arr-coloreAlette-${i}`)?.value||'',
+            note:document.getElementById(`arr-note-${i}`)?.value||'',
+        };
+    }
+
+    // Update active bow if detail is visible
+    if (eq.bows && eq.bows.length > 0) {
+        const i = eq.activeBowIdx || 0;
+        eq.bows[i] = {
+            nome:document.getElementById(`bow-nome-${i}`)?.value||'',
+            tipo:document.getElementById(`bow-tipo-${i}`)?.value||'',
+            braccetto:document.getElementById(`bow-braccetto-${i}`)?.value||'',
+            marcaArco:document.getElementById(`bow-marcaArco-${i}`)?.value||'',
+            misuraArco:document.getElementById(`bow-misuraArco-${i}`)?.value||'',
+            libbre:document.getElementById(`bow-libbre-${i}`)?.value||'',
+            allungo:document.getElementById(`bow-allungo-${i}`)?.value||'',
+            note:document.getElementById(`bow-note-${i}`)?.value||'',
+        };
+    }
+
+    const updatedEq = {
+        ...eq,
+        mirino:document.getElementById('eq-mirino')?.value||'',
         stabilizzatori:document.getElementById('eq-stabilizzatori')?.value||'',
         corda:document.getElementById('eq-corda')?.value||'',
         pesoTotale:document.getElementById('eq-pesoTotale')?.value||'',
@@ -4295,10 +4324,20 @@ window.eqSave = () => {
         braceHeight:document.getElementById('eq-braceHeight')?.value||'',
         plung:document.getElementById('eq-plung')?.value||'',
         dataSetup:document.getElementById('eq-dataSetup')?.value||'',
-        scalaMirino, updatedAt: new Date().toISOString().split('T')[0]
+        scalaMirino,
+        updatedAt: new Date().toISOString().split('T')[0]
     };
-    localStorage.setItem(getEquipmentKey(),JSON.stringify(eq));
-    showModal('✅ Salvato!','Configurazione materiale salvata!',[{text:'OK'}]);
+
+    try {
+        await setDoc(equipmentRef(S.asd.id, S.atleta.id), updatedEq);
+        S.equipment = updatedEq;
+        localStorage.setItem(getEquipmentKey(), JSON.stringify(updatedEq));
+        window._eqEditMode = false;
+        renderAtletaMateriale();
+        showModal('✅ Salvato!', 'Configurazione materiale salvata su Firebase!', [{text:'OK'}]);
+    } catch(e) {
+        showModal('❌ Errore', 'Errore durante il salvataggio: ' + e.message, [{text:'OK'}]);
+    }
 };
 
 
@@ -5392,7 +5431,8 @@ window.backupAtletaDati = async () => {
     try {
         await loadAtletaSessioni();
         const goals = await loadObiettivi();
-        const equipment = getEquipment();
+        const eqSnap = await getDoc(equipmentRef(S.asd.id, S.atleta.id));
+        const equipment = eqSnap.exists() ? eqSnap.data() : getEquipment();
 
         const backupData = {
             version: "2.0",
@@ -5533,6 +5573,7 @@ window._executeRestore = async (data) => {
         }
 
         if (doEq && data.equipment) {
+            await setDoc(equipmentRef(S.asd.id, S.atleta.id), data.equipment);
             localStorage.setItem(getEquipmentKey(), JSON.stringify(data.equipment));
         }
 
