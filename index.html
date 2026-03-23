@@ -3165,9 +3165,16 @@ function renderRegistrationForm({ type='Allenamento' }) {
                 <div><label class="form-label">Tipo Targa *</label>
                     <select class="inp" id="tk-targa" onchange="window.tkOnTargaChange(this.value)">${TK_TARGA.map(o=>`<option>${o}</option>`).join('')}</select></div>
             </div>
-            <!-- Formato standard (nascosto per 3D) -->
-            <div id="tk-formato-wrap" style="margin-top:0.6rem"><label class="form-label">Formato Frecce *</label>
-                <select class="inp" id="tk-formato">${TK_FORMATO.map(o=>`<option>${o}</option>`).join('')}</select></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-top:0.6rem">
+                <div id="tk-formato-wrap">
+                    <label class="form-label">Formato Frecce *</label>
+                    <select class="inp" id="tk-formato">${TK_FORMATO.map(o=>`<option>${o}</option>`).join('')}</select>
+                </div>
+                <div>
+                    <label class="form-label">Frecce Programmate</label>
+                    <input class="inp" type="number" id="tk-frecce-prog" placeholder="Es: 60" min="0">
+                </div>
+            </div>
             <!-- Pannello 3D (visibile solo per 3D) -->
             <div id="tk-3d-wrap" style="display:none;margin-top:0.75rem">
                 <div style="background:rgba(201,162,39,0.07);border:1.5px solid rgba(201,162,39,0.4);border-radius:12px;padding:0.85rem">
@@ -3190,21 +3197,25 @@ function renderRegistrationForm({ type='Allenamento' }) {
                 </div>
             </div>
         </div>
-        ${(()=>{
-            const showEserc = S.atleta?.esercizConsigliatiCoach &&
-                (S.atleta.esercizDurataSess === undefined || S.atleta.esercizDurataSess > 0) &&
-                (!S.atleta.esercizFilter || S.atleta.esercizFilter === 'both' || S.atleta.esercizFilter.toLowerCase() === type.toLowerCase());
+        <div class="form-section">
+            <label class="form-label">🎯 Esercizi Consigliati / Obiettivi Sessione</label>
+            ${(()=>{
+                const coachEserc = S.atleta?.esercizConsigliatiCoach &&
+                    (S.atleta.esercizDurataSess === undefined || S.atleta.esercizDurataSess > 0) &&
+                    (!S.atleta.esercizFilter || S.atleta.esercizFilter === 'both' || S.atleta.esercizFilter.toLowerCase() === type.toLowerCase());
 
-            if (!showEserc) return '';
-            return `<div class="form-section"><label class="form-label">🎯 Esercizi Consigliati</label>
-                <div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">
-                    💬 <strong style="color:var(--gold)">Dal coach</strong> (${S.atleta.esercizAggiornatiIl||''}): ${S.atleta.esercizConsigliatiCoach.substring(0,100)}${S.atleta.esercizConsigliatiCoach.length>100?'…':''}
-                    ${S.atleta.esercizDurataSess ? `<br>⏳ <span style="color:var(--gold)">Residuo: ${S.atleta.esercizDurataSess} sessioni</span>` : ''}
-                </div>
-                <textarea class="inp" id="tk-eserc" rows="2" placeholder="Dal coach...">${S.atleta.esercizConsigliatiCoach}</textarea>
-                <input type="hidden" id="tk-eserc-decrement" value="1">
-            </div>`;
-        })()}
+                if (!coachEserc) return `<textarea class="inp" id="tk-eserc" rows="2" placeholder="Cosa vuoi allenare oggi?"></textarea>`;
+
+                return `
+                    <div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:6px;padding:0.4rem 0.6rem;font-size:0.75rem;color:var(--muted);margin-bottom:0.3rem">
+                        💬 <strong style="color:var(--gold)">Nota dal coach</strong> (${S.atleta.esercizAggiornatiIl||''}): ${S.atleta.esercizConsigliatiCoach}
+                        ${S.atleta.esercizDurataSess ? `<br>⏳ <span style="color:var(--gold)">Residuo: ${S.atleta.esercizDurataSess} sessioni</span>` : ''}
+                    </div>
+                    <textarea class="inp" id="tk-eserc" rows="2" placeholder="Esercizi...">${S.atleta.esercizConsigliatiCoach}</textarea>
+                    <input type="hidden" id="tk-eserc-decrement" value="1">
+                `;
+            })()}
+        </div>
         <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem">
             <button class="btn btn-gold btn-full btn-lg" id="tk-startbtn" onclick="window.tkStart('${type}')">▶ Inizia Segnapunti</button>
             <button class="btn btn-outline btn-full" onclick="window.tkStartQS('${type}')">⚡ Quick Score</button>
@@ -3289,9 +3300,8 @@ window.tkStart=(type)=>{
         const piazzole = parseInt(document.getElementById('tk-3d-piazzole')?.value)||0;
         if (!piazzole) return showModal('Errore','Inserisci il numero di piazzole.',[{text:'OK'}]);
     }
-    // Auto-carica esercizi consigliati dal coach se presenti
-    const esercizDalCoach = S.atleta?.esercizConsigliatiCoach || '';
     const esercizForm = document.getElementById('tk-eserc')?.value || '';
+    const frecceProg = parseInt(document.getElementById('tk-frecce-prog')?.value) || 0;
     const decrementEserc = document.getElementById('tk-eserc-decrement')?.value === '1';
     TK.session={
         type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
@@ -3301,7 +3311,8 @@ window.tkStart=(type)=>{
         tipoTarga:ns?'':document.getElementById('tk-targa')?.value||'',
         formatoGara:ns?'':(is3D?`3D ${window._tk3dEnte} ${parseInt(document.getElementById('tk-3d-piazzole')?.value)||0}p ${window._tk3dFrec}f`:document.getElementById('tk-formato')?.value||'30 frecce (3x10)'),
         d3:(!ns&&is3D)?{ente:window._tk3dEnte,piazzole:parseInt(document.getElementById('tk-3d-piazzole')?.value)||24,frecce:window._tk3dFrec,piazzola:0,frecciaCorrente:1}:null,
-        esercizConsigliati:esercizForm || esercizDalCoach,
+        esercizConsigliati: esercizForm,
+        frecceProgrammate: frecceProg,
         decrementEsercCoach: decrementEserc,
         trainingWithoutScore:ns,
         noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
@@ -3316,6 +3327,7 @@ window.tkStartQS=(type)=>{
     const luogo=document.getElementById('tk-luogo')?.value.trim();
     if(!luogo)return showModal('Errore','Inserisci il luogo.',[{text:'OK'}]);
     const esercForm = document.getElementById('tk-eserc')?.value || '';
+    const frecceProg = parseInt(document.getElementById('tk-frecce-prog')?.value) || 0;
     const decrementEserc = document.getElementById('tk-eserc-decrement')?.value === '1';
     TK.session={
         type,data:document.getElementById('tk-data')?.value||new Date().toISOString().split('T')[0],
@@ -3324,7 +3336,8 @@ window.tkStartQS=(type)=>{
         distanza:document.getElementById('tk-dist')?.value||'',
         tipoTarga:document.getElementById('tk-targa')?.value||'',
         formatoGara:document.getElementById('tk-formato')?.value||'',
-        esercizConsigliati:esercForm,
+        esercizConsigliati: esercForm,
+        frecceProgrammate: frecceProg,
         decrementEsercCoach: decrementEserc,
         noteCondizioniFisiche:'',esercizSvolti:'',notePreGara:'',notePostGara:'',id:Date.now()
     };
