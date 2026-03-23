@@ -2070,7 +2070,6 @@ async function renderAtletaSelect({ asdId }) {
             </div>
             <div style="border-top:1px solid var(--border);padding-top:0.6rem;display:flex;flex-direction:column;gap:0.35rem;font-size:0.82rem">
                 ${asd.telefono ? `<div style="display:flex;align-items:center;gap:6px">📞 <a href="tel:${asd.telefono}" style="color:var(--gold);text-decoration:none">${asd.telefono}</a></div>` : ''}
-                ${asd.email    ? `<div style="display:flex;align-items:center;gap:6px">✉️ <a href="mailto:${asd.email}" style="color:var(--gold);text-decoration:none">${asd.email}</a></div>` : ''}
                 ${asd.facebook ? `<div style="display:flex;align-items:center;gap:6px">📘 <a href="${asd.facebook}" target="_blank" style="color:var(--gold);text-decoration:none">Facebook</a></div>` : ''}
                 ${asd.instagram? `<div style="display:flex;align-items:center;gap:6px">📸 <a href="${asd.instagram}" target="_blank" style="color:var(--gold);text-decoration:none">Instagram</a></div>` : ''}
                 ${asd.sito     ? `<div style="display:flex;align-items:center;gap:6px">🌐 <a href="${asd.sito}" target="_blank" style="color:var(--gold);text-decoration:none">Sito Web</a></div>` : ''}
@@ -2190,15 +2189,48 @@ function renderAtletaLogin() {
                     <div style="font-size:0.78rem;color:var(--muted)">${asd.nome}</div>
                 </div>
                 <div>
-                    <label class="form-label">Password</label>
+                    <label class="form-label">Password di Accesso</label>
                     <input class="inp" id="atl-pwd-login" type="password" placeholder="Inserisci la tua password"
                            onkeydown="if(event.key==='Enter') window.doAtletaLogin()">
                 </div>
                 <button class="btn btn-gold btn-full btn-lg" style="margin-top:1rem" onclick="window.doAtletaLogin()">Accedi</button>
+                <div style="text-align:center;margin-top:0.75rem">
+                    <span style="color:var(--gold);cursor:pointer;font-size:0.8rem" onclick="window.richiediResetPwdAtleta()">Dimenticato la password?</span>
+                </div>
             </div>
         </div>
     `);
 }
+
+window.richiediResetPwdAtleta = () => {
+    const asd = S._loginAsd;
+    const atleta = S._loginAtleta;
+    if (!asd || !atleta) return;
+
+    showModal('🔑 Richiesta Reset Password', `
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
+            <p style="font-size:0.82rem;color:var(--muted)">Inviando questa richiesta, il tuo coach riceverà un messaggio per resettare la tua password.</p>
+            <p style="font-weight:700;color:var(--gold)">Atleta: ${atleta.nome} ${atleta.cognome}</p>
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'Invia Richiesta', cls:'btn-gold', fn: async () => {
+            try {
+                const extCol = collection(db, `${APP_NS}/data/asd/${asd.id}/messaggi_esterni`);
+                await addDoc(extCol, {
+                    mittente: `${atleta.nome} ${atleta.cognome}`,
+                    testo: `RICHIESTA RESET PASSWORD per l'atleta ${atleta.nome} ${atleta.cognome}.`,
+                    tipo: 'reset_pwd',
+                    atletaId: atleta.id,
+                    createdAt: serverTimestamp()
+                });
+                showModal('✅ Richiesta Inviata', 'Il tuo coach è stato notificato. Ti contatterà per fornirti la nuova password.', [{text:'OK'}]);
+            } catch(e) {
+                showModal('❌ Errore', 'Impossibile inviare la richiesta: ' + e.message, [{text:'OK'}]);
+            }
+        }}
+    ]);
+};
 
 window.doAtletaLogin = async function() {
     const asd    = S._loginAsd;
@@ -4506,17 +4538,23 @@ function fmtDuration(min) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ── OBIETTIVI ───────────────────────────────────────────────────────────────
-const goalsCol = () => collection(db, `${APP_NS}/data/asd/${S.asd?.id}/atleti/${S.atleta?.id}/goals`);
+const goalsCol = () => {
+    if (!S.asd?.id || !S.atleta?.id) return null;
+    return collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${S.atleta.id}/goals`);
+};
 
 async function loadObiettivi() {
     try {
-        const snap = await getDocs(goalsCol());
+        const col = goalsCol();
+        if (!col) return [];
+        const snap = await getDocs(col);
         return snap.docs.map(d => ({id:d.id,...d.data()}));
-    } catch(e) { return []; }
+    } catch(e) { console.error("Error loading goals:", e); return []; }
 }
 
-function calcGoalProgress(goal, sessioni) {
+function calcGoalProgress(goal, sessioni = []) {
     const now = new Date();
+    const sess = sessioni || [];
     let start, end;
     if (goal.period === 'weekly') {
         const dow = now.getDay();
@@ -4532,9 +4570,8 @@ function calcGoalProgress(goal, sessioni) {
     const ss = start.toISOString().split('T')[0], se = end.toISOString().split('T')[0];
 
     // Filtro base per periodo e data inizio monitoraggio
-    // La data limite deve essere la più recente tra l'inizio del periodo e la data di inizio monitoraggio
     const limitDate = (goal.startDate && goal.startDate > ss) ? goal.startDate : ss;
-    let rel = sessioni.filter(s => s.data >= limitDate && s.data <= se);
+    let rel = sess.filter(s => s && s.data >= limitDate && s.data <= se);
 
     // Filtro per tipo sessione (Gara / Allenamento)
     if (goal.filterType === 'gara') rel = rel.filter(s => s.type === 'Gara');
@@ -4552,8 +4589,8 @@ function calcGoalProgress(goal, sessioni) {
                 if (goal.filterTurn === 't2') return [s.turn2Score || 0];
                 if (goal.filterTurn === 't1_or_t2') return [s.turn1Score || 0, s.turn2Score || 0];
                 return [s.totalScore || 0];
-            });
-            current = Math.max(...scores);
+            }).filter(val => !isNaN(val));
+            current = scores.length > 0 ? Math.max(...scores) : 0;
         } else {
             current = 0;
         }
@@ -4568,14 +4605,16 @@ function calcGoalProgress(goal, sessioni) {
 }
 
 async function renderAtletaObiettivi() {
-    setHeader('🏅 Obiettivi', S.atleta?.nome||'');
-    await loadAtletaSessioni();
-    const goals = await loadObiettivi();
+    try {
+        setHeader('🏅 Obiettivi', S.atleta?.nome||'');
+        await loadAtletaSessioni();
+        const goals = await loadObiettivi();
 
-    const goalCard = (g) => {
-        const prog = calcGoalProgress(g, S.sessioni);
-        const pct = Math.min(100, Math.round((prog.current/prog.target)*100));
-        const done = g.completed;
+        const goalCard = (g) => {
+            const prog = calcGoalProgress(g, S.sessioni);
+            const target = prog.target || 1; // avoid division by zero
+            const pct = Math.min(100, Math.round((prog.current/target)*100));
+            const done = g.completed;
         return `<div class="card" style="margin-bottom:0.75rem;border-color:${done?'#3d9970':'var(--border)'}">
             <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem">
                 <div style="flex:1">
@@ -4608,10 +4647,14 @@ async function renderAtletaObiettivi() {
         </div>`;
     };
 
-    render(`
-        <button class="btn btn-gold btn-full" style="margin-bottom:1rem" onclick="window.newObiettivo()">➕ Nuovo Obiettivo</button>
-        ${goals.length===0?`<p style="text-align:center;color:var(--muted);padding:2rem">Nessun obiettivo ancora. Creane uno!</p>`:goals.map(goalCard).join('')}
-    `);
+        render(`
+            <button class="btn btn-gold btn-full" style="margin-bottom:1rem" onclick="window.newObiettivo()">➕ Nuovo Obiettivo</button>
+            ${goals.length===0?`<p style="text-align:center;color:var(--muted);padding:2rem">Nessun obiettivo ancora. Creane uno!</p>`:goals.map(goalCard).join('')}
+        `);
+    } catch(e) {
+        console.error("Error rendering goals:", e);
+        render(`<div style="text-align:center;padding:2rem;color:var(--danger)">Errore durante il caricamento degli obiettivi. Riprova più tardi.</div>`);
+    }
 }
 
 window.newObiettivo = () => {
