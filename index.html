@@ -256,7 +256,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
 import { getFirestore, doc, addDoc, deleteDoc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, serverTimestamp, updateDoc, orderBy } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
 
 // ── FIREBASE CONFIG (test project) ─────────────────────────────────────────
@@ -379,6 +379,10 @@ function showPrivacy() {
 
 function buildNav() {
     let items = '', userName = '';
+
+    // Check if athlete is admin of their ASD
+    const athleteIsAdmin = S.role === 'atleta' && isAtletaAdmin();
+
     if (!S.role) {
         userName = 'Visitatore';
         items = [
@@ -405,8 +409,7 @@ function buildNav() {
     } else if (S.role === 'atleta') {
         userName = `${S.atleta?.nome||''} ${S.atleta?.cognome||''}`;
         items = [
-            { icon:'🏠', label:'Menu',              fn:"window.setView('atletaMenu')" },
-
+            { icon:'🏠', label:'Menu Atleta',        fn:"window.setView('atletaMenu')" },
             { icon:'🎯', label:'Stat. Bersaglio',   fn:"window.setView('targetStats')" },
             { icon:'🏅', label:'Obiettivi',         fn:"window.setView('atletaObiettivi')" },
             { icon:'⚖️', label:'Confronta',         fn:"window.setView('confrontaSessioni')" },
@@ -418,6 +421,18 @@ function buildNav() {
             { icon:'⚙️', label:'Impostazioni',      fn:"window.setView('impostazioni')" },
             { icon:'📨', label:'Messaggi',          fn:"window.setView('atletaMessaggi')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
+
+        if (athleteIsAdmin) {
+            items += `
+                <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+                    <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
+                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
+                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Atleti</div>
+                    <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi</div>
+                </div>
+            `;
+        }
+
         items += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
             <div class="nav-item" style="color:var(--danger)" onclick="logoutAtleta()">🚪 Logout</div>
         </div>`;
@@ -432,8 +447,48 @@ db   = getFirestore(app);
 auth = getAuth(app);
 
 onAuthStateChanged(auth, async user => {
-    if (!user) await signInAnonymously(auth);
+    if (!user) {
+        await signInAnonymously(auth);
+        return;
+    }
+
     await loadAllAsd();
+
+    if (!user.isAnonymous) {
+        // Possibile ASD loggata
+        const asdSnap = await getDoc(doc(db, `${APP_NS}/data/asd`, user.uid));
+        if (asdSnap.exists()) {
+            S.role = 'asd';
+            S.asd = { id: asdSnap.id, ...asdSnap.data() };
+            await loadAtleti();
+            buildNav();
+            window.setView('asdDashboard');
+            return;
+        }
+    }
+
+    // Se arriviamo qui, o è anonimo o non è una ASD (magari sessione atleta persistente?)
+    // Per ora, l'atleta usa ancora il login "legacy" basato su localStorage per la sessione,
+    // ma verifichiamo se c'è un match in localStorage
+    const atlSess = localStorage.getItem('acm_atleta_session');
+    if (atlSess) {
+        try {
+            const { asdId, atletaId } = JSON.parse(atlSess);
+            const asd = S.allAsd.find(a => a.id === asdId);
+            if (asd) {
+                const atlSnap = await getDoc(doc(db, `${APP_NS}/data/asd/${asdId}/atleti`, atletaId));
+                if (atlSnap.exists()) {
+                    S.role = 'atleta';
+                    S.asd = asd;
+                    S.atleta = { id: atlSnap.id, ...atlSnap.data() };
+                    buildNav();
+                    window.setView('atletaMenu');
+                    return;
+                }
+            }
+        } catch(e) {}
+    }
+
     window.setView('homeLogin');
 });
 
@@ -481,7 +536,9 @@ window.setView = async (view, params={}) => {
         case 'asdProfilo':      return renderAsdProfilo();
         case 'atletaSelect':    return renderAtletaSelect(params);
         case 'atletaLogin':     return renderAtletaLogin(params);
-        case 'atletaMenu':      return renderAtletaMenu();
+        case 'atletaMenu':
+            if (!S.sessioni || S.sessioni.length === 0) await loadAtletaSessioni();
+            return renderAtletaMenu();
         case 'atletaDati':      return renderAtletaDati();
         case 'atletaMessaggi':  return renderAtletaMessaggi();
         // Tracker views (atleta)
@@ -1161,16 +1218,20 @@ function renderAsdLogin() {
                 <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.6rem;font-weight:700;color:var(--gold);margin-bottom:1rem">🔐 Accesso ASD</h2>
                 <div style="display:flex;flex-direction:column;gap:0.85rem">
                     <div>
-                        <label class="form-label">Nome ASD</label>
-                        <input class="inp" id="asd-login-nome" placeholder="Es: ASD Arcieri del Sole">
+                        <label class="form-label">Email Responsabile</label>
+                        <input class="inp" id="asd-login-email" placeholder="email@esempio.it">
                     </div>
                     <div>
                         <label class="form-label">Password ASD</label>
                         <input class="inp" id="asd-login-pwd" type="password" placeholder="Password">
                     </div>
                     <button class="btn btn-gold btn-full btn-lg" onclick="window.doAsdLogin()">Accedi</button>
+
+                    <div style="text-align:center;margin-top:0.5rem">
+                        <span style="color:var(--gold);cursor:pointer;font-size:0.8rem" onclick="window.showResetAsdPwd()">Hai dimenticato la password?</span>
+                    </div>
                 </div>
-                <div style="text-align:center;margin-top:1rem;font-size:0.82rem;color:var(--muted)">
+                <div style="text-align:center;margin-top:1rem;font-size:0.82rem;color:var(--muted);border-top:1px solid var(--border);padding-top:1rem">
                     Non hai un account? <span style="color:var(--gold);cursor:pointer" onclick="window.setView('asdRegister')">Registra ASD</span>
                 </div>
             </div>
@@ -1179,21 +1240,38 @@ function renderAsdLogin() {
 }
 
 window.doAsdLogin = async function() {
-    const nome = $('asd-login-nome')?.value.trim();
-    const pwd  = $('asd-login-pwd')?.value.trim();
-    if (!nome || !pwd) return showModal('Errore','Inserisci nome ASD e password.',[{text:'OK'}]);
+    const email = $('asd-login-email')?.value.trim();
+    const pwd   = $('asd-login-pwd')?.value.trim();
+    if (!email || !pwd) return showModal('Errore','Inserisci email e password.',[{text:'OK'}]);
 
-    await loadAllAsd();
-    const asd = S.allAsd.find(a => a.nome.toLowerCase() === nome.toLowerCase() && a.pwdHash === hashPwd(pwd));
-    if (!asd) return showModal('Errore','Nome ASD o password errati.',[{text:'OK'}]);
-
-    S.role = 'asd';
-    S.asd  = asd;
-    localStorage.setItem('acm_asd_session', JSON.stringify({ id: asd.id }));
-    await loadAtleti();
-    buildNav();
-    window.setView('asdDashboard');
+    try {
+        await signInWithEmailAndPassword(auth, email, pwd);
+        // buildNav e setView verranno gestiti da onAuthStateChanged
+    } catch(e) {
+        showModal('❌ Errore Login', e.message, [{text:'OK'}]);
+    }
 }
+
+window.showResetAsdPwd = () => {
+    showModal('🔑 Reset Password', `
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
+            <p style="font-size:0.8rem;color:var(--muted)">Inserisci l'email della tua ASD per ricevere il link di reset.</p>
+            <input class="inp" type="email" id="reset-email" placeholder="email@esempio.it">
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'Invia Email', cls:'btn-gold', fn: async () => {
+            const email = document.getElementById('reset-email')?.value.trim();
+            if (!email) return;
+            try {
+                await sendPasswordResetEmail(auth, email);
+                showModal('✅ Inviata!', 'Email di reset inviata! Controlla la tua casella di posta.', [{text:'OK'}]);
+            } catch(e) {
+                showModal('❌ Errore', e.message, [{text:'OK'}]);
+            }
+        }}
+    ]);
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ── ASD REGISTER ────────────────────────────────────────────────────────────
@@ -1206,8 +1284,14 @@ function renderAsdRegister() {
             <div class="card card-gold">
                 <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.6rem;font-weight:700;color:var(--gold);margin-bottom:1rem">➕ Registra ASD</h2>
                 <div style="display:flex;flex-direction:column;gap:0.85rem">
-                    <div><label class="form-label">Nome ASD *</label>
+                    <div><label class="form-label">Nome ASD (visibile a tutti) *</label>
                         <input class="inp" id="reg-nome" placeholder="Es: ASD Arcieri del Sole"></div>
+                    <div><label class="form-label">Email Responsabile (per login) *</label>
+                        <input class="inp" type="email" id="reg-email" placeholder="email@esempio.it"></div>
+                    <div><label class="form-label">User ASD (slug/identificativo) *</label>
+                        <input class="inp" id="reg-user" placeholder="Es: arcierisole"></div>
+                    <div><label class="form-label">Amministratore Webapp (Nome Cognome) *</label>
+                        <input class="inp" id="reg-admin" placeholder="Es: Mario Rossi"></div>
                     <div><label class="form-label">Città</label>
                         <input class="inp" id="reg-citta" placeholder="Es: Roma"></div>
                     <div><label class="form-label">Password ASD * <span style="color:var(--muted);font-size:0.75rem">(min. 6 caratteri)</span></label>
@@ -1223,32 +1307,49 @@ function renderAsdRegister() {
 
 window.doAsdRegister = async function() {
     const nome  = $('reg-nome')?.value.trim();
+    const email = $('reg-email')?.value.trim();
+    const user  = $('reg-user')?.value.trim().toLowerCase();
+    const admin = $('reg-admin')?.value.trim();
     const citta = $('reg-citta')?.value.trim();
     const pwd   = $('reg-pwd')?.value.trim();
     const pwd2  = $('reg-pwd2')?.value.trim();
 
-    if (!nome) return showModal('Errore','Inserisci il nome della ASD.',[{text:'OK'}]);
-    if (!pwd)  return showModal('Errore','Inserisci una password.',[{text:'OK'}]);
+    if (!nome)  return showModal('Errore','Inserisci il nome della ASD.',[{text:'OK'}]);
+    if (!email) return showModal('Errore','Inserisci l\'email responsabile.',[{text:'OK'}]);
+    if (!user)  return showModal('Errore','Inserisci lo User ASD.',[{text:'OK'}]);
+    if (!admin) return showModal('Errore','Inserisci il Nome Amministratore.',[{text:'OK'}]);
+    if (!pwd)   return showModal('Errore','Inserisci una password.',[{text:'OK'}]);
     if (pwd.length < 6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK'}]);
     if (pwd !== pwd2)   return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
 
     await loadAllAsd();
-    if (S.allAsd.find(a => a.nome.toLowerCase() === nome.toLowerCase())) {
-        return showModal('Errore','Esiste già una ASD con questo nome.',[{text:'OK'}]);
+    if (S.allAsd.find(a => (a.username||'').toLowerCase() === user)) {
+        return showModal('Errore','Esiste già una ASD con questo User.',[{text:'OK'}]);
     }
 
     try {
-        const newAsd = { nome, citta: citta||'', pwdHash: hashPwd(pwd), logoUrl: '', createdAt: new Date().toISOString() };
-        const ref = await addDoc(asdCol(), newAsd);
-        newAsd.id = ref.id;
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pwd);
+        const uid = userCredential.user.uid;
+
+        const newAsd = {
+            nome,
+            username: user,
+            adminName: admin,
+            email,
+            citta: citta||'',
+            logoUrl: '',
+            createdAt: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, `${APP_NS}/data/asd`, uid), newAsd);
+        newAsd.id = uid;
         S.allAsd.push(newAsd);
         S.role   = 'asd';
         S.asd    = newAsd;
         S.atleti = [];
-        localStorage.setItem('acm_asd_session', JSON.stringify({ id: newAsd.id }));
         buildNav();
-        showModal('✅ ASD Creata!', `Benvenuto <strong>${nome}</strong>!<br>Il profilo ASD è stato creato con successo.<br><br>Ora puoi aggiungere il logo e iscrivere i tuoi atleti.`, [{
-            text: 'Vai al Profilo ASD', cls: 'btn-gold', fn: () => window.setView('asdProfilo')
+        showModal('✅ ASD Creata!', `Benvenuto <strong>${nome}</strong>!<br>Il profilo ASD è stato creato con successo.`, [{
+            text: 'Vai alla Dashboard', cls: 'btn-gold', fn: () => window.setView('asdDashboard')
         }]);
     } catch(e) {
         console.error(e);
@@ -1929,11 +2030,13 @@ window.saveAsdPwd = async function() {
     showModal('✅ Password aggiornata!','',[{text:'OK'}]);
 };
 
-function logoutAsd() {
-    localStorage.removeItem('acm_asd_session');
-    S.role = null; S.asd = null; S.atleti = [];
-    buildNav();
-    window.setView('homeLogin');
+async function logoutAsd() {
+    try {
+        await signOut(auth);
+        S.role = null; S.asd = null; S.atleti = [];
+        buildNav();
+        window.setView('homeLogin');
+    } catch(e) {}
 }
 window.logoutAsd = logoutAsd;
 
@@ -2117,12 +2220,25 @@ window.doAtletaLogin = async function() {
     setTimeout(checkDraftSession, 400);
 };
 
-function logoutAtleta() {
-    localStorage.removeItem('acm_atleta_session');
-    S.role = null; S.asd = null; S.atleta = null; S.sessioni = [];
-    window._calState = null;
-    buildNav();
-    window.setView('homeLogin');
+function isAtletaAdmin() {
+    if (!S.atleta || !S.asd || !S.asd.adminName) return false;
+    const atlFull = `${S.atleta.nome||''} ${S.atleta.cognome||''}`.trim().toLowerCase();
+    const admFull = S.asd.adminName.trim().toLowerCase();
+    return atlFull === admFull;
+}
+
+async function logoutAtleta() {
+    try {
+        localStorage.removeItem('acm_atleta_session');
+        // Se non è anonimo (magari l'atleta è anche l'admin ASD loggato via Auth), facciamo il sign out
+        if (auth.currentUser && !auth.currentUser.isAnonymous) {
+            await signOut(auth);
+        }
+        S.role = null; S.asd = null; S.atleta = null; S.sessioni = [];
+        window._calState = null;
+        buildNav();
+        window.setView('homeLogin');
+    } catch(e) {}
 }
 window.logoutAtleta = logoutAtleta;
 
@@ -2274,6 +2390,18 @@ function renderAtletaMenu() {
                     <div style="font-size:0.75rem;color:var(--muted)">Modifica massiva, dati</div>
                 </button>
             </div>
+
+            ${isAtletaAdmin() ? `
+            <div class="gold-line"></div>
+            <div class="card card-hover" style="border: 2px solid var(--gold); background: rgba(201,162,39,0.05)" onclick="window.setView('asdDashboard')">
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                    <div style="font-size:2rem">⚙️</div>
+                    <div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">Area Gestionale ASD</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Gestisci atleti, messaggi e dati della società</div>
+                    </div>
+                </div>
+            </div>` : ''}
         </div>
     `);
     // Controlla messaggi nuovi dopo il render (asincrono)
