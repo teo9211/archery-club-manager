@@ -1411,7 +1411,7 @@ function showAddAtleta(existing=null) {
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Nome *</label><input class="inp" id="atl-nome" value="${atl.nome}" placeholder="Nome"></div>
-                <div><label class="form-label">Cognome *</label><input class="inp" id="atl-cognome" value="${atl.cognome}" placeholder="Cognome"></div>
+                <div><label class="form-label">Cognome</label><input class="inp" id="atl-cognome" value="${atl.cognome||''}" placeholder="Cognome (opzionale)"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Tessera Fitarco</label><input class="inp" id="atl-tessera-fitarco" value="${atl.tesseraFitarco||''}" placeholder="N. tessera Fitarco"></div>
@@ -1445,7 +1445,7 @@ async function saveAtleta(existingId=null, existingData=null) {
     const wrap            = $('foto-atleta-wrap');
     const fotoBase64      = wrap?._pendingBase64 || existingData?.fotoBase64 || '';
 
-    if (!nome || !cognome) return showModal('Errore','Nome e Cognome obbligatori.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (!nome) return showModal('Errore','Il nome è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
     if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
     const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, fotoBase64, updatedAt: new Date().toISOString() };
@@ -1986,19 +1986,11 @@ async function renderAtletaSelect({ asdId }) {
                 <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1rem">🔐 Accedi al tuo Profilo</div>
                 <div style="display:flex;flex-direction:column;gap:0.65rem">
                     <div>
-                        <label class="form-label">Nome Atleta <span style="color:var(--muted);font-size:0.72rem">(opzionale se usi password univoca)</span></label>
-                        <input class="inp" id="atl-login-nome" placeholder="Es: Mario Rossi" autocomplete="off"
-                               onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
-                    </div>
-                    <div>
                         <label class="form-label">Password *</label>
                         <input class="inp" type="password" id="atl-login-pwd" placeholder="Inserisci la tua password"
                                onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
                     </div>
                     <button class="btn btn-gold btn-full btn-lg" onclick="window.loginAtletaConPassword()">Accedi</button>
-                    <p style="font-size:0.72rem;color:var(--muted);text-align:center">
-                        Puoi accedere con solo la password se è univoca, oppure indicare il nome per sicurezza.
-                    </p>
                 </div>
             </div>
         </div>
@@ -2038,27 +2030,22 @@ window.scriviAllAsd = (asdId, asdNome) => {
 };
 
 window.loginAtletaConPassword = async () => {
-    const nomeInput = $('atl-login-nome')?.value.trim().toLowerCase();
     const pwd = $('atl-login-pwd')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
     const pwdH = hashPwd(pwd);
     const atleti = S._tempAtleti || [];
-    // Cerca atleta: prima per nome+pwd, poi solo per pwd (password univoca)
+
+    // Cerca atleta solo per password
+    const matches = atleti.filter(a => a.pwdHash === pwdH);
     let trovato = null;
-    if (nomeInput) {
-        trovato = atleti.find(a =>
-            (a.nome+' '+a.cognome).toLowerCase().includes(nomeInput) && a.pwdHash === pwdH
-        );
+
+    if (matches.length === 1) {
+        trovato = matches[0];
+    } else if (matches.length > 1) {
+        return showModal('⚠️ Password non univoca', 'Più atleti hanno questa password. Contatta la tua ASD per impostare una password unica.', [{text:'OK'}]);
     }
-    if (!trovato) {
-        // Prova con solo password
-        const matches = atleti.filter(a => a.pwdHash === pwdH);
-        if (matches.length === 1) trovato = matches[0];
-        else if (matches.length > 1) {
-            return showModal('Errore','Più atleti con questa password. Inserisci anche il nome.',[{text:'OK'}]);
-        }
-    }
-    if (!trovato) return showModal('Errore','Credenziali non valide. Riprova.',[{text:'OK'}]);
+
+    if (!trovato) return showModal('❌ Errore','Password non valida o atleta non trovato.',[{text:'OK'}]);
     // Login diretto: non mostrare nome/foto, vai subito al menu
     S.role   = 'atleta';
     S.asd    = S._tempAsd;
