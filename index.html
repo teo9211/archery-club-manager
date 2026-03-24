@@ -390,8 +390,9 @@ function showPrivacy() {
 function buildNav() {
     let items = '', userName = '';
 
-    // Check if athlete is admin of their ASD
+    // Check if athlete is admin or coach of their ASD
     const athleteIsAdmin = S.role === 'atleta' && isAtletaAdmin();
+    const athleteIsCoach = S.role === 'atleta' && S.atleta?.isTecnico;
 
     if (!S.role) {
         userName = 'Visitatore';
@@ -432,12 +433,12 @@ function buildNav() {
             { icon:'📨', label:'Messaggi',          fn:"window.setView('atletaMessaggi')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
 
-        if (athleteIsAdmin) {
+        if (athleteIsAdmin || athleteIsCoach) {
             items += `
                 <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
-                    <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
-                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
-                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Atleti</div>
+                    <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">${athleteIsAdmin ? 'Gestionale ASD' : 'Gestionale Coach'}</div>
+                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ${athleteIsAdmin ? 'ASD' : 'Coach'}</div>
+                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 ${athleteIsAdmin ? 'Atleti' : 'I Miei Atleti'}</div>
                     <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi</div>
                 </div>
             `;
@@ -1372,8 +1373,9 @@ window.doAsdRegister = async function() {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdDashboard() {
     window._navHistory = [{view:'asdDashboard',params:{}}];
-    setHeader('Dashboard ASD', S.asd?.nome || '');
     await loadAtleti();
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
     // Conta sessioni totali
     let totalSessioni = 0, totalFrecce = 0;
     for (const atl of S.atleti) {
@@ -1416,13 +1418,19 @@ async function renderAsdDashboard() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                 <div class="card card-hover" onclick="window.setView('asdAtleti')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Gestisci Atleti</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">Crea, modifica, visualizza profili</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">
+                        ${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}
+                    </div>
+                    <div style="font-size:0.78rem;color:var(--muted)">
+                        ${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}
+                    </div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdStats',{})">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">Punteggi e dati atleti</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">
+                        ${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}
+                    </div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdRecords')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
@@ -1462,12 +1470,24 @@ async function renderAsdDashboard() {
 async function loadAtleti() {
     if (!S.asd) return;
     const snap = await getDocs(atletiCol(S.asd.id));
-    S.atleti = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Check if the user is a "Coach Athlete" (not the main ASD Admin)
+    const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+
+    if (coachAthlete && !isMainAdmin) {
+        // Limit to assigned athletes
+        S.atleti = all.filter(a => a.tecnicoId === S.atleta.id);
+    } else {
+        S.atleti = all;
+    }
 }
 
 async function renderAsdAtleti() {
-    setHeader('👥 Atleti', S.asd?.nome || '');
     await loadAtleti();
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    setHeader(isMainAdmin ? '👥 Atleti' : '👥 I Miei Atleti', S.asd?.nome || '');
 
     const list = S.atleti.length === 0
         ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessun atleta registrato.</p>`
@@ -1503,8 +1523,9 @@ async function renderAsdAtleti() {
 
 function showAddAtleta(existing=null) {
     const isEdit = !!existing;
-    const atl = existing || { nome:'', cognome:'', tesseraFitarco:'', tesseraAltro:'', enteAltro:'', tipoArco:'Ricurvo', dataNascita:'', pwd:'', fotoBase64:'' };
+    const atl = existing || { nome:'', cognome:'', tesseraFitarco:'', tesseraAltro:'', enteAltro:'', tipoArco:'Ricurvo', dataNascita:'', pwd:'', fotoBase64:'', isTecnico:false, tecnicoId:'' };
     const bowTypes = ['Ricurvo','Compound','Longbow','Barebow','Arco Nudo','Altro'];
+    const tecnici = S.atleti.filter(a => a.isTecnico && a.id !== atl.id);
     showModal(isEdit ? '✏️ Modifica Atleta' : '➕ Nuovo Atleta', `
         <div style="display:flex;flex-direction:column;gap:0.75rem">
 
@@ -1532,8 +1553,22 @@ function showAddAtleta(existing=null) {
                 <div><label class="form-label">Ente Altro</label><input class="inp" id="atl-ente-altro" value="${atl.enteAltro||''}" placeholder="Es: CSEN, AICS..."></div>
                 <div><label class="form-label">Tessera Altro Ente</label><input class="inp" id="atl-tessera-altro" value="${atl.tesseraAltro||''}" placeholder="N. tessera"></div>
             </div>
-            <div><label class="form-label">Tipo Arco</label>
-                <select class="inp" id="atl-arco">${bowTypes.map(t=>`<option value="${t}" ${atl.tipoArco===t?'selected':''}>${t}</option>`).join('')}</select>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                <div><label class="form-label">Tipo Arco</label>
+                    <select class="inp" id="atl-arco">${bowTypes.map(t=>`<option value="${t}" ${atl.tipoArco===t?'selected':''}>${t}</option>`).join('')}</select>
+                </div>
+                <div><label class="form-label">Tecnico Personale</label>
+                    <select class="inp" id="atl-tecnico">
+                        <option value="">— Nessuno —</option>
+                        ${tecnici.map(t=>`<option value="${t.id}" ${atl.tecnicoId===t.id?'selected':''}>${t.nome} ${t.cognome}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div style="margin: 0.5rem 0">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.9rem">
+                    <input type="checkbox" id="atl-is-tecnico" ${atl.isTecnico?'checked':''} style="width:18px;height:18px">
+                    <span style="font-weight:700;color:var(--gold)">L'atleta è un TECNICO / COACH</span>
+                </label>
             </div>
             <div><label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
                 <input class="inp" id="atl-pwd" type="password" placeholder="${isEdit?'Nuova password (opzionale)':'Password di accesso'}"></div>
@@ -1552,6 +1587,8 @@ async function saveAtleta(existingId=null, existingData=null) {
     const enteAltro       = $('atl-ente-altro')?.value.trim();
     const nascita         = $('atl-nascita')?.value;
     const tipoArco        = $('atl-arco')?.value;
+    const tecnicoId       = $('atl-tecnico')?.value;
+    const isTecnico       = $('atl-is-tecnico')?.checked || false;
     const pwd             = $('atl-pwd')?.value.trim();
     const wrap            = $('foto-atleta-wrap');
     const fotoBase64      = wrap?._pendingBase64 || existingData?.fotoBase64 || '';
@@ -1559,7 +1596,7 @@ async function saveAtleta(existingId=null, existingData=null) {
     if (!nome) return showModal('Errore','Il nome è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
     if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
-    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, fotoBase64, updatedAt: new Date().toISOString() };
+    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, fotoBase64, updatedAt: new Date().toISOString() };
     if (pwd) data.pwdHash = hashPwd(pwd);
 
     if (existingId) {
@@ -1701,8 +1738,9 @@ window.asdDettaglioSessione = async (sessionId) => {
 // ── ASD: STATISTICHE GLOBALI ─────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdStats() {
-    setHeader('📊 Statistiche', S.asd?.nome||'');
     await loadAtleti();
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    setHeader(isMainAdmin ? '📊 Statistiche Atleti' : '📊 Statistiche I Miei Atleti', S.asd?.nome||'');
 
     render(`
         <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold);margin-bottom:1rem">📊 Statistiche per Atleta</h2>
@@ -1731,8 +1769,11 @@ async function renderAsdMessaggi() {
     const snap = await getDocs(msgCol(S.asd.id));
     const msgs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)));
 
+    const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+
     const destOptions = [
-        `<option value="tutti">📢 Tutti gli atleti</option>`,
+        `<option value="tutti">${(coachAthlete && !isMainAdmin) ? '📢 Tutti i miei atleti' : '📢 Tutti gli atleti'}</option>`,
         ...S.atleti.map(a=>`<option value="${a.id}">${a.nome} ${a.cognome}</option>`)
     ].join('');
 
@@ -1864,9 +1905,19 @@ async function sendMessaggio() {
 
     if (!testo) return showModal('Errore','Scrivi un messaggio.',[{text:'OK'}]);
 
+    const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+
     const durata = parseInt(document.getElementById('msg-durata')?.value)||0;
     const esercF = document.getElementById('msg-eserc-filter')?.value||'both';
-    const msgData = { destinatari: dest, testo, esercizi: eserc, mittente:'asd', createdAt: serverTimestamp() };
+    const msgData = {
+        destinatari: dest,
+        testo,
+        esercizi: eserc,
+        mittente: (coachAthlete && !isMainAdmin) ? 'coach' : 'asd',
+        coachId: (coachAthlete && !isMainAdmin) ? S.atleta.id : null,
+        createdAt: serverTimestamp()
+    };
     if (durata > 0) msgData.esercizDurataSess = durata;
     msgData.esercizFilter = esercF;
 
@@ -1879,6 +1930,7 @@ async function sendMessaggio() {
     await addDoc(msgCol(S.asd.id), msgData);
 
     // Se ci sono esercizi o obiettivo, salvali anche nell'atleta/atleti destinatari
+    // S.atleti è già filtrato in loadAtleti() se l'utente è un Coach
     const destinatari = dest === 'tutti' ? S.atleti.map(a=>a.id) : [dest];
     for (const atletaId of destinatari) {
         // Salva esercizi consigliati come nota nell'atleta (campo 'esercizConsigliatiCoach')
@@ -2457,14 +2509,18 @@ function renderAtletaMenu() {
                 </button>
             </div>
 
-            ${isAtletaAdmin() ? `
+            ${(isAtletaAdmin() || S.atleta?.isTecnico) ? `
             <div class="gold-line"></div>
             <div class="card card-hover" style="border: 2px solid var(--gold); background: rgba(201,162,39,0.05)" onclick="window.setView('asdDashboard')">
                 <div style="display:flex;align-items:center;gap:0.75rem">
                     <div style="font-size:2rem">⚙️</div>
                     <div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">Area Gestionale ASD</div>
-                        <div style="font-size:0.8rem;color:var(--muted)">Gestisci atleti, messaggi e dati della società</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">
+                            ${isAtletaAdmin() ? 'Area Gestionale ASD' : 'Area Gestionale Coach'}
+                        </div>
+                        <div style="font-size:0.8rem;color:var(--muted)">
+                            ${isAtletaAdmin() ? 'Gestisci atleti, messaggi e dati della società' : 'Gestisci i tuoi atleti, invia messaggi e obiettivi'}
+                        </div>
                     </div>
                 </div>
             </div>` : ''}
@@ -6305,7 +6361,9 @@ window.renderAsdProfilo   = renderAsdProfilo;
 // ═══════════════════════════════════════════════════════════════════════════
 // ── ASD: RECORD & DASHBOARD ─────────────────────────────────────────────────
 async function renderAsdRecords() {
-    setHeader('🏆 Record ASD', S.asd?.nome || '');
+    await loadAtleti();
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    setHeader(isMainAdmin ? '🏆 Record ASD' : '🏆 Record I Miei Atleti', S.asd?.nome || '');
     // Mostra spinner durante il caricamento massivo
     render(`<div style="display:flex;justify-content:center;padding:3rem"><div class="spinner"></div></div>`);
 
@@ -6323,12 +6381,13 @@ async function renderAsdRecords() {
     const allSessions = snap.docs.map(d => {
         const s = d.data();
         const atl = S.atleti.find(a => a.id === s.archerId);
+        if (!atl && !isMainAdmin) return null; // Filter out if coach doesn't have access to this athlete
         return {
             id: d.id,
             athleteName: atl ? `${atl.nome} ${atl.cognome}` : (s.arciere || 'Atleta Sconosciuto'),
             ...s
         };
-    });
+    }).filter(Boolean);
 
     // Identifica tutte le combinazioni di distanza e targa
     const combinations = [];
