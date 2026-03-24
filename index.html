@@ -2274,10 +2274,34 @@ async function logoutAtleta() {
 }
 window.logoutAtleta = logoutAtleta;
 
+function _normSess(s) {
+    if (!s) return null;
+    let dataStr = s.data || '';
+    if (s.data && typeof s.data === 'object' && s.data.seconds) { // Firebase Timestamp?
+        dataStr = new Date(s.data.seconds * 1000).toISOString().split('T')[0];
+    }
+    return {
+        ...s,
+        data: dataStr,
+        totalScore: parseInt(s.totalScore) || 0,
+        turn1Score: parseInt(s.turn1Score) || 0,
+        turn2Score: parseInt(s.turn2Score) || 0,
+        totalX: parseInt(s.totalX) || 0,
+        totalTen: parseInt(s.totalTen) || 0,
+        totalNine: parseInt(s.totalNine) || 0
+    };
+}
+
 async function loadAtletaSessioni() {
     if (!S.asd || !S.atleta) return;
-    const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',S.atleta.id)));
-    S.sessioni = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
+    try {
+        const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',S.atleta.id)));
+        S.sessioni = snap.docs.map(d => ({ id: d.id, ..._normSess(d.data()) }))
+            .filter(s => s !== null)
+            .sort((a,b) => (b.data||'').localeCompare(a.data||''));
+    } catch(e) {
+        console.error("Error loading athlete sessions:", e);
+    }
 }
 
 function checkDraftSession() {
@@ -4504,6 +4528,7 @@ window.eqSave = async () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // ── HELPER: conteggio frecce per sessione ───────────────────────────────────
 function countArrowsForSession(s, turn = 'both') {
+    if (!s) return 0;
     const extra = (turn === 'both' || !turn) ? (parseInt(s.frecceAggiuntive)||0) : 0;
     if (s.trainingWithoutScore) return extra;
     // Frecce dal formato (turni standard) se non c'è griglia dettagliata
@@ -4543,16 +4568,30 @@ const goalsCol = () => {
     return collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${S.atleta.id}/goals`);
 };
 
+function _normGoal(g) {
+    if (!g) return null;
+    let startStr = g.startDate || '';
+    if (g.startDate && typeof g.startDate === 'object' && g.startDate.seconds) {
+        startStr = new Date(g.startDate.seconds * 1000).toISOString().split('T')[0];
+    }
+    return {
+        ...g,
+        startDate: startStr,
+        targetValue: parseInt(g.targetValue) || 0
+    };
+}
+
 async function loadObiettivi() {
     try {
         const col = goalsCol();
         if (!col) return [];
         const snap = await getDocs(col);
-        return snap.docs.map(d => ({id:d.id,...d.data()}));
+        return snap.docs.map(d => _normGoal({id:d.id,...d.data()})).filter(g => g !== null);
     } catch(e) { console.error("Error loading goals:", e); return []; }
 }
 
 function calcGoalProgress(goal, sessioni = []) {
+    if (!goal) return {current: 0, target: 0};
     const now = new Date();
     const sess = sessioni || [];
     let start, end;
@@ -4571,35 +4610,40 @@ function calcGoalProgress(goal, sessioni = []) {
 
     // Filtro base per periodo e data inizio monitoraggio
     const limitDate = (goal.startDate && goal.startDate > ss) ? goal.startDate : ss;
-    let rel = sess.filter(s => s && s.data >= limitDate && s.data <= se);
+    let rel = sess.filter(s => s && s.data && s.data >= limitDate && s.data <= se);
 
     // Filtro per tipo sessione (Gara / Allenamento)
-    if (goal.filterType === 'gara') rel = rel.filter(s => s.type === 'Gara');
-    else if (goal.filterType === 'allenamento') rel = rel.filter(s => s.type === 'Allenamento');
+    if (goal.filterType === 'gara') rel = rel.filter(s => s && s.type === 'Gara');
+    else if (goal.filterType === 'allenamento') rel = rel.filter(s => s && s.type === 'Allenamento');
 
     // Filtro Quick Score
     if (goal.includeQuickScore === false) rel = rel.filter(s => !s.quickScore);
 
     let current = 0;
-    if (goal.type==='score') {
-        const match = rel.filter(s=>s.distanza===goal.distanza&&s.tipoTarga===goal.tipoTarga&&!s.trainingWithoutScore);
-        if (match.length > 0) {
-            const scores = match.flatMap(s => {
-                if (goal.filterTurn === 't1') return [s.turn1Score || 0];
-                if (goal.filterTurn === 't2') return [s.turn2Score || 0];
-                if (goal.filterTurn === 't1_or_t2') return [s.turn1Score || 0, s.turn2Score || 0];
-                return [s.totalScore || 0];
-            }).filter(val => !isNaN(val));
-            current = scores.length > 0 ? Math.max(...scores) : 0;
-        } else {
-            current = 0;
+    try {
+        if (goal.type==='score') {
+            const match = rel.filter(s=>s.distanza===goal.distanza&&s.tipoTarga===goal.tipoTarga&&!s.trainingWithoutScore);
+            if (match.length > 0) {
+                const scores = match.flatMap(s => {
+                    if (goal.filterTurn === 't1') return [parseInt(s.turn1Score) || 0];
+                    if (goal.filterTurn === 't2') return [parseInt(s.turn2Score) || 0];
+                    if (goal.filterTurn === 't1_or_t2') return [parseInt(s.turn1Score) || 0, parseInt(s.turn2Score) || 0];
+                    return [parseInt(s.totalScore) || 0];
+                }).filter(val => !isNaN(val));
+                current = scores.length > 0 ? Math.max(...scores) : 0;
+            } else {
+                current = 0;
+            }
+        } else if (goal.type==='arrows') {
+            current = rel.reduce((sum,s)=>sum+countArrowsForSession(s, goal.filterTurn),0);
+        } else if (goal.type==='sessions') {
+            current = rel.length;
+        } else if (goal.type==='training') {
+            current = rel.filter(s=>s.type==='Allenamento').length;
         }
-    } else if (goal.type==='arrows') {
-        current = rel.reduce((sum,s)=>sum+countArrowsForSession(s, goal.filterTurn),0);
-    } else if (goal.type==='sessions') {
-        current = rel.length;
-    } else if (goal.type==='training') {
-        current = rel.filter(s=>s.type==='Allenamento').length;
+    } catch(err) {
+        console.error("Error calculating progress for goal:", goal, err);
+        current = 0;
     }
     return {current, target:goal.targetValue};
 }
@@ -4653,7 +4697,11 @@ async function renderAtletaObiettivi() {
         `);
     } catch(e) {
         console.error("Error rendering goals:", e);
-        render(`<div style="text-align:center;padding:2rem;color:var(--danger)">Errore durante il caricamento degli obiettivi. Riprova più tardi.</div>`);
+        render(`<div style="text-align:center;padding:2rem;color:var(--danger)">
+            <p>Errore durante il caricamento degli obiettivi.</p>
+            <p style="font-size:0.75rem;margin-top:0.5rem;color:var(--muted)">Dettaglio: ${e.message}</p>
+            <button class="btn btn-ghost btn-sm" style="margin-top:1rem" onclick="window.renderAtletaObiettivi()">🔄 Riprova</button>
+        </div>`);
     }
 }
 
