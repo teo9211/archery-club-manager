@@ -312,8 +312,18 @@ function hashPwd(s) {
 const MASTER_HASH = 'h_yyy2o4';
 function fmtDate(d) {
     if (!d) return 'N/D';
-    const p = d.split('-');
-    return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
+    let s = '';
+    if (typeof d === 'string') {
+        s = d;
+    } else if (d instanceof Date) {
+        s = d.toISOString().split('T')[0];
+    } else if (typeof d === 'object' && d.seconds) {
+        s = new Date(d.seconds * 1000).toISOString().split('T')[0];
+    } else {
+        return String(d);
+    }
+    const p = s.split('-');
+    return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : s;
 }
 function initials(nome, cognome) {
     return ((nome||'?')[0] + (cognome||'?')[0]).toUpperCase();
@@ -4570,13 +4580,17 @@ const goalsCol = () => {
 
 function _normGoal(g) {
     if (!g) return null;
-    let startStr = g.startDate || '';
-    if (g.startDate && typeof g.startDate === 'object' && g.startDate.seconds) {
-        startStr = new Date(g.startDate.seconds * 1000).toISOString().split('T')[0];
-    }
+    const normDate = (d) => {
+        if (!d) return '';
+        if (typeof d === 'string') return d;
+        if (d instanceof Date) return d.toISOString().split('T')[0];
+        if (typeof d === 'object' && d.seconds) return new Date(d.seconds * 1000).toISOString().split('T')[0];
+        return String(d);
+    };
     return {
         ...g,
-        startDate: startStr,
+        startDate: normDate(g.startDate),
+        completedAt: normDate(g.completedAt),
         targetValue: parseInt(g.targetValue) || 0
     };
 }
@@ -4610,26 +4624,44 @@ function calcGoalProgress(goal, sessioni = []) {
 
     // Filtro base per periodo e data inizio monitoraggio
     const limitDate = (goal.startDate && goal.startDate > ss) ? goal.startDate : ss;
-    let rel = sess.filter(s => s && s.data && s.data >= limitDate && s.data <= se);
+    let rel = sess.filter(s => {
+        if (!s || !s.data) return false;
+        // Normalizza data sessione se necessario
+        let sData = s.data;
+        if (typeof sData === 'object' && sData.seconds) {
+            sData = new Date(sData.seconds * 1000).toISOString().split('T')[0];
+        }
+        return sData >= limitDate && sData <= se;
+    });
 
     // Filtro per tipo sessione (Gara / Allenamento)
-    if (goal.filterType === 'gara') rel = rel.filter(s => s && s.type === 'Gara');
-    else if (goal.filterType === 'allenamento') rel = rel.filter(s => s && s.type === 'Allenamento');
+    if (goal.filterType === 'gara') rel = rel.filter(s => (s.type||'').toLowerCase() === 'gara');
+    else if (goal.filterType === 'allenamento') rel = rel.filter(s => (s.type||'').toLowerCase() === 'allenamento');
 
     // Filtro Quick Score
-    if (goal.includeQuickScore === false) rel = rel.filter(s => !s.quickScore);
+    if (goal.includeQuickScore === false) rel = rel.filter(s => s.quickScore !== true);
 
     let current = 0;
     try {
         if (goal.type==='score') {
-            const match = rel.filter(s=>s.distanza===goal.distanza&&s.tipoTarga===goal.tipoTarga&&!s.trainingWithoutScore);
+            const match = rel.filter(s => {
+                if (s.trainingWithoutScore === true) return false;
+                const sDist = (s.distanza || '').toLowerCase().trim();
+                const gDist = (goal.distanza || '').toLowerCase().trim();
+                const sTarga = (s.tipoTarga || '').toLowerCase().trim();
+                const gTarga = (goal.tipoTarga || '').toLowerCase().trim();
+                return sDist === gDist && sTarga === gTarga;
+            });
             if (match.length > 0) {
                 const scores = match.flatMap(s => {
-                    if (goal.filterTurn === 't1') return [parseInt(s.turn1Score) || 0];
-                    if (goal.filterTurn === 't2') return [parseInt(s.turn2Score) || 0];
-                    if (goal.filterTurn === 't1_or_t2') return [parseInt(s.turn1Score) || 0, parseInt(s.turn2Score) || 0];
-                    return [parseInt(s.totalScore) || 0];
-                }).filter(val => !isNaN(val));
+                    const t1 = parseInt(s.turn1Score) || 0;
+                    const t2 = parseInt(s.turn2Score) || 0;
+                    const tot = parseInt(s.totalScore) || 0;
+                    if (goal.filterTurn === 't1') return [t1];
+                    if (goal.filterTurn === 't2') return [t2];
+                    if (goal.filterTurn === 't1_or_t2') return [t1, t2];
+                    return [tot];
+                }).filter(val => !isNaN(val) && val > 0);
                 current = scores.length > 0 ? Math.max(...scores) : 0;
             } else {
                 current = 0;
@@ -4651,11 +4683,16 @@ function calcGoalProgress(goal, sessioni = []) {
 async function renderAtletaObiettivi() {
     try {
         setHeader('🏅 Obiettivi', S.atleta?.nome||'');
-        await loadAtletaSessioni();
+        // Pre-ensure sessions are loaded if not already
+        if (!S.sessioni || S.sessioni.length === 0) {
+            await loadAtletaSessioni();
+        }
         const goals = await loadObiettivi();
+        console.log("Goals loaded:", goals);
+        console.log("Sessions available for goals:", S.sessioni);
 
         const goalCard = (g) => {
-            const prog = calcGoalProgress(g, S.sessioni);
+            const prog = calcGoalProgress(g, S.sessioni || []);
             const target = prog.target || 1; // avoid division by zero
             const pct = Math.min(100, Math.round((prog.current/target)*100));
             const done = g.completed;
