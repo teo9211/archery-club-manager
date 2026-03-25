@@ -2278,14 +2278,48 @@ const TK_KEYPAD  = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
 // FIARC:   1, 2 o 3 frecce per piazzola. Prima freccia: Spot=20,Kill=18,Body=16
 //          Seconda: Spot=14,Kill=12,Body=10.  Terza: Spot=8,Kill=6,Body=4.  M=0
 //          Se colpisci con la prima → piazzola chiusa (non puoi sparare altre)
-const TK_3D_FITARCO_KP = ['Spot 11','SKill 10','Kill 8','Body 5','M','CANC'];
-const TK_3D_FIARC_KP   = ['Spot','Kill','Body','M','CANC']; // il punteggio dipende dal numero di freccia
-const TK_3D_SCORE_FITARCO = { 'Spot 11':11, 'SKill 10':10, 'Kill 8':8, 'Body 5':5, 'M':0 };
-// Per FIARC il punteggio dipende dalla freccia (1=max, 2=med, 3=min)
-const TK_3D_SCORE_FIARC = {
-    1: { Spot:20, Kill:18, Body:16, M:0 },
-    2: { Spot:14, Kill:12, Body:10, M:0 },
-    3: { Spot:8,  Kill:6,  Body:4,  M:0 }
+const TK_3D_CONFIGS = {
+    'FITARCO': {
+        frecce: 2,
+        hitAndStop: false,
+        kp: [
+            { 'Spot 11': 11, 'SKill 10': 10, 'Kill 8': 8, 'Body 5': 5, 'M': 0 },
+            { 'Spot 11': 11, 'SKill 10': 10, 'Kill 8': 8, 'Body 5': 5, 'M': 0 }
+        ]
+    },
+    'BATTUTA': {
+        frecce: 1,
+        hitAndStop: true,
+        kp: [
+            { 'S.Spot 13': 13, 'Spot 11': 11, 'Sagoma 7': 7, 'M': 0 }
+        ]
+    },
+    'PERCORSO': {
+        frecce: 3,
+        hitAndStop: false,
+        kp: [
+            { 'S.Spot 11': 11, 'Spot 9': 9, 'Sagoma 6': 6, 'M': 0 },
+            { 'S.Spot 9': 9, 'Spot 7': 7, 'Sagoma 4': 4, 'M': 0 },
+            { 'S.Spot 7': 7, 'Spot 5': 5, 'Sagoma 2': 2, 'M': 0 }
+        ]
+    },
+    'ROUND 3D': {
+        frecce: 2,
+        hitAndStop: false,
+        kp: [
+            { 'S.Spot 16': 16, 'Spot 14': 14, 'Sagoma 10': 10, 'M': 0 },
+            { 'S.Spot 9': 9, 'Spot 7': 7, 'Sagoma 5': 5, 'M': 0 }
+        ]
+    },
+    'TRACCIATO': {
+        frecce: 3,
+        hitAndStop: true,
+        kp: [
+            { 'S.Spot 22': 22, 'Spot 20': 20, 'Sagoma 16': 16, 'M': 0 },
+            { 'S.Spot 16': 16, 'Spot 14': 14, 'Sagoma 10': 10, 'M': 0 },
+            { 'S.Spot 10': 10, 'Spot 8': 8, 'Sagoma 4': 4, 'M': 0 }
+        ]
+    }
 };
 
 const TK = { session:null, turn:1, grid:null, volleyNotes:{}, rows:0, cols:3, format:null, activeCell:{row:1,col:1} };
@@ -2346,9 +2380,6 @@ function tkCalc(grid){
 }
 
 function tkCalc3D(grid, d3){
-    // Calcola punteggio 3D da grid: ogni riga = piazzola, ogni cella = valore testuale
-    // es. '20','18','14','M','—' per FIARC; '11','10','8','5','M','—' per FITARCO
-    // '—' = non tirata (piazzola chiusa prima)
     let tot=0, fired=0, piazzoleComplete=0;
     const rows=[];
     (grid||[]).forEach((row,pi)=>{
@@ -2359,7 +2390,13 @@ function tkCalc3D(grid, d3){
         tot+=p; fired+=vals.length; piazzoleComplete++;
         rows.push({pi,vals,parz:p,tot});
     });
-    const maxPerPiazzola=d3.ente==='FITARCO'?11:20;
+    const cfg = TK_3D_CONFIGS[d3.ente] || TK_3D_CONFIGS['FITARCO'];
+    let maxPerPiazzola = 0;
+    if (cfg.hitAndStop) {
+        maxPerPiazzola = Math.max(...Object.values(cfg.kp[0]));
+    } else {
+        cfg.kp.forEach(k => { maxPerPiazzola += Math.max(...Object.values(k)); });
+    }
     const maxScore=(d3.piazzole||0)*maxPerPiazzola;
     return{score:tot,fired,piazzoleComplete,avg:piazzoleComplete>0?tot/piazzoleComplete:0,max:maxScore,rows};
 }
@@ -2525,14 +2562,10 @@ function tkRenderScoring3D(){
     const finito=piazzolaCorrente>=nPiaz;
 
     // Mappa punteggi → keypad
-    let kpLabels, kpValues;
-    if(ente==='FITARCO'){
-        kpLabels=[{l:'Spot',v:'11'},{l:'SKill',v:'10'},{l:'Kill',v:'8'},{l:'Body',v:'5'},{l:'M',v:'0'}];
-    } else {
-        // FIARC: i punteggi dipendono dalla freccia corrente
-        const sc=TK_3D_SCORE_FIARC[Math.min(frecciaCorrente,3)]||TK_3D_SCORE_FIARC[3];
-        kpLabels=[{l:`Spot ${sc.Spot}`,v:String(sc.Spot)},{l:`Kill ${sc.Kill}`,v:String(sc.Kill)},{l:`Body ${sc.Body}`,v:String(sc.Body)},{l:'M',v:'0'}];
-    }
+    const cfg = TK_3D_CONFIGS[ente] || TK_3D_CONFIGS['FITARCO'];
+    const arrowIndex = Math.min(frecciaCorrente - 1, cfg.kp.length - 1);
+    const currentKP = cfg.kp[arrowIndex];
+    const kpLabels = Object.entries(currentKP).map(([label, value]) => ({ l: label, v: String(value) }));
 
     // Colore del punteggio per la cella
     const scoreColor=(v)=>{
@@ -2591,7 +2624,7 @@ function tkRenderScoring3D(){
     const kp=!finito?`<div style="margin-bottom:0.75rem">
         <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">
             🦌 Piazzola ${piazzolaCorrente+1}/${nPiaz}
-            ${ente==='FIARC'?`<span style="font-size:0.78rem;color:var(--muted);font-weight:400"> · ${frecciaCorrente}ª freccia</span>`:''}
+            <span style="font-size:0.78rem;color:var(--muted);font-weight:400"> · ${frecciaCorrente}ª freccia</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(${Math.ceil(kpLabels.length/2)===2?'2':'3'},1fr);gap:0.5rem;margin-bottom:0.5rem">
             ${kpLabels.map(k=>`<button onclick="window.tk3dKey('${k.v}')" style="padding:0.75rem 0.4rem;font-family:'Rajdhani',sans-serif;font-size:0.95rem;font-weight:700;background:var(--dark3);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);touch-action:manipulation" ontouchstart="this.style.background='var(--gold)';this.style.color='#000'" ontouchend="this.style.background='var(--dark3)';this.style.color='var(--text)'">${k.l}</button>`).join('')}
@@ -2620,16 +2653,17 @@ window.tk3dKey = (val) => {
     const pi=d3.piazzola, fi=d3.frecciaCorrente-1; // 0-based
     if(pi>=d3.piazzole) return;
 
+    const cfg = TK_3D_CONFIGS[d3.ente] || TK_3D_CONFIGS['FITARCO'];
     const punti=parseInt(val)||0;
     TK.grid[pi][fi]=punti===0?'0':val;
 
-    if(punti>0) {
-        // Colpito: piazzola chiusa → segna le frecce rimanenti come '—'
+    if(punti>0 && cfg.hitAndStop) {
+        // Colpito e hit-and-stop: piazzola chiusa → segna le frecce rimanenti come '—'
         for(let c=fi+1;c<d3.frecce;c++) TK.grid[pi][c]='—';
         // Avanza alla prossima piazzola
         d3.piazzola++; d3.frecciaCorrente=1;
     } else {
-        // Mancato: prossima freccia (se disponibile)
+        // Mancato o non hit-and-stop: prossima freccia (se disponibile)
         if(fi+1<d3.frecce) {
             d3.frecciaCorrente++;
         } else {
@@ -2642,16 +2676,41 @@ window.tk3dKey = (val) => {
 };
 
 window.tk3dUndo = () => {
-    const d3=TK.session?.d3;
-    if(!d3) return;
-    // Torna indietro di un passo
-    let pi=d3.piazzola, fi=d3.frecciaCorrente-1;
-    // Trova l'ultima cella compilata
-    if(fi<=0 && pi>0) { pi--; fi=d3.frecce-1; }
-    else if(fi>0) { fi--; }
-    // Cancella '—' trailing e la cella
-    for(let c=TK.grid[pi].length-1;c>=fi;c--) TK.grid[pi][c]='';
-    d3.piazzola=pi; d3.frecciaCorrente=fi+1;
+    const d3 = TK.session?.d3;
+    if (!d3) return;
+
+    let pi = d3.piazzola, fi = d3.frecciaCorrente - 1;
+
+    // Se siamo all'inizio di una piazzola, proviamo a tornare a quella precedente
+    if (fi === 0 && pi > 0) {
+        pi--; fi = d3.frecce - 1;
+    } else if (fi > 0) {
+        fi--;
+    } else if (pi === 0 && fi === 0) {
+        // Inizio assoluto, nulla da annullare
+        return;
+    }
+
+    // Se incontriamo '—' o celle vuote, saltiamole (sono code di hit-and-stop o celle non ancora raggiunte)
+    while (pi >= 0 && (TK.grid[pi][fi] === '—' || TK.grid[pi][fi] === '')) {
+        if (fi > 0) {
+            fi--;
+        } else if (pi > 0) {
+            pi--; fi = d3.frecce - 1;
+        } else {
+            break;
+        }
+    }
+
+    // Trovato l'ultimo colpo reale: lo cancelliamo e resettiamo la piazzola
+    if (pi >= 0 && TK.grid[pi][fi] !== '' && TK.grid[pi][fi] !== '—') {
+        for (let c = fi; c < d3.frecce; c++) {
+            TK.grid[pi][c] = '';
+        }
+        d3.piazzola = pi;
+        d3.frecciaCorrente = fi + 1;
+    }
+
     tkSave();
     tkRenderScoring3D();
 };
@@ -3001,10 +3060,13 @@ function renderRegistrationForm({ type='Allenamento' }) {
                 <div style="background:rgba(201,162,39,0.07);border:1.5px solid rgba(201,162,39,0.4);border-radius:12px;padding:0.85rem">
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">🦌 Impostazioni Tiro 3D</div>
                     <div style="display:flex;flex-direction:column;gap:0.6rem">
-                        <div><label class="form-label">Federazione *</label>
+                        <div><label class="form-label">Tipologia 3D *</label>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
-                                <button id="btn-fitarco" onclick="window.tk3dSetEnte('FITARCO')" style="padding:0.6rem;border-radius:10px;border:2px solid rgba(201,162,39,0.5);background:rgba(201,162,39,0.15);color:var(--gold);font-weight:700;cursor:pointer;font-size:0.88rem">🏆 FITARCO</button>
-                                <button id="btn-fiarc" onclick="window.tk3dSetEnte('FIARC')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem">🎯 FIARC</button>
+                                <button id="btn-fitarco" onclick="window.tk3dSetType('FITARCO')" style="padding:0.6rem;border-radius:10px;border:2px solid rgba(201,162,39,0.5);background:rgba(201,162,39,0.15);color:var(--gold);font-weight:700;cursor:pointer;font-size:0.88rem">🏆 FITARCO</button>
+                                <button id="btn-battuta" onclick="window.tk3dSetType('BATTUTA')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem">🎯 BATTUTA</button>
+                                <button id="btn-percorso" onclick="window.tk3dSetType('PERCORSO')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem">🎯 PERCORSO</button>
+                                <button id="btn-round3d" onclick="window.tk3dSetType('ROUND 3D')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem">🎯 ROUND 3D</button>
+                                <button id="btn-tracciato" onclick="window.tk3dSetType('TRACCIATO')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem;grid-column: span 2">🎯 TRACCIATO</button>
                             </div>
                         </div>
                         <div><label class="form-label">N° Piazzole *</label>
@@ -3050,7 +3112,7 @@ window.tkOnTargaChange = (val) => {
         if (dDw) dDw.style.display = 'none';
         // Griglia solo 1 colonna (solo targa, niente distanza)
         if (grid) grid.style.gridTemplateColumns = '1fr';
-        window.tk3dSetEnte('FITARCO');
+        window.tk3dSetType('FITARCO');
     } else {
         if (fw)  fw.style.display  = 'block';
         if (dw)  dw.style.display  = 'none';
@@ -3059,31 +3121,46 @@ window.tkOnTargaChange = (val) => {
     }
 };
 
-window.tk3dSetEnte = (ente) => {
-    window._tk3dEnte = ente;
+window.tk3dSetType = (type) => {
+    window._tk3dEnte = type;
     // Aggiorna stile bottoni
-    const bf = document.getElementById('btn-fitarco'), bb = document.getElementById('btn-fiarc');
-    if (bf) { bf.style.borderColor = ente==='FITARCO'?'rgba(201,162,39,0.8)':'var(--border)'; bf.style.background = ente==='FITARCO'?'rgba(201,162,39,0.2)':'var(--dark3)'; bf.style.color = ente==='FITARCO'?'var(--gold)':'var(--muted)'; }
-    if (bb) { bb.style.borderColor = ente==='FIARC'?'rgba(201,162,39,0.8)':'var(--border)'; bb.style.background = ente==='FIARC'?'rgba(201,162,39,0.2)':'var(--dark3)'; bb.style.color = ente==='FIARC'?'var(--gold)':'var(--muted)'; }
+    const btnIds = ['fitarco', 'battuta', 'percorso', 'round3d', 'tracciato'];
+    btnIds.forEach(id => {
+        const b = document.getElementById(`btn-${id}`);
+        const isSel = id === type.toLowerCase().replace(' ', '');
+        if (b) {
+            b.style.borderColor = isSel ? 'rgba(201,162,39,0.8)' : 'var(--border)';
+            b.style.background = isSel ? 'rgba(201,162,39,0.2)' : 'var(--dark3)';
+            b.style.color = isSel ? 'var(--gold)' : 'var(--muted)';
+        }
+    });
+
+    const cfg = TK_3D_CONFIGS[type] || TK_3D_CONFIGS['FITARCO'];
+    window._tk3dFrec = cfg.frecce;
+
     // Mostra opzioni frecce
     const fb = document.getElementById('tk-3d-frecce-btns');
     const info = document.getElementById('tk-3d-info');
-    const maxFrec = ente==='FITARCO' ? [1,2] : [1,2,3];
-    const defFrec = ente==='FITARCO' ? 2 : 3;
-    window._tk3dFrec = defFrec;
+
+    // FITARCO permette 1 o 2 frecce, altri tipi hanno numero fisso ma visualizzabile
+    const maxFrec = (type === 'FITARCO') ? [1, 2] : [cfg.frecce];
+
     if (fb) {
         fb.style.gridTemplateColumns = `repeat(${maxFrec.length},1fr)`;
-        fb.innerHTML = maxFrec.map(n=>`
-            <button onclick="window.tk3dSetFrec(${n})" id="btn-f${n}" style="padding:0.5rem;border-radius:8px;border:2px solid ${n===defFrec?'rgba(201,162,39,0.8)':'var(--border)'};background:${n===defFrec?'rgba(201,162,39,0.15)':'var(--dark3)'};color:${n===defFrec?'var(--gold)':'var(--muted)'};font-weight:700;cursor:pointer">${n} ${n===1?'freccia':'frecce'}</button>
+        fb.innerHTML = maxFrec.map(n => `
+            <button onclick="window.tk3dSetFrec(${n})" id="btn-f${n}" style="padding:0.5rem;border-radius:8px;border:2px solid rgba(201,162,39,0.8);background:rgba(201,162,39,0.15);color:var(--gold);font-weight:700;cursor:pointer">${n} ${n === 1 ? 'freccia' : 'frecce'}</button>
         `).join('');
     }
     if (info) {
         info.style.display = 'block';
-        if (ente==='FITARCO') {
-            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FITARCO:</strong><br>Spot 11 · Super Kill 10 · Kill 8 · Body 5 · Mancato 0';
-        } else {
-            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FIARC:</strong><br>1ª freccia: Spot 20 · Kill 18 · Body 16<br>2ª freccia: Spot 14 · Kill 12 · Body 10<br>3ª freccia: Spot 8 · Kill 6 · Body 4<br><em>Se colpisci con la 1ª la piazzola si chiude.</em>';
-        }
+        const c = TK_3D_CONFIGS[type];
+        let h = `<strong style="color:var(--gold)">Punteggi ${type}:</strong><br>`;
+        c.kp.forEach((k, i) => {
+            h += `${i + 1}ª freccia: ${Object.entries(k).map(([l, v]) => `${l} pt`).join(' · ')}<br>`;
+        });
+        if (c.hitAndStop) h += `<em>Piazzola chiusa al primo colpo a segno.</em>`;
+        else if (type === 'TRACCIATO') h += `<em>Valido il solo punteggio della prima freccia a punto.</em>`; // Tracciato is hit-and-stop anyway
+        info.innerHTML = h;
     }
 };
 
