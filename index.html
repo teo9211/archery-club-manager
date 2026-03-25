@@ -1478,17 +1478,19 @@ async function renderAsdDashboard() {
 // ── ASD ATLETI (gestione) ────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 async function loadAtleti() {
-    if (!S.asd) return;
+    if (!S.asd?.id) return;
     const snap = await getDocs(atletiCol(S.asd.id));
     const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Check if the user is a "Coach Athlete" (not the main ASD Admin)
-    const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    // Memorizza tutti i tecnici per i dropdown di assegnazione
+    S.allTecnici = all.filter(a => a.isTecnico);
 
-    if (coachAthlete && !isMainAdmin) {
-        // Limit to assigned athletes
-        S.atleti = all.filter(a => a.tecnicoId === S.atleta.id);
+    // Filtro per i tecnici: se loggato come atleta e tecnico, mostra solo i propri atleti.
+    // Se loggato come account societario (ASD) o come atleta-admin, mostra tutto.
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    if (S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin) {
+        // Includiamo gli atleti assegnati e se stessi
+        S.atleti = all.filter(a => a.tecnicoId === S.atleta.id || a.id === S.atleta.id);
     } else {
         S.atleti = all;
     }
@@ -1497,7 +1499,8 @@ async function loadAtleti() {
 async function renderAsdAtleti() {
     await loadAtleti();
     const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
-    setHeader(isMainAdmin ? '👥 Atleti' : '👥 I Miei Atleti', S.asd?.nome || '');
+    const isCoach = S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin;
+    setHeader(isCoach ? '👥 I Miei Atleti' : '👥 Atleti Registrati', S.asd?.nome || '');
 
     const list = S.atleti.length === 0
         ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessun atleta registrato.</p>`
@@ -1524,7 +1527,9 @@ async function renderAsdAtleti() {
 
     render(`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-            <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">👥 Atleti Registrati (${S.atleti.length})</h2>
+            <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">
+                👥 ${isCoach ? 'I Miei Atleti' : 'Atleti Registrati'} (${S.atleti.length})
+            </h2>
             <button class="btn btn-gold btn-sm" onclick="showAddAtleta()">➕ Nuovo</button>
         </div>
         ${list}
@@ -1535,7 +1540,8 @@ function showAddAtleta(existing=null) {
     const isEdit = !!existing;
     const atl = existing || { nome:'', cognome:'', tesseraFitarco:'', tesseraAltro:'', enteAltro:'', tipoArco:'Ricurvo', dataNascita:'', pwd:'', fotoBase64:'', isTecnico:false, tecnicoId:'' };
     const bowTypes = ['Ricurvo','Compound','Longbow','Barebow','Arco Nudo','Altro'];
-    const tecnici = S.atleti.filter(a => a.isTecnico && a.id !== atl.id);
+    // Mostra tutti i tecnici dell'ASD, non solo quelli filtrati
+    const tecnici = (S.allTecnici || []).filter(t => t.id !== atl.id);
     showModal(isEdit ? '✏️ Modifica Atleta' : '➕ Nuovo Atleta', `
         <div style="display:flex;flex-direction:column;gap:0.75rem">
 
@@ -1756,8 +1762,8 @@ window.asdDettaglioSessione = async (sessionId) => {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdStats() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
-    setHeader(isMainAdmin ? '📊 Statistiche Atleti' : '📊 Statistiche I Miei Atleti', S.asd?.nome||'');
+    const isCoach = S.role === 'atleta' && S.atleta?.isTecnico;
+    setHeader(isCoach ? '📊 Statistiche I Miei Atleti' : '📊 Statistiche Atleti', S.asd?.nome||'');
 
     render(`
         <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold);margin-bottom:1rem">📊 Statistiche per Atleta</h2>
@@ -6481,8 +6487,9 @@ window.renderAsdProfilo   = renderAsdProfilo;
 // ── ASD: RECORD & DASHBOARD ─────────────────────────────────────────────────
 async function renderAsdRecords() {
     await loadAtleti();
+    const isCoach = S.role === 'atleta' && S.atleta?.isTecnico;
     const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
-    setHeader(isMainAdmin ? '🏆 Record ASD' : '🏆 Record I Miei Atleti', S.asd?.nome || '');
+    setHeader(isCoach ? '🏆 Record I Miei Atleti' : '🏆 Record ASD', S.asd?.nome || '');
     // Mostra spinner durante il caricamento massivo
     render(`<div style="display:flex;justify-content:center;padding:3rem"><div class="spinner"></div></div>`);
 
