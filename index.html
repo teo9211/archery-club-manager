@@ -1725,6 +1725,13 @@ async function renderAsdAtletaDetail({ atletaId }) {
             </div>
         </div>
 
+        <div class="card" style="margin-bottom:1rem;background:rgba(201,162,39,0.05);border-color:var(--gold)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">🏅 Obiettivi Atleta</div>
+                <button class="btn btn-gold btn-sm" onclick="window.newObiettivo('${atl.id}')">➕ Assegna</button>
+            </div>
+        </div>
+
         <div class="gold-line"></div>
         <h3 style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">📋 Sessioni Recenti</h3>
         ${sessionList}
@@ -2612,24 +2619,20 @@ const TK_TARGA   = ['40','60','80','120','Tripla','Tripla Vegas','Field','3D','A
 const TK_DIST    = ['18mt','25mt','40mt','50mt','60mt','70mt'];
 const TK_LUOGO   = ['Indoor','Outdoor'];
 const TK_FORMATO = ['30 frecce (3x10)','36 frecce (6x6)','72 frecce (6x12)'];
-const TK_ARCO    = ['Arco Nudo','Arco Olimpico','Compound'];
+const TK_ARCO    = ['Arco Nudo','Arco Olimpico','Compound','Bearbow','Arco Storico'];
 const TK_KEYPAD  = ['X','10','9','8','7','6','5','4','3','2','1','M','CANC'];
 
 // ── 3D scoring ───────────────────────────────────────────────────────────
 // Modalità 3D: si attiva quando tipoTarga === '3D'
-// TK.session.d3 = { ente:'FITARCO'|'FIARC', frecce:1|2|3, piazzole:N }
-// FITARCO: 1 o 2 frecce per piazzola. Punteggi: Spot=11, SKill=10, Kill=8, Body=5, M=0
-// FIARC:   1, 2 o 3 frecce per piazzola. Prima freccia: Spot=20,Kill=18,Body=16
-//          Seconda: Spot=14,Kill=12,Body=10.  Terza: Spot=8,Kill=6,Body=4.  M=0
-//          Se colpisci con la prima → piazzola chiusa (non puoi sparare altre)
+// TK.session.d3 = { ente:'FITARCO'|'BATTUTA'|'PERCORSO'|'ROUND 3D'|'TRACCIATO', frecce:1|2|3, piazzole:N }
 const TK_3D_FITARCO_KP = ['Spot 11','SKill 10','Kill 8','Body 5','M','CANC'];
-const TK_3D_FIARC_KP   = ['Spot','Kill','Body','M','CANC']; // il punteggio dipende dal numero di freccia
 const TK_3D_SCORE_FITARCO = { 'Spot 11':11, 'SKill 10':10, 'Kill 8':8, 'Body 5':5, 'M':0 };
-// Per FIARC il punteggio dipende dalla freccia (1=max, 2=med, 3=min)
-const TK_3D_SCORE_FIARC = {
-    1: { Spot:20, Kill:18, Body:16, M:0 },
-    2: { Spot:14, Kill:12, Body:10, M:0 },
-    3: { Spot:8,  Kill:6,  Body:4,  M:0 }
+const TK_3D_LABELS_GENERAL = ['Spot','Kill','Body','M','CANC'];
+const TK_3D_RULES = {
+    'BATTUTA': { frecce:3, firstHitOnly:true, scores:{ 1:{Spot:13, Kill:11, Body:7, M:0}, 2:{Spot:13, Kill:11, Body:7, M:0}, 3:{Spot:13, Kill:11, Body:7, M:0} } },
+    'PERCORSO': { frecce:3, firstHitOnly:true, scores:{ 1:{Spot:11, Kill:9, Body:6, M:0}, 2:{Spot:9, Kill:7, Body:4, M:0}, 3:{Spot:7, Kill:5, Body:2, M:0} } },
+    'ROUND 3D': { frecce:2, firstHitOnly:false, scores:{ 1:{Spot:16, Kill:14, Body:10, M:0}, 2:{Spot:9, Kill:7, Body:5, M:0} } },
+    'TRACCIATO': { frecce:3, firstHitOnly:true, scores:{ 1:{Spot:22, Kill:20, Body:16, M:0}, 2:{Spot:16, Kill:14, Body:10, M:0}, 3:{Spot:10, Kill:8, Body:4, M:0} } }
 };
 
 const TK = { session:null, turn:1, grid:null, volleyNotes:{}, rows:0, cols:3, format:null, activeCell:{row:1,col:1} };
@@ -2869,12 +2872,12 @@ function tkRenderScoring3D(){
     const finito=piazzolaCorrente>=nPiaz;
 
     // Mappa punteggi → keypad
-    let kpLabels, kpValues;
+    let kpLabels;
     if(ente==='FITARCO'){
         kpLabels=[{l:'Spot',v:'11'},{l:'SKill',v:'10'},{l:'Kill',v:'8'},{l:'Body',v:'5'},{l:'M',v:'0'}];
     } else {
-        // FIARC: i punteggi dipendono dalla freccia corrente
-        const sc=TK_3D_SCORE_FIARC[Math.min(frecciaCorrente,3)]||TK_3D_SCORE_FIARC[3];
+        const rule = TK_3D_RULES[ente];
+        const sc = rule.scores[Math.min(frecciaCorrente, rule.frecce)];
         kpLabels=[{l:`Spot ${sc.Spot}`,v:String(sc.Spot)},{l:`Kill ${sc.Kill}`,v:String(sc.Kill)},{l:`Body ${sc.Body}`,v:String(sc.Body)},{l:'M',v:'0'}];
     }
 
@@ -2935,7 +2938,7 @@ function tkRenderScoring3D(){
     const kp=!finito?`<div style="margin-bottom:0.75rem">
         <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.4rem">
             🦌 Piazzola ${piazzolaCorrente+1}/${nPiaz}
-            ${ente==='FIARC'?`<span style="font-size:0.78rem;color:var(--muted);font-weight:400"> · ${frecciaCorrente}ª freccia</span>`:''}
+            ${ente!=='FITARCO'?`<span style="font-size:0.78rem;color:var(--muted);font-weight:400"> · ${frecciaCorrente}ª freccia</span>`:''}
         </div>
         <div style="display:grid;grid-template-columns:repeat(${Math.ceil(kpLabels.length/2)===2?'2':'3'},1fr);gap:0.5rem;margin-bottom:0.5rem">
             ${kpLabels.map(k=>`<button onclick="window.tk3dKey('${k.v}')" style="padding:0.75rem 0.4rem;font-family:'Rajdhani',sans-serif;font-size:0.95rem;font-weight:700;background:var(--dark3);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text);touch-action:manipulation" ontouchstart="this.style.background='var(--gold)';this.style.color='#000'" ontouchend="this.style.background='var(--dark3)';this.style.color='var(--text)'">${k.l}</button>`).join('')}
@@ -2967,17 +2970,18 @@ window.tk3dKey = (val) => {
     const punti=parseInt(val)||0;
     TK.grid[pi][fi]=punti===0?'0':val;
 
-    if(punti>0) {
-        // Colpito: piazzola chiusa → segna le frecce rimanenti come '—'
+    const rule = TK_3D_RULES[d3.ente];
+    const isFirstHitOnly = rule ? rule.firstHitOnly : (d3.ente === 'FITARCO');
+
+    if (punti > 0 && isFirstHitOnly) {
+        // Colpito: piazzola chiusa (BATTUTA, PERCORSO, TRACCIATO, FITARCO)
         for(let c=fi+1;c<d3.frecce;c++) TK.grid[pi][c]='—';
-        // Avanza alla prossima piazzola
         d3.piazzola++; d3.frecciaCorrente=1;
     } else {
-        // Mancato: prossima freccia (se disponibile)
-        if(fi+1<d3.frecce) {
+        // Mancato o modalità a frecce multiple (ROUND 3D)
+        if(fi+1 < d3.frecce) {
             d3.frecciaCorrente++;
         } else {
-            // Esaurite le frecce per questa piazzola
             d3.piazzola++; d3.frecciaCorrente=1;
         }
     }
@@ -3355,10 +3359,13 @@ function renderRegistrationForm({ type='Allenamento' }) {
                 <div style="background:rgba(201,162,39,0.07);border:1.5px solid rgba(201,162,39,0.4);border-radius:12px;padding:0.85rem">
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">🦌 Impostazioni Tiro 3D</div>
                     <div style="display:flex;flex-direction:column;gap:0.6rem">
-                        <div><label class="form-label">Federazione *</label>
+                        <div><label class="form-label">Modalità / Regolamento *</label>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem">
-                                <button id="btn-fitarco" onclick="window.tk3dSetEnte('FITARCO')" style="padding:0.6rem;border-radius:10px;border:2px solid rgba(201,162,39,0.5);background:rgba(201,162,39,0.15);color:var(--gold);font-weight:700;cursor:pointer;font-size:0.88rem">🏆 FITARCO</button>
-                                <button id="btn-fiarc" onclick="window.tk3dSetEnte('FIARC')" style="padding:0.6rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.88rem">🎯 FIARC</button>
+                                <button id="btn-3d-FITARCO" onclick="window.tk3dSetEnte('FITARCO')" style="padding:0.5rem;border-radius:10px;border:2px solid rgba(201,162,39,0.5);background:rgba(201,162,39,0.15);color:var(--gold);font-weight:700;cursor:pointer;font-size:0.8rem">🏆 FITARCO</button>
+                                <button id="btn-3d-BATTUTA" onclick="window.tk3dSetEnte('BATTUTA')" style="padding:0.5rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.8rem">🏹 BATTUTA</button>
+                                <button id="btn-3d-PERCORSO" onclick="window.tk3dSetEnte('PERCORSO')" style="padding:0.5rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.8rem">🌲 PERCORSO</button>
+                                <button id="btn-3d-ROUND-3D" onclick="window.tk3dSetEnte('ROUND 3D')" style="padding:0.5rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.8rem">🎯 ROUND 3D</button>
+                                <button id="btn-3d-TRACCIATO" onclick="window.tk3dSetEnte('TRACCIATO')" style="padding:0.5rem;border-radius:10px;border:2px solid var(--border);background:var(--dark3);color:var(--muted);font-weight:700;cursor:pointer;font-size:0.8rem">🐾 TRACCIATO</button>
                             </div>
                         </div>
                         <div><label class="form-label">N° Piazzole *</label>
@@ -3430,14 +3437,36 @@ window.tkOnTargaChange = (val) => {
 window.tk3dSetEnte = (ente) => {
     window._tk3dEnte = ente;
     // Aggiorna stile bottoni
-    const bf = document.getElementById('btn-fitarco'), bb = document.getElementById('btn-fiarc');
-    if (bf) { bf.style.borderColor = ente==='FITARCO'?'rgba(201,162,39,0.8)':'var(--border)'; bf.style.background = ente==='FITARCO'?'rgba(201,162,39,0.2)':'var(--dark3)'; bf.style.color = ente==='FITARCO'?'var(--gold)':'var(--muted)'; }
-    if (bb) { bb.style.borderColor = ente==='FIARC'?'rgba(201,162,39,0.8)':'var(--border)'; bb.style.background = ente==='FIARC'?'rgba(201,162,39,0.2)':'var(--dark3)'; bb.style.color = ente==='FIARC'?'var(--gold)':'var(--muted)'; }
+    const btns = ['FITARCO','BATTUTA','PERCORSO','ROUND 3D','TRACCIATO'];
+    btns.forEach(b => {
+        const el = document.getElementById('btn-3d-' + b.replace(' ','-'));
+        if (el) {
+            const act = ente === b;
+            el.style.borderColor = act ? 'rgba(201,162,39,0.8)' : 'var(--border)';
+            el.style.background = act ? 'rgba(201,162,39,0.2)' : 'var(--dark3)';
+            el.style.color = act ? 'var(--gold)' : 'var(--muted)';
+        }
+    });
+
     // Mostra opzioni frecce
     const fb = document.getElementById('tk-3d-frecce-btns');
+    const fWrap = document.getElementById('tk-3d-frecce-wrap');
     const info = document.getElementById('tk-3d-info');
-    const maxFrec = ente==='FITARCO' ? [1,2] : [1,2,3];
-    const defFrec = ente==='FITARCO' ? 2 : 3;
+
+    let maxFrec = [1,2,3];
+    let defFrec = 3;
+
+    if (ente === 'FITARCO') {
+        maxFrec = [1,2];
+        defFrec = 2;
+        if (fWrap) fWrap.style.display = 'block';
+    } else {
+        const rule = TK_3D_RULES[ente];
+        maxFrec = [rule.frecce];
+        defFrec = rule.frecce;
+        if (fWrap) fWrap.style.display = 'none';
+    }
+
     window._tk3dFrec = defFrec;
     if (fb) {
         fb.style.gridTemplateColumns = `repeat(${maxFrec.length},1fr)`;
@@ -3448,9 +3477,16 @@ window.tk3dSetEnte = (ente) => {
     if (info) {
         info.style.display = 'block';
         if (ente==='FITARCO') {
-            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FITARCO:</strong><br>Spot 11 · Super Kill 10 · Kill 8 · Body 5 · Mancato 0';
+            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FITARCO:</strong><br>Spot 11 · SKill 10 · Kill 8 · Body 5 · M 0';
         } else {
-            info.innerHTML = '<strong style="color:var(--gold)">Punteggi FIARC:</strong><br>1ª freccia: Spot 20 · Kill 18 · Body 16<br>2ª freccia: Spot 14 · Kill 12 · Body 10<br>3ª freccia: Spot 8 · Kill 6 · Body 4<br><em>Se colpisci con la 1ª la piazzola si chiude.</em>';
+            const rule = TK_3D_RULES[ente];
+            let txt = `<strong style="color:var(--gold)">Punteggi ${ente}:</strong><br>`;
+            for(let i=1; i<=rule.frecce; i++) {
+                const s = rule.scores[i];
+                txt += `${i}ª freccia: Spot ${s.Spot} · Kill ${s.Kill} · Body ${s.Body}<br>`;
+            }
+            if (rule.firstHitOnly) txt += '<em>Solo la prima freccia che va a segno conta.</em>';
+            info.innerHTML = txt;
         }
     }
 };
@@ -4685,9 +4721,10 @@ function fmtDuration(min) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ── OBIETTIVI ───────────────────────────────────────────────────────────────
-const goalsCol = () => {
-    if (!S.asd?.id || !S.atleta?.id) return null;
-    return collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${S.atleta.id}/goals`);
+const goalsCol = (atletaId = null) => {
+    const aId = atletaId || S.atleta?.id;
+    if (!S.asd?.id || !aId) return null;
+    return collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${aId}/goals`);
 };
 
 function _normGoal(g) {
@@ -4762,7 +4799,7 @@ function calcGoalProgress(goal, sessioni = []) {
                 const gDist = (goal.distanza || '').toLowerCase().trim();
                 const sTarga = (s.tipoTarga || '').toLowerCase().trim();
                 const gTarga = (goal.tipoTarga || '').toLowerCase().trim();
-                return sDist === gDist && sTarga === gTarga;
+                return (sDist === gDist || !gDist) && (sTarga === gTarga || !gTarga);
             });
             if (match.length > 0) {
                 const scores = match.flatMap(s => {
@@ -4775,15 +4812,19 @@ function calcGoalProgress(goal, sessioni = []) {
                     return [tot];
                 }).filter(val => !isNaN(val) && val > 0);
                 current = scores.length > 0 ? Math.max(...scores) : 0;
-            } else {
-                current = 0;
             }
         } else if (goal.type==='arrows') {
-            current = rel.reduce((sum,s)=>sum+countArrowsForSession(s, goal.filterTurn),0);
-        } else if (goal.type==='sessions') {
-            current = rel.length;
-        } else if (goal.type==='training') {
-            current = rel.filter(s=>s.type==='Allenamento').length;
+            current = rel.reduce((sum,s)=>sum+countArrowsForSession(s, goal.filterTurn === 't1_or_t2' ? 'both' : goal.filterTurn),0);
+        } else if (goal.type==='sessions' || goal.type==='training') {
+            let filtered = rel;
+            if (goal.type==='training') filtered = filtered.filter(s=>s.type==='Allenamento');
+
+            if (goal.filterTurn === 't1') {
+                filtered = filtered.filter(s => (parseInt(s.turn1Score)>0 || (s.turn1?.summary?.fired||0)>0));
+            } else if (goal.filterTurn === 't2') {
+                filtered = filtered.filter(s => (parseInt(s.turn2Score)>0 || (s.turn2?.summary?.fired||0)>0));
+            }
+            current = filtered.length;
         }
     } catch(err) {
         console.error("Error calculating progress for goal:", goal, err);
@@ -4859,7 +4900,7 @@ async function renderAtletaObiettivi() {
     }
 }
 
-window.newObiettivo = () => {
+window.newObiettivo = (atletaId = null) => {
     showModal('🏅 Nuovo Obiettivo', `
         <div style="display:flex;flex-direction:column;gap:0.6rem">
             <div><label class="form-label">Titolo *</label><input class="inp" id="ob-title" placeholder="Es: Raggiungere 540/600"></div>
@@ -4922,7 +4963,7 @@ window.newObiettivo = () => {
                 </label>
             </div>
         </div>
-    `, [{text:'Annulla',cls:'btn-ghost'},{text:'Crea',cls:'btn-gold',fn:window.saveObiettivo}]);
+    `, [{text:'Annulla',cls:'btn-ghost'},{text:'Crea',cls:'btn-gold',fn:()=>window.saveObiettivo(atletaId)}]);
     // hide score fields initially
     const sf = document.getElementById('ob-score-fields');
     if (sf) sf.style.display = 'none';
@@ -4934,7 +4975,7 @@ window.toggleObFields = () => {
     if (sf) sf.style.display = t==='score'?'flex':'none';
 };
 
-window.saveObiettivo = async () => {
+window.saveObiettivo = async (atletaId = null) => {
     const title = document.getElementById('ob-title')?.value.trim();
     const type = document.getElementById('ob-type')?.value;
     const target = parseInt(document.getElementById('ob-target')?.value)||0;
@@ -4960,11 +5001,15 @@ window.saveObiettivo = async () => {
     };
     if (type==='score') {
         const dist=document.getElementById('ob-dist')?.value, targa=document.getElementById('ob-targa')?.value;
-        if (!dist||!targa) return showModal('Errore','Seleziona distanza e targa.',[{text:'OK'}]);
-        goal.distanza=dist; goal.tipoTarga=targa;
+        if (dist || targa) {
+            goal.distanza=dist; goal.tipoTarga=targa;
+        }
     }
-    await addDoc(goalsCol(), goal);
-    showModal('✅ Creato!','Obiettivo aggiunto.',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaObiettivi')}]);
+    await addDoc(goalsCol(atletaId), goal);
+    showModal('✅ Creato!','Obiettivo aggiunto.',[{text:'OK',cls:'btn-gold',fn:()=>{
+        if (atletaId) window.setView('asdAtletaDetail', {atletaId});
+        else window.setView('atletaObiettivi');
+    }}]);
 };
 
 window.completeObiettivo = async (id) => {
@@ -6474,7 +6519,7 @@ async function renderAsdRecords() {
 
     // Funzione per generare la Dashboard dei Record Assoluti
     const buildDashboard = () => {
-        let html = `<div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">🎖️ Record Assoluti per Categoria</div>`;
+        let html = `<div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1.1rem">🎖️ Record Assoluti ASD</div>`;
 
         if (combinations.length === 0) {
             return html + `<p style="text-align:center;color:var(--muted);padding:1rem">Nessun dato sufficiente per calcolare i record.</p>`;
@@ -6485,34 +6530,37 @@ async function renderAsdRecords() {
             const filtered = allSessions.filter(s => s.distanza === dist && s.tipoTarga === targa && !s.trainingWithoutScore);
             if (!filtered.length) return;
 
+            // Absolute Total
             const bestTotal = filtered.reduce((prev, curr) => (curr.totalScore || 0) > (prev.totalScore || 0) ? curr : prev, { totalScore: 0 });
+            // Best T1 (any session)
             const filteredT1 = filtered.filter(s => (s.turn1Score || 0) > 0);
             const bestT1 = filteredT1.length ? filteredT1.reduce((prev, curr) => curr.turn1Score > prev.turn1Score ? curr : prev) : null;
+            // Best T2 (any session)
             const filteredT2 = filtered.filter(s => (s.turn2Score || 0) > 0);
             const bestT2 = filteredT2.length ? filteredT2.reduce((prev, curr) => curr.turn2Score > prev.turn2Score ? curr : prev) : null;
 
             html += `
-            <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
-                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-bottom:0.6rem;display:flex;justify-content:space-between">
+            <div class="card" style="margin-bottom:1rem;border-color:var(--gold);background:rgba(201,162,39,0.03)">
+                <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);border-bottom:1px solid rgba(201,162,39,0.2);padding-bottom:0.4rem;margin-bottom:0.6rem;display:flex;justify-content:space-between;font-size:0.95rem">
                     <span>📏 ${dist} — 🎯 ${targa}</span>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem">
                     <div style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase">Assoluto</div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:900;color:var(--gold-light)">${bestTotal.totalScore || '—'}</div>
-                        <div style="font-size:0.7rem;font-weight:700">${bestTotal.athleteName || '—'}</div>
+                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Assoluto</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.5rem;font-weight:900;color:var(--gold-light);line-height:1.1">${bestTotal.totalScore || '—'}</div>
+                        <div style="font-size:0.7rem;font-weight:700;margin-top:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${bestTotal.athleteName || '—'}</div>
                         <div style="font-size:0.6rem;color:var(--muted)">${bestTotal.data ? fmtDate(bestTotal.data) : ''}</div>
                     </div>
                     <div style="text-align:center;border-left:1px solid var(--border);border-right:1px solid var(--border)">
-                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase">Miglior T1</div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--text)">${bestT1 ? bestT1.turn1Score : '—'}</div>
-                        <div style="font-size:0.7rem">${bestT1 ? bestT1.athleteName : '—'}</div>
+                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Miglior T1</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text);line-height:1.1">${bestT1 ? bestT1.turn1Score : '—'}</div>
+                        <div style="font-size:0.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.2rem">${bestT1 ? bestT1.athleteName : '—'}</div>
                         <div style="font-size:0.6rem;color:var(--muted)">${bestT1 ? fmtDate(bestT1.data) : ''}</div>
                     </div>
                     <div style="text-align:center">
-                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase">Miglior T2</div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;font-weight:700;color:var(--text)">${bestT2 ? bestT2.turn2Score : '—'}</div>
-                        <div style="font-size:0.7rem">${bestT2 ? bestT2.athleteName : '—'}</div>
+                        <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Miglior T2</div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text);line-height:1.1">${bestT2 ? bestT2.turn2Score : '—'}</div>
+                        <div style="font-size:0.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.2rem">${bestT2 ? bestT2.athleteName : '—'}</div>
                         <div style="font-size:0.6rem;color:var(--muted)">${bestT2 ? fmtDate(bestT2.data) : ''}</div>
                     </div>
                 </div>
