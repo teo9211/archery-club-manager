@@ -2405,9 +2405,14 @@ window.logoutAtleta = logoutAtleta;
 function _normSess(s) {
     if (!s) return null;
     let dataStr = s.data || '';
-    if (s.data && typeof s.data === 'object' && s.data.seconds) { // Firebase Timestamp?
+    if (s.data && typeof s.data === 'object' && s.data.seconds) {
         dataStr = new Date(s.data.seconds * 1000).toISOString().split('T')[0];
     }
+    // Normalizzazione campi note ed esercizi per garantire compatibilità tra versioni e varianti nomi campo
+    const ec = (s.esercizConsigliati || s.eserciziConsigliati || s.exercises || s.notes || s.esercizi_consigliati || s.note_consigliate || '').toString().trim();
+    const es = (s.esercizSvolti || s.eserciziSvolti || s.exercisesDone || s.trainingContent || s.esercizi_svolti || s.trainingNotes || '').toString().trim();
+    const nf = (s.noteCondizioniFisiche || s.noteFisiche || s.physicalNotes || s.note_fisiche || s.physical_notes || '').toString().trim();
+
     return {
         ...s,
         data: dataStr,
@@ -2417,9 +2422,10 @@ function _normSess(s) {
         totalX: parseInt(s.totalX || s.xCount || 0) || 0,
         totalTen: parseInt(s.totalTen || s.tenCount || 0) || 0,
         totalNine: parseInt(s.totalNine || s.nineCount || 0) || 0,
-        esercizConsigliati: s.esercizConsigliati || s.exercises || s.notes || '',
-        esercizSvolti:      s.esercizSvolti || s.exercisesDone || s.trainingContent || '',
-        noteCondizioniFisiche: s.noteCondizioniFisiche || s.physicalNotes || ''
+        frecceAggiuntive: parseInt(s.frecceAggiuntive || s.frecce_aggiuntive || s.arrows || 0) || 0,
+        esercizConsigliati: ec,
+        esercizSvolti:      es,
+        noteCondizioniFisiche: nf
     };
 }
 
@@ -4100,10 +4106,10 @@ async function renderDettaglioSessione(params) {
 
         ${noteBlock('🎯','var(--gold)','Esercizi Consigliati', s.esercizConsigliati)}
         ${noteBlock('✅','#3d9970','Esercizi Svolti', s.esercizSvolti)}
-        ${noteBlock('🩺','#2980b9','Note e Condizioni Fisiche', s.noteCondizioniFisiche)}
+        ${noteBlock('🩺','#2980b9','Note Fisiche', s.noteCondizioniFisiche)}
         ${noteBlock('📝','#e5a400','Note Pre-Gara', s.notePreGara)}
         ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
-        ${s.note && !s.noteCondizioniFisiche ? noteBlock('📝','var(--muted)','Note', s.note) : ''}
+        ${s.note ? noteBlock('📝','var(--muted)','Note Generali', s.note) : ''}
 
         ${!isTec && (isQS || s.turn1 || s.turn2) ? `
         <div class="gold-line"></div>
@@ -4210,7 +4216,7 @@ window.esportaDettaglioPDF = () => {
 
     ${s.esercizConsigliati ? `<h2>🎯 Esercizi Consigliati</h2><div class="notes-area">${s.esercizConsigliati}</div>` : ''}
     ${s.esercizSvolti ? `<h2>✅ Esercizi Svolti</h2><div class="notes-area">${s.esercizSvolti}</div>` : ''}
-    ${s.noteCondizioniFisiche ? `<h2>🩺 Note e Condizioni Fisiche</h2><div class="notes-area">${s.noteCondizioniFisiche}</div>` : ''}
+    ${s.noteCondizioniFisiche ? `<h2>🩺 Note Fisiche</h2><div class="notes-area">${s.noteCondizioniFisiche}</div>` : ''}
     ${s.notePreGara ? `<h2>📝 Note Pre-Gara</h2><div class="notes-area">${s.notePreGara}</div>` : ''}
     ${s.notePostGara ? `<h2>🏆 Note Post-Gara</h2><div class="notes-area">${s.notePostGara}</div>` : ''}
 
