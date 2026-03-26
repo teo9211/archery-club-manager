@@ -3788,11 +3788,12 @@ async function showAtletaSessionDetail(sessionId) {
             ${s.distanza?`<div><strong style="color:var(--gold)">Distanza:</strong> ${s.distanza}</div>`:''}
             ${s.luogo?`<div><strong style="color:var(--gold)">Luogo:</strong> ${s.luogo}</div>`:''}
             ${s.frecceAggiuntive>0?`<div><strong style="color:var(--gold)">Frecce:</strong> ${s.frecceAggiuntive}</div>`:''}
-            ${s.esercizConsigliati?`<div><strong style="color:var(--gold)">Esercizi consigliati:</strong><br>${s.esercizConsigliati}</div>`:''}
-            ${s.esercizSvolti?`<div><strong style="color:var(--gold)">Esercizi svolti:</strong><br>${s.esercizSvolti}</div>`:''}
-            ${s.notePreGara?`<div><strong style="color:var(--gold)">Note pre-gara:</strong><br>${s.notePreGara}</div>`:''}
-            ${s.notePostGara?`<div><strong style="color:var(--gold)">Note post-gara:</strong><br>${s.notePostGara}</div>`:''}
-            ${s.noteCondizioniFisiche?`<div><strong style="color:var(--gold)">Note fisiche:</strong><br>${s.noteCondizioniFisiche}</div>`:''}
+            ${s.esercizConsigliati?`<div><strong style="color:var(--gold)">🎯 Esercizi consigliati:</strong><br>${s.esercizConsigliati}</div>`:''}
+            ${s.esercizSvolti?`<div><strong style="color:#5dba94">✅ Esercizi svolti:</strong><br>${s.esercizSvolti}</div>`:''}
+            ${s.noteCondizioniFisiche?`<div><strong style="color:#5daadc">🩺 Note fisiche:</strong><br>${s.noteCondizioniFisiche}</div>`:''}
+            ${s.notePreGara?`<div><strong style="color:#eab308">📝 Note pre-gara:</strong><br>${s.notePreGara}</div>`:''}
+            ${s.notePostGara?`<div><strong style="color:#5dba94">🏆 Note post-gara:</strong><br>${s.notePostGara}</div>`:''}
+            ${s.note?`<div><strong style="color:var(--muted)">📝 Note generali:</strong><br>${s.note}</div>`:''}
         </div>
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 }
@@ -4219,6 +4220,7 @@ window.esportaDettaglioPDF = () => {
     ${s.noteCondizioniFisiche ? `<h2>🩺 Note Fisiche</h2><div class="notes-area">${s.noteCondizioniFisiche}</div>` : ''}
     ${s.notePreGara ? `<h2>📝 Note Pre-Gara</h2><div class="notes-area">${s.notePreGara}</div>` : ''}
     ${s.notePostGara ? `<h2>🏆 Note Post-Gara</h2><div class="notes-area">${s.notePostGara}</div>` : ''}
+    ${s.note ? `<h2>📝 Note Generali</h2><div class="notes-area">${s.note}</div>` : ''}
 
     ${!isTec && !isQS ? `
         <h2>📊 Tabellone Punteggi</h2>
@@ -6599,11 +6601,13 @@ async function renderAsdRecords() {
         if (f.targa) filtered = filtered.filter(s => s.tipoTarga === f.targa);
 
         const getVal = (s) => {
-            if (f.turn === 't1') return s.turn1Score || 0;
-            if (f.turn === 't2') return s.turn2Score || 0;
-            return s.totalScore || 0;
+            if (f.turn === 't1') return parseInt(s.turn1Score) || 0;
+            if (f.turn === 't2') return parseInt(s.turn2Score) || 0;
+            return parseInt(s.totalScore) || 0;
         };
 
+        // Filtra sessioni che non hanno punteggio nel turno selezionato
+        filtered = filtered.filter(s => getVal(s) > 0);
         filtered.sort((a,b) => getVal(b) - getVal(a));
 
         const dists  = [...new Set(allSessions.map(s => s.distanza).filter(Boolean))].sort();
