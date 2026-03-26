@@ -2637,12 +2637,27 @@ function tkRenderScoring3D(){
         <div style="font-size:0.82rem;color:var(--muted);margin-top:0.2rem">Punteggio finale: <strong style="color:var(--gold-light)">${st.score}</strong> pt</div>
     </div>`;
 
+    const isT = s.type === 'Allenamento';
+    const notes = isT ? `<div class="form-section">
+        <label class="form-label">🩺 Note Fisiche</label>
+        <textarea class="inp" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
+        <textarea class="inp" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+    </div>` : `<div class="form-section">
+        <label class="form-label">📝 Note Pre-Gara</label>
+        <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label>
+        <textarea class="inp" rows="2" oninput="TK.session.notePostGara=this.value">${s.notePostGara||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
+        <textarea class="inp" rows="2" oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+    </div>`;
+
     render(`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
             <span style="font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">${s.type} · 3D ${ente}</span>
             <span style="font-size:0.75rem;color:var(--muted)">${nPiaz} piazzole · ${freq} ${freq===1?'freccia':'frecce'}</span>
         </div>
-        ${live}${tbl}${kp}
+        ${live}${tbl}${kp}${notes}
         ${finito?`<button class="btn btn-gold btn-full btn-lg" onclick="window.tkSave3D()">💾 Salva Sessione 3D</button>`:`<button class="btn btn-outline btn-full btn-sm" onclick="window.tkSave3D()" style="margin-top:0.3rem">💾 Salva e chiudi (incompleto)</button>`}
     `);
 }
@@ -3376,6 +3391,12 @@ async function renderAtletaDati() {
                     </div>
                     ${s.totalScore>0?`<div style="text-align:right;flex-shrink:0"><div style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold-light)">${s.totalScore}</div><div style="font-size:0.7rem;color:var(--muted)">${s.turn1Score?'T1:'+s.turn1Score+(s.turn2Score?' T2:'+s.turn2Score:''):''}</div></div>`:`<div style="font-size:0.75rem;color:var(--muted);flex-shrink:0">${s.trainingWithoutScore?'Tecnico':'—'}</div>`}
                 </div>
+                ${(s.esercizConsigliati||s.esercizSvolti||s.noteCondizioniFisiche) ? `
+                <div style="margin-top:0.5rem;border-top:1px solid var(--border);padding-top:0.4rem;display:flex;flex-direction:column;gap:0.2rem">
+                    ${s.esercizConsigliati?`<div style="font-size:0.75rem"><strong style="color:var(--gold)">🎯 Consigliati:</strong> <span style="color:var(--muted)">${s.esercizConsigliati.substring(0,80)}${s.esercizConsigliati.length>80?'…':''}</span></div>`:''}
+                    ${s.esercizSvolti?`<div style="font-size:0.75rem"><strong style="color:#5dba94">✅ Svolti:</strong> <span style="color:var(--muted)">${s.esercizSvolti.substring(0,80)}${s.esercizSvolti.length>80?'…':''}</span></div>`:''}
+                    ${s.noteCondizioniFisiche?`<div style="font-size:0.75rem"><strong style="color:#5daadc">🩺 Note:</strong> <span style="color:var(--muted)">${s.noteCondizioniFisiche.substring(0,60)}${s.noteCondizioniFisiche.length>60?'…':''}</span></div>`:''}
+                </div>` : ''}
             </div>
         `).join('');
 
@@ -3849,6 +3870,12 @@ window._calRender = () => {
                         ? `<div style="text-align:right;flex-shrink:0"><div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--gold-light)">${ss.totalScore}</div><div style="font-size:0.7rem;color:var(--muted)">${ss.turn1Score?'T1:'+ss.turn1Score+(ss.turn2Score?' T2:'+ss.turn2Score:''):''}</div></div>`
                         : `<div style="font-size:0.72rem;color:var(--muted);flex-shrink:0">${ss.trainingWithoutScore?'Tecnico':'—'}</div>`}
                 </div>
+                ${(ss.esercizConsigliati||ss.esercizSvolti||ss.noteCondizioniFisiche) ? `
+                <div style="margin-top:0.5rem;border-top:1px solid var(--border);padding-top:0.4rem;display:flex;flex-direction:column;gap:0.2rem">
+                    ${ss.esercizConsigliati?`<div style="font-size:0.75rem"><strong style="color:var(--gold)">🎯 Consigliati:</strong> <span style="color:var(--muted)">${ss.esercizConsigliati.substring(0,80)}${ss.esercizConsigliati.length>80?'…':''}</span></div>`:''}
+                    ${ss.esercizSvolti?`<div style="font-size:0.75rem"><strong style="color:#5dba94">✅ Svolti:</strong> <span style="color:var(--muted)">${ss.esercizSvolti.substring(0,80)}${ss.esercizSvolti.length>80?'…':''}</span></div>`:''}
+                    ${ss.noteCondizioniFisiche?`<div style="font-size:0.75rem"><strong style="color:#5daadc">🩺 Note:</strong> <span style="color:var(--muted)">${ss.noteCondizioniFisiche.substring(0,60)}${ss.noteCondizioniFisiche.length>60?'…':''}</span></div>`:''}
+                </div>` : ''}
             </div>`).join('')
         }`;
 };
