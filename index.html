@@ -1589,7 +1589,10 @@ window.asdDettaglioSessione = async (sessionId) => {
             ${noteBlock('📝','#e5a400','Note Pre-Gara', s.notePreGara)}
             ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
         </div>
-    `, [{ text:'Chiudi', cls:'btn-ghost' }]);
+    `, [
+        { text:'🖨️ PDF', cls:'btn-gold', fn: () => window.esportaDettaglioPDF(s) },
+        { text:'Chiudi', cls:'btn-ghost' }
+    ]);
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2517,6 +2520,7 @@ function tkRenderScoring(){
 function tkRenderScoring3D(){
     const s=TK.session;
     if(!s||!s.d3) return tkRenderScoring();
+    const isT=s.type==='Allenamento';
     const d3=s.d3;
     const st=tkCalc3D(TK.grid,d3);
     const ente=d3.ente, freq=d3.frecce, nPiaz=d3.piazzole;
@@ -2604,12 +2608,27 @@ function tkRenderScoring3D(){
         <div style="font-size:0.82rem;color:var(--muted);margin-top:0.2rem">Punteggio finale: <strong style="color:var(--gold-light)">${st.score}</strong> pt</div>
     </div>`;
 
+    // Notes
+    const notes=isT?`<div class="form-section">
+        <label class="form-label">🩺 Note Fisiche</label>
+        <textarea class="inp" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
+        <textarea class="inp" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+    </div>`:`<div class="form-section">
+        <label class="form-label">📝 Note Pre-Gara</label>
+        <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label>
+        <textarea class="inp" rows="2" oninput="TK.session.notePostGara=this.value">${s.notePostGara||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
+        <textarea class="inp" rows="2" oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+    </div>`;
+
     render(`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
             <span style="font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">${s.type} · 3D ${ente}</span>
             <span style="font-size:0.75rem;color:var(--muted)">${nPiaz} piazzole · ${freq} ${freq===1?'freccia':'frecce'}</span>
         </div>
-        ${live}${tbl}${kp}
+        ${live}${tbl}${kp}${notes}
         ${finito?`<button class="btn btn-gold btn-full btn-lg" onclick="window.tkSave3D()">💾 Salva Sessione 3D</button>`:`<button class="btn btn-outline btn-full btn-sm" onclick="window.tkSave3D()" style="margin-top:0.3rem">💾 Salva e chiudi (incompleto)</button>`}
     `);
 }
@@ -3357,7 +3376,10 @@ async function showAtletaSessionDetail(sessionId) {
             ${s.notePostGara?`<div><strong style="color:var(--gold)">Note post-gara:</strong><br>${s.notePostGara}</div>`:''}
             ${s.noteCondizioniFisiche?`<div><strong style="color:var(--gold)">Note fisiche:</strong><br>${s.noteCondizioniFisiche}</div>`:''}
         </div>
-    `, [{text:'Chiudi', cls:'btn-ghost'}]);
+    `, [
+        {text:'🖨️ Esporta PDF', cls:'btn-gold', fn: () => window.esportaDettaglioPDF(s)},
+        {text:'Chiudi', cls:'btn-ghost'}
+    ]);
 }
 window.showAtletaSessionDetail = showAtletaSessionDetail;
 
@@ -3546,8 +3568,12 @@ async function renderDettaglioSessione(params) {
     const hasTurn2 = s.turn2 && s.turn2.summary && (s.turn2.summary.score > 0 || s.turn2.summary.fired > 0);
     const sid = s.id || s.docId || '';
 
+    window._currentDetailSession = s;
     render(`
-        <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaDati')" style="margin-bottom:1rem">← I Miei Dati</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <button class="btn btn-ghost btn-sm" onclick="window.setView('atletaDati')">← I Miei Dati</button>
+            <button class="btn btn-outline btn-sm" onclick='window.esportaDettaglioPDF(window._currentDetailSession)'>🖨️ PDF</button>
+        </div>
 
         <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap">
             <span class="badge ${s.type==='Gara'?'badge-gold':'badge-blue'}">${s.type}${isTec?' 🎓':isQS?' ⚡':''}</span>
@@ -4625,6 +4651,33 @@ window.stampaReport = () => {
     ${filtered.map(s=>`<tr><td>${fmtDate(s.data)}</td><td>${s.type||''}${s.trainingWithoutScore?' 🎓':s.quickScore?' ⚡':''}</td><td>${s.distanza||'-'}</td><td>${s.tipoTarga||'-'}</td><td><strong>${s.trainingWithoutScore?'-':s.totalScore||0}</strong></td><td>${s.trainingWithoutScore?'-':s.turn1Score||0}</td><td>${s.trainingWithoutScore?'-':s.turn2Score||0}</td><td>${s.luogo||''}</td></tr>`).join('')}
     </tbody></table>
     <button onclick="window.print()" style="padding:10px 20px;background:#c9a227;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-top:15px">🖨️ Stampa</button>
+    </body></html>`);
+    pw.document.close();
+};
+
+window.esportaDettaglioPDF = (s) => {
+    if (!s) return;
+    const isT=s.trainingWithoutScore, isQS=s.quickScore;
+    const arciereNome = s.arciere || (S.atleta ? `${S.atleta.nome} ${S.atleta.cognome}` : 'Atleta');
+    const asdNome = S.asd?.nome || '';
+    const pw=window.open('','','width=800,height=600');
+    pw.document.write(`<!DOCTYPE html><html><head><title>Sessione ${fmtDate(s.data)}</title>
+    <style>body{font-family:Arial;padding:20px;max-width:800px;margin:0 auto}h1{color:#c9a227;border-bottom:2px solid #c9a227;padding-bottom:8px}@media print{button{display:none}}</style></head><body>
+    <h1>🏹 Dettaglio Sessione — ${arciereNome}</h1>
+    <p style="color:#555">${asdNome} &nbsp;|&nbsp; Data: ${fmtDate(s.data)}</p>
+    <div style="border:1px solid #333;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:8px">
+            <div><strong style="font-size:14px">${fmtDate(s.data)}</strong> &nbsp;·&nbsp; <span style="color:#c9a227">${s.type||''}${isT?' 🎓':isQS?' ⚡':''}</span></div>
+            ${!isT&&s.totalScore>0?`<div style="font-size:20px;font-weight:bold;color:#c9a227">${s.totalScore} pt</div>`:''}
+        </div>
+        <div style="font-size:12px;color:#555;margin-bottom:6px">${s.luogo||''} ${s.tipoLuogo?'('+s.tipoLuogo+')':''} ${s.distanza?'· '+s.distanza:''} ${s.tipoTarga?'· '+s.tipoTarga:''}</div>
+        ${s.esercizConsigliati?`<div style="margin-top:6px"><strong style="font-size:11px;color:#c9a227">🎯 Esercizi Consigliati:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.esercizConsigliati}</div></div>`:''}
+        ${s.esercizSvolti?`<div style="margin-top:6px"><strong style="font-size:11px;color:#22c55e">✅ Esercizi Svolti:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.esercizSvolti}</div></div>`:''}
+        ${s.noteCondizioniFisiche?`<div style="margin-top:6px"><strong style="font-size:11px;color:#3b82f6">🩺 Note Fisiche:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.noteCondizioniFisiche}</div></div>`:''}
+        ${s.notePreGara?`<div style="margin-top:6px"><strong style="font-size:11px;color:#eab308">📝 Pre-Gara:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.notePreGara}</div></div>`:''}
+        ${s.notePostGara?`<div style="margin-top:6px"><strong style="font-size:11px;color:#22c55e">🏆 Post-Gara:</strong><br><div style="font-size:12px;white-space:pre-wrap;margin-top:3px">${s.notePostGara}</div></div>`:''}
+    </div>
+    <button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#c9a227;border:none;padding:12px 24px;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer">🖨️ Stampa / PDF</button>
     </body></html>`);
     pw.document.close();
 };
