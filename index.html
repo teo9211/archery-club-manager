@@ -1654,7 +1654,7 @@ async function renderAsdAtletaDetail({ atletaId }) {
     setHeader(`${atl.nome||''} ${atl.cognome||''}`, 'Dettaglio atleta');
 
     const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atletaId)));
-    const sessioni = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
+    const sessioni = snap.docs.map(d => _normSess({ id: d.id, ...d.data() })).sort((a,b) => (b.data||'').localeCompare(a.data||''));
 
     const scored = sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
     const totalScore = scored.reduce((s,x)=>s+(x.totalScore||0),0);
@@ -1753,7 +1753,7 @@ window.asdDettaglioSessione = async (sessionId) => {
     const snapRef = doc(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni/${sessionId}`);
     const snap = await getDoc(snapRef);
     if (!snap.exists()) return;
-    const s = { id: snap.id, ...snap.data() };
+    const s = _normSess({ id: snap.id, ...snap.data() });
     window.setView('detailedSummary', { sessione: s });
 };
 
@@ -2414,9 +2414,12 @@ function _normSess(s) {
         totalScore: parseInt(s.totalScore) || 0,
         turn1Score: parseInt(s.turn1Score) || 0,
         turn2Score: parseInt(s.turn2Score) || 0,
-        totalX: parseInt(s.totalX) || 0,
-        totalTen: parseInt(s.totalTen) || 0,
-        totalNine: parseInt(s.totalNine) || 0
+        totalX: parseInt(s.totalX || s.xCount || 0) || 0,
+        totalTen: parseInt(s.totalTen || s.tenCount || 0) || 0,
+        totalNine: parseInt(s.totalNine || s.nineCount || 0) || 0,
+        esercizConsigliati: s.esercizConsigliati || s.exercises || s.notes || '',
+        esercizSvolti:      s.esercizSvolti || s.exercisesDone || s.trainingContent || '',
+        noteCondizioniFisiche: s.noteCondizioniFisiche || s.physicalNotes || ''
     };
 }
 
@@ -4096,7 +4099,7 @@ async function renderDettaglioSessione(params) {
         </div>
 
         ${noteBlock('🎯','var(--gold)','Esercizi Consigliati', s.esercizConsigliati)}
-        ${noteBlock('✅','#3d9970','Esercizi Svolti', s.esercizSvolti||s.trainingContent)}
+        ${noteBlock('✅','#3d9970','Esercizi Svolti', s.esercizSvolti)}
         ${noteBlock('🩺','#2980b9','Note e Condizioni Fisiche', s.noteCondizioniFisiche)}
         ${noteBlock('📝','#e5a400','Note Pre-Gara', s.notePreGara)}
         ${noteBlock('🏆','#3d9970','Note Post-Gara', s.notePostGara)}
@@ -4206,7 +4209,7 @@ window.esportaDettaglioPDF = () => {
     </div>
 
     ${s.esercizConsigliati ? `<h2>🎯 Esercizi Consigliati</h2><div class="notes-area">${s.esercizConsigliati}</div>` : ''}
-    ${s.esercizSvolti || s.trainingContent ? `<h2>✅ Esercizi Svolti</h2><div class="notes-area">${s.esercizSvolti || s.trainingContent}</div>` : ''}
+    ${s.esercizSvolti ? `<h2>✅ Esercizi Svolti</h2><div class="notes-area">${s.esercizSvolti}</div>` : ''}
     ${s.noteCondizioniFisiche ? `<h2>🩺 Note e Condizioni Fisiche</h2><div class="notes-area">${s.noteCondizioniFisiche}</div>` : ''}
     ${s.notePreGara ? `<h2>📝 Note Pre-Gara</h2><div class="notes-area">${s.notePreGara}</div>` : ''}
     ${s.notePostGara ? `<h2>🏆 Note Post-Gara</h2><div class="notes-area">${s.notePostGara}</div>` : ''}
