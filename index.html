@@ -2476,16 +2476,16 @@ function tkRenderScoring(){
     // Notes
     const notes=isT?`<div class="form-section">
         <label class="form-label">🩺 Note Fisiche</label>
-        <textarea class="inp" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
-        <textarea class="inp" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+        <textarea class="inp" id="tk-eserciz-svolti" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
     </div>`:`<div class="form-section">
         <label class="form-label">📝 Note Pre-Gara</label>
         <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label>
         <textarea class="inp" rows="2" oninput="TK.session.notePostGara=this.value">${s.notePostGara||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
-        <textarea class="inp" rows="2" oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <textarea class="inp" id="tk-note-fisiche" rows="2" oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
     </div>`;
 
     // T1 summary
@@ -2517,6 +2517,7 @@ function tkRenderScoring(){
 function tkRenderScoring3D(){
     const s=TK.session;
     if(!s||!s.d3) return tkRenderScoring();
+    const isT=s.type==='Allenamento';
     const d3=s.d3;
     const st=tkCalc3D(TK.grid,d3);
     const ente=d3.ente, freq=d3.frecce, nPiaz=d3.piazzole;
@@ -2604,12 +2605,27 @@ function tkRenderScoring3D(){
         <div style="font-size:0.82rem;color:var(--muted);margin-top:0.2rem">Punteggio finale: <strong style="color:var(--gold-light)">${st.score}</strong> pt</div>
     </div>`;
 
+    // Notes block for 3D
+    const notes=isT?`<div class="form-section">
+        <label class="form-label">🩺 Note Fisiche</label>
+        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
+        <textarea class="inp" id="tk-eserciz-svolti" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+    </div>`:`<div class="form-section">
+        <label class="form-label">📝 Note Pre-Gara</label>
+        <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">🏆 Note Post-Gara</label>
+        <textarea class="inp" rows="2" oninput="TK.session.notePostGara=this.value">${s.notePostGara||''}</textarea>
+        <label class="form-label" style="margin-top:0.5rem">🩺 Note Fisiche</label>
+        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+    </div>`;
+
     render(`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
             <span style="font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">${s.type} · 3D ${ente}</span>
             <span style="font-size:0.75rem;color:var(--muted)">${nPiaz} piazzole · ${freq} ${freq===1?'freccia':'frecce'}</span>
         </div>
-        ${live}${tbl}${kp}
+        ${live}${tbl}${kp}${notes}
         ${finito?`<button class="btn btn-gold btn-full btn-lg" onclick="window.tkSave3D()">💾 Salva Sessione 3D</button>`:`<button class="btn btn-outline btn-full btn-sm" onclick="window.tkSave3D()" style="margin-top:0.3rem">💾 Salva e chiudi (incompleto)</button>`}
     `);
 }
@@ -2658,6 +2674,10 @@ window.tk3dUndo = () => {
 
 window.tkSave3D = async () => {
     const s=TK.session,d3=s.d3;
+    // Leggi i campi note direttamente dal DOM al momento del salvataggio
+    s.esercizSvolti = document.getElementById('tk-eserciz-svolti')?.value || document.querySelector('textarea[oninput*="esercizSvolti"]')?.value || s.esercizSvolti || '';
+    s.noteCondizioniFisiche = document.getElementById('tk-note-fisiche')?.value || document.querySelector('textarea[oninput*="noteCondizioniFisiche"]')?.value || s.noteCondizioniFisiche || '';
+
     const st=tkCalc3D(TK.grid,d3);
     showModal('🪃 Frecce extra',`
         <div style="text-align:center;font-size:2rem;font-weight:900;color:var(--gold-light)">${st.score}</div>
@@ -2674,8 +2694,10 @@ window.tkSave3D = async () => {
             totalScore:st.score,totalX:0,totalTen:0,totalNine:0,totalAverage:st.avg,
             turn1Score:st.score,turn2Score:0,
             frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:freccieTirate,
-            esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
-            noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+            esercizConsigliati:s.esercizConsigliati||'',
+            esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
+            noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',
+            notePreGara:s.notePreGara||'',
             notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
             d3Config:{ente:d3.ente,piazzole:d3.piazzole,frecce:d3.frecce},
             d3Grid:TK.grid.map(r=>JSON.stringify(r)),
@@ -2711,6 +2733,10 @@ window.tkNote=(volley)=>{
 
 window.tkFineTurno=async(isFinal)=>{
     const s=TK.session,st=tkCalc(TK.grid);
+    // Leggi i campi note direttamente dal DOM al momento del salvataggio
+    s.esercizSvolti = document.getElementById('tk-eserciz-svolti')?.value || document.querySelector('textarea[oninput*="esercizSvolti"]')?.value || s.esercizSvolti || '';
+    s.noteCondizioniFisiche = document.getElementById('tk-note-fisiche')?.value || document.querySelector('textarea[oninput*="noteCondizioniFisiche"]')?.value || s.noteCondizioniFisiche || '';
+
     const tk=`turn${TK.turn}`;
     // Conserva la griglia come array 2D in memoria (per lettura locale)
     // La serializzazione JSON avviene solo al momento del salvataggio su Firestore
@@ -2746,8 +2772,10 @@ window.tkFineTurno=async(isFinal)=>{
                     totalAverage:totShots>0?totalScore/totShots:0,
                     turn1Score:t1.score,turn2Score:t2.score,
                     frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                    esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
-                    noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                    esercizConsigliati:s.esercizConsigliati||'',
+                    esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
+                    noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',
+                    notePreGara:s.notePreGara||'',
                     notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
                     turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
                     turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{},arrowPositions:s.turn2.arrowPositions||[]}:null,
@@ -2801,8 +2829,10 @@ window.tkFineTurno=async(isFinal)=>{
                         totalAverage:totShots>0?t1.score/totShots:0,
                         turn1Score:t1.score,turn2Score:0,
                         frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                        esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
-                        noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                        esercizConsigliati:s.esercizConsigliati||'',
+                        esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
+                        noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',
+                        notePreGara:s.notePreGara||'',
                         notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
                         turn1:{summary:{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
                                grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{},arrowPositions:s.turn1?.arrowPositions||[]},
