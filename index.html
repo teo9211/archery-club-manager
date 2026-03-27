@@ -723,12 +723,14 @@ window._masterAuth = async () => {
     if (!pwd) return;
     try {
         const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
-if (!masterSnap.exists()) {
-    showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
-    return;
-}
-const storedHash = masterSnap.data()?.masterHash;
-const inputHash = hashPwd(pwd);
+        if (!masterSnap.exists()) {
+            showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
+            return;
+        }
+        const storedHash = masterSnap.data()?.hash;
+        const inputHash = await hashPwd(pwd);
+        console.log('storedHash:', storedHash);
+        console.log('inputHash:', inputHash);
         if (inputHash !== storedHash) {
             await new Promise(r => setTimeout(r, 1500));
             showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
@@ -741,6 +743,7 @@ const inputHash = hashPwd(pwd);
         showModal('❌ Errore', 'Impossibile verificare: ' + e.message, [{text:'OK'}]);
     }
 };
+
 
 
 async function renderMasterPanel() {
