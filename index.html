@@ -6895,6 +6895,7 @@ setTimeout(() => {
 
 window.saveSessionWithFallback = saveSessionWithFallback;
 window.syncOfflineQueue = syncOfflineQueue;
+</script>
 
 <div id="pwa-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;background:var(--dark2);border-top:2px solid var(--gold);padding:1rem;animation:fadeSlide 0.3s ease">
     <div style="display:flex;align-items:center;gap:0.75rem;max-width:600px;margin:0 auto">
@@ -6910,7 +6911,7 @@ window.syncOfflineQueue = syncOfflineQueue;
     </div>
 </div>
 
-
+<script>
 // Gestione banner PWA
 (function() {
     if (localStorage.getItem('pwa_banner_dismissed')) return;
