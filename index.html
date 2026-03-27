@@ -2366,7 +2366,6 @@ window.loginAtletaConPassword = async () => {
     const pwdH = await hashPwd(pwd);
     const atleti = S._tempAtleti || [];
 
-    // Cerca atleta solo per password
     const matches = atleti.filter(a => a.pwdHash === pwdH);
     let trovato = null;
 
@@ -2377,7 +2376,7 @@ window.loginAtletaConPassword = async () => {
     }
 
     if (!trovato) return showModal('❌ Errore','Password non valida o atleta non trovato.',[{text:'OK'}]);
-    // Login diretto: non mostrare nome/foto, vai subito al menu
+
     S.role   = 'atleta';
     S.asd    = S._tempAsd;
     S.atleta = trovato;
