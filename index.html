@@ -511,6 +511,9 @@ function buildNav() {
 const app = initializeApp(firebaseConfig);
 db   = getFirestore(app);
 auth = getAuth(app);
+window._db = db; // esponi per console
+window._auth = auth;
+
 
 onAuthStateChanged(auth, async user => {
     if (!user) {
