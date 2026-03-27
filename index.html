@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Archery Club">
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="/archery-club-manager/manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 
     <title>Archery Club Manager</title>
@@ -279,7 +279,7 @@ const firebaseConfig = {
 // Registrazione PWA Service Worker
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.register('/archery-club-manager/sw.js')
             .then(reg => {
                 console.log('SW registrato:', reg.scope);
                 // Controlla aggiornamenti ogni ora
