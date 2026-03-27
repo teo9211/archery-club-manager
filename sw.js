@@ -1,7 +1,8 @@
 const CACHE_NAME = 'archery-club-v1';
 const STATIC_ASSETS = [
-    '/',
-    '/index.html',
+    '/archery-club-manager/',
+    '/archery-club-manager/index.html',
+
     'https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600;800&display=swap'
 ];
 
