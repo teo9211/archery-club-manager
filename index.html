@@ -493,13 +493,13 @@ function buildNav() {
         </div>
     `;
 }
-if (athleteIsCoach && !athleteIsAdmin) {
+if (athleteIsCoach) {
     items += `
         <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
             <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
-            <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard Coach</div>
-            <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 I Miei Atleti</div>
-            <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi Coach</div>
+            <div class="nav-item" onclick="window.setView('coachDashboard');closeNav()">🎯 Dashboard Coach</div>
+            <div class="nav-item" onclick="window.setView('coachAtleti');closeNav()">👥 I Miei Atleti</div>
+            <div class="nav-item" onclick="window.setView('coachMessaggi');closeNav()">📨 Messaggi Coach</div>
         </div>
     `;
 }
@@ -646,6 +646,9 @@ window.setView = async (view, params={}) => {
         case 'atletaGrafici':      return window.renderAtletaGrafici();
         case 'impostazioni':       return renderImpostazioni();
         case 'masterPanel':        return window._masterLogged?renderMasterPanel():window.setView('homeLogin');
+        case 'coachDashboard': return renderCoachDashboard();
+       case 'coachAtleti':    return renderCoachAtleti();
+       case 'coachMessaggi':  return renderCoachMessaggi();
         default: renderHomeLogin();
     }
 };
@@ -1462,7 +1465,6 @@ async function renderAsdDashboard() {
     await loadAtleti();
     const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
     setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
-    // Conta sessioni totali
     let totalSessioni = 0, totalFrecce = 0;
     for (const atl of S.atleti) {
         const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
@@ -1472,9 +1474,7 @@ async function renderAsdDashboard() {
             totalFrecce += parseInt(s.frecceAggiuntive||0) + (s.frecceTotali||0);
         });
     }
-    // Messaggi non letti
     const msgSnap = await getDocs(msgCol(S.asd.id));
-
     render(`
         <div style="padding-top:0.5rem">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
@@ -1486,37 +1486,24 @@ async function renderAsdDashboard() {
                     <div style="font-size:0.78rem;color:var(--muted)">${S.asd.citta||''}</div>
                 </div>
             </div>
-
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem">
                 <div class="stat-box"><div class="stat-num">${S.atleti.length}</div><div class="stat-label">Atleti</div></div>
                 <div class="stat-box"><div class="stat-num">${totalSessioni}</div><div class="stat-label">Sessioni</div></div>
                 <div class="stat-box"><div class="stat-num">${msgSnap.size}</div><div class="stat-label">Messaggi</div></div>
             </div>
-
             <div class="gold-line"></div>
-
-            <!-- Box record notifiche (nascosto di default) -->
             <div id="asd-record-box" style="display:none;background:rgba(201,162,39,0.07);border:1.5px solid var(--gold);border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
-
-            <!-- Box messaggi esterni (nascosto di default) -->
             <div id="asd-ext-msg-box" style="display:none;background:rgba(61,153,112,0.06);border:1.5px solid #3d9970;border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
-
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                 <div class="card card-hover" onclick="window.setView('asdAtleti')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">
-                        ${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}
-                    </div>
-                    <div style="font-size:0.78rem;color:var(--muted)">
-                        ${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}
-                    </div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}</div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdStats',{})">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">
-                        ${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}
-                    </div>
+                    <div style="font-size:0.78rem;color:var(--muted)">${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}</div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdRecords')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
@@ -1548,6 +1535,88 @@ async function renderAsdDashboard() {
     `);
     setTimeout(checkRecordNotifiche, 800);
     setTimeout(checkMessaggiEsterni, 1200);
+}
+
+async function renderCoachDashboard() {
+    window._navHistory = [{view:'coachDashboard',params:{}}];
+    await loadAtleti();
+    setHeader('Dashboard Coach', S.asd?.nome || '');
+    const mieiAtleti = S.atleti;
+    render(`
+        <div style="padding-top:0.5rem">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
+                <div class="avatar avatar-lg">${initials(S.atleta.nome, S.atleta.cognome)}</div>
+                <div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text)">${S.atleta.nome} ${S.atleta.cognome}</div>
+                    <div style="font-size:0.78rem;color:var(--gold)">🎯 Tecnico — ${S.asd?.nome || ''}</div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.6rem;margin-bottom:1.25rem">
+                <div class="stat-box">
+                    <div class="stat-num">${mieiAtleti.length}</div>
+                    <div class="stat-label">I Miei Atleti</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-num">🎯</div>
+                    <div class="stat-label">Coach</div>
+                </div>
+            </div>
+            <div class="gold-line"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                <div class="card card-hover" onclick="window.setView('coachAtleti')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">I Miei Atleti</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Visualizza i profili assegnati</div>
+                </div>
+                <div class="card card-hover" onclick="window.setView('coachMessaggi')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📨</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Messaggi</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Invia note ai tuoi atleti</div>
+                </div>
+                <div class="card card-hover" onclick="window.setView('asdStats')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Risultati dei tuoi atleti</div>
+                </div>
+                <div class="card card-hover" onclick="window.setView('asdRecords')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Record</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Migliori punteggi</div>
+                </div>
+            </div>
+        </div>
+    `);
+}
+
+async function renderCoachAtleti() {
+    await loadAtleti();
+    setHeader('👥 I Miei Atleti', S.asd?.nome || '');
+    const list = S.atleti.length === 0
+        ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessun atleta assegnato.</p>`
+        : S.atleti.map(atl => `
+            <div class="session-card" style="display:flex;align-items:center;gap:0.85rem">
+                ${atl.fotoBase64
+                    ? `<img src="${atl.fotoBase64}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
+                    : `<div class="avatar">${initials(atl.nome,atl.cognome)}</div>`}
+                <div style="flex:1;min-width:0">
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem">${atl.nome} ${atl.cognome}</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="window.setView('asdAtletaDetail',{atletaId:'${atl.id}'})">📊</button>
+            </div>
+        `).join('');
+    render(`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">
+                👥 I Miei Atleti (${S.atleti.length})
+            </h2>
+        </div>
+        ${list}
+    `);
+}
+
+async function renderCoachMessaggi() {
+    return renderAsdMessaggi();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
