@@ -896,7 +896,7 @@ window._masterResetAsdPwd = (asdId, nomeAsd) => {
             const p2=document.getElementById('master-new-pwd2')?.value||'';
             if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
             if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash:hashPwd(p1)});
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash: await hashPwd(p1)});
             showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAsd}</strong> è stata resettata.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
         }}
     ]);
@@ -916,7 +916,7 @@ window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
             const p2=document.getElementById('master-atl-pwd2')?.value||'';
             if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
             if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash:hashPwd(p1)});
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash: await hashPwd(p1)});
             showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
         }}
     ]);
@@ -1686,7 +1686,7 @@ async function saveAtleta(existingId=null, existingData=null) {
     if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
     const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, fotoBase64, updatedAt: new Date().toISOString() };
-    if (pwd) data.pwdHash = hashPwd(pwd);
+    if (pwd) data.pwdHash = await hashPwd(pwd);
 
     if (existingId) {
         await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
@@ -2227,7 +2227,8 @@ window.saveAsdPwd = async function() {
     const p2 = $('prof-pwd2')?.value.trim();
     if (!p1 || p1.length<6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK'}]);
     if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
-    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: hashPwd(p1) });
+    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: await hashPwd(p1) });
+
     showModal('✅ Password aggiornata!','',[{text:'OK'}]);
 };
 
@@ -2335,7 +2336,7 @@ window.scriviAllAsd = (asdId, asdNome) => {
 window.loginAtletaConPassword = async () => {
     const pwd = $('atl-login-pwd')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    const pwdH = hashPwd(pwd);
+    const pwdH = await hashPwd(pwd);
     const atleti = S._tempAtleti || [];
 
     // Cerca atleta solo per password
@@ -2440,7 +2441,7 @@ window.doAtletaLogin = async function() {
 
     const pwd = $('atl-pwd-login')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    if (hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
+    if (await hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
 
     S.role   = 'atleta';
     S.asd    = asd;
