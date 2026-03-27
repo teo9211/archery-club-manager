@@ -720,7 +720,7 @@ window._masterAuth = async () => {
     const pwd = document.getElementById('master-pwd')?.value || '';
     if (!pwd) return;
     try {
-        const masterSnap = await getDoc(doc(db, APP_NS, 'app_config'));
+        const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
 if (!masterSnap.exists()) {
     showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
     return;
