@@ -710,13 +710,13 @@ window._masterAuth = async () => {
     const pwd = document.getElementById('master-pwd')?.value || '';
     if (!pwd) return;
     try {
-        const masterSnap = await getDoc(doc(db, `${APP_NS}/config/master`));
-        if (!masterSnap.exists()) {
-            showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
-            return;
-        }
-        const storedHash = masterSnap.data()?.hash;
-        const inputHash = await hashPwd(pwd);
+        const masterSnap = await getDoc(doc(db, APP_NS, 'app_config'));
+if (!masterSnap.exists()) {
+    showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
+    return;
+}
+const storedHash = masterSnap.data()?.masterHash;
+const inputHash = hashPwd(pwd);
         if (inputHash !== storedHash) {
             await new Promise(r => setTimeout(r, 1500));
             showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
@@ -738,7 +738,7 @@ async function renderMasterPanel() {
     // Carica config globale
     let globalConfig = { alertActive: false, alertTitle: '', alertMessage: '' };
     try {
-        const confSnap = await getDoc(doc(db, `${APP_NS}/config/global`));
+        const confSnap = await getDoc(doc(db, APP_NS, 'app_config'));
         if (confSnap.exists()) globalConfig = confSnap.data();
     } catch(e) {}
 
