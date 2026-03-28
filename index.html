@@ -309,6 +309,9 @@ window.S = {
     }
 };
 
+window._currentMode = 'asd'; // 'asd' | 'coach'
+
+
 
 // ── HELPERS ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -435,6 +438,26 @@ function showPrivacy() {
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 }
 
+function showPrivacyConsent(onAccept, onRefuse) {
+    showModal('🛡️ Privacy & Consenso — TEST', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;line-height:1.6">
+            <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700">
+                ⚠️ AMBIENTE DI TEST — Questi dati non vengono trasmessi a terzi.
+            </div>
+            <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
+            <p>I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app.</p>
+            <p>Non vengono ceduti a terzi né usati per scopi commerciali.</p>
+            <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;border:1px solid var(--border);font-size:0.75rem;color:var(--muted)">
+                🧪 <em>Versione di test: le funzionalità di privacy reale saranno integrate nella versione definitiva.</em>
+            </div>
+        </div>
+    `, [
+        {text:'❌ Rifiuto', cls:'btn-danger', fn: onRefuse},
+        {text:'✅ Accetto', cls:'btn-gold', fn: onAccept}
+    ]);
+}
+
+
 function buildNav() {
     let items = '', userName = '';
 
@@ -487,9 +510,13 @@ function buildNav() {
             <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
             <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
             <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Tutti gli Atleti</div>
-            <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi</div>
-            <div class="nav-item" onclick="window.setView('asdStats');closeNav()">📊 Statistiche</div>
-            <div class="nav-item" onclick="window.setView('asdRecords');closeNav()">🏆 Record ASD</div>
+            <div class="nav-item" onclick="window.setVi            
+                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachDashboard');closeNav()">🎯 Dashboard Coach</div>
+            <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachAtleti');closeNav()">👥 I Miei Atleti</div>
+            <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachMessaggi');closeNav()">📨 Messaggi Coach</div>
+
+
+
         </div>
     `;
 }
@@ -1463,7 +1490,7 @@ window.doAsdRegister = async function() {
 async function renderAsdDashboard() {
     window._navHistory = [{view:'asdDashboard',params:{}}];
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
     let totalSessioni = 0, totalFrecce = 0;
     for (const atl of S.atleti) {
@@ -1635,20 +1662,22 @@ async function loadAtleti() {
     // - Atleta con isAdmin o nome corrispondente adminName → tutto
     // - Coach puro (isTecnico senza isAdmin) → solo propri atleti assegnati + sé stesso
     const isFullAdmin = S.role === 'asd' || isAtletaAdmin();
-    const isCoachOnly = S.role === 'atleta' && S.atleta?.isTecnico && !isFullAdmin;
+    const isCoachMode = window._currentMode === 'coach' && S.atleta?.isTecnico;
 
-    if (isCoachOnly) {
+    if (isCoachMode) {
         S.atleti = all.filter(a => a.tecnicoId === S.atleta.id || a.id === S.atleta.id);
     } else {
         S.atleti = all;
     }
+
 }
 
 
 async function renderAsdAtleti() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
-    const isCoach = S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin;
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
+    const isCoach = window._currentMode === 'coach' && S.atleta?.isTecnico;
+
     setHeader(isCoach ? '👥 I Miei Atleti' : '👥 Atleti Registrati', S.asd?.nome || '');
 
     const list = S.atleti.length === 0
@@ -1957,9 +1986,10 @@ async function renderAsdStats() {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdMessaggi() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isOnlyCoach = coachAthlete && !isMainAdmin;
+    const isOnlyCoach = window._currentMode === 'coach' && coachAthlete;
+
 
     setHeader(isOnlyCoach ? '📨 Messaggi Coach' : '📨 Messaggi ASD', S.asd?.nome||'');
 
@@ -2446,14 +2476,38 @@ window.loginAtletaConPassword = async () => {
 
     if (!trovato) return showModal('❌ Errore','Password non valida o atleta non trovato.',[{text:'OK'}]);
 
-    S.role   = 'atleta';
+       S.role   = 'atleta';
     S.asd    = S._tempAsd;
     S.atleta = trovato;
-    localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
-    buildNav();
-    await loadAtletaSessioni();
-    window.setView('atletaMenu');
-    setTimeout(checkDraftSession, 400);
+
+    const privacyKey = `privacy_accepted_${trovato.id}`;
+    const alreadyAccepted = localStorage.getItem(privacyKey);
+
+    if (alreadyAccepted) {
+        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
+        buildNav();
+        await loadAtletaSessioni();
+        window.setView('atletaMenu');
+        setTimeout(checkDraftSession, 400);
+    } else {
+        showPrivacyConsent(
+            async () => {
+                // Accetta
+                localStorage.setItem(privacyKey, '1');
+                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
+                buildNav();
+                await loadAtletaSessioni();
+                window.setView('atletaMenu');
+                setTimeout(checkDraftSession, 400);
+            },
+            () => {
+                // Rifiuta
+                S.role = null; S.asd = null; S.atleta = null;
+                window.setView('homeLogin');
+            }
+        );
+    }
+
 };
 
 window.selectAtleta = (atletaId) => {
@@ -2538,15 +2592,36 @@ window.doAtletaLogin = async function() {
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
     if (await hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
 
-    S.role   = 'atleta';
+        S.role   = 'atleta';
     S.asd    = asd;
     S.atleta = atleta;
-    localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
-    buildNav();
-    await loadAtletaSessioni();
-    window.setView('atletaMenu');
-    // Controlla se c'è una bozza di sessione salvata
-    setTimeout(checkDraftSession, 400);
+
+    const privacyKey = `privacy_accepted_${atleta.id}`;
+    const alreadyAccepted = localStorage.getItem(privacyKey);
+
+    if (alreadyAccepted) {
+        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
+        buildNav();
+        await loadAtletaSessioni();
+        window.setView('atletaMenu');
+        setTimeout(checkDraftSession, 400);
+    } else {
+        showPrivacyConsent(
+            async () => {
+                localStorage.setItem(privacyKey, '1');
+                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
+                buildNav();
+                await loadAtletaSessioni();
+                window.setView('atletaMenu');
+                setTimeout(checkDraftSession, 400);
+            },
+            () => {
+                S.role = null; S.asd = null; S.atleta = null;
+                window.setView('homeLogin');
+            }
+        );
+    }
+
 };
 
 function isAtletaAdmin() {
@@ -2761,7 +2836,7 @@ function renderAtletaMenu() {
             ${(isAtletaAdmin() || S.atleta?.isTecnico) ? `
 <div class="gold-line"></div>
 ${isAtletaAdmin() ? `
-<div class="card card-hover" style="border:2px solid var(--gold);background:rgba(201,162,39,0.05);margin-bottom:0.5rem" onclick="window.setView('asdDashboard')">
+            <div class="card card-hover" style="border:2px solid var(--gold);background:rgba(201,162,39,0.05);margin-bottom:0.5rem" onclick="window._currentMode='asd';window.setView('asdDashboard')">
     <div style="display:flex;align-items:center;gap:0.75rem">
         <div style="font-size:2rem">⚙️</div>
         <div>
@@ -2771,7 +2846,7 @@ ${isAtletaAdmin() ? `
     </div>
 </div>` : ''}
 ${S.atleta?.isTecnico ? `
-<div class="card card-hover" style="border:2px solid #3d9970;background:rgba(61,153,112,0.05)" onclick="window.setView('asdDashboard')">
+<div class="card card-hover" style="border:2px solid #3d9970;background:rgba(61,153,112,0.05)" onclick="window._currentMode='coach';window.setView('coachDashboard')">
     <div style="display:flex;align-items:center;gap:0.75rem">
         <div style="font-size:2rem">👤</div>
         <div>
@@ -6446,9 +6521,10 @@ window.applyBulk = async () => {
 // ── MESSAGGI ESTERNI (da visitatori/pubblico) ────────────────────────────────
 async function renderAsdMessaggiEsterni() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isOnlyCoach = coachAthlete && !isMainAdmin;
+    const isOnlyCoach = window._currentMode === 'coach' && coachAthlete;
+
 
     setHeader(isOnlyCoach ? '📬 Messaggi dai miei Atleti' : '📬 Messaggi Esterni', S.asd?.nome||'');
     // Segna come letti
