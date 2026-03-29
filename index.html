@@ -504,32 +504,33 @@ function buildNav() {
             { icon:'📨', label:'Messaggi',          fn:"window.setView('atletaMessaggi')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
 
-        if (athleteIsAdmin) {
-    items += `
-        <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
-            <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
-            <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
-            <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Tutti gli Atleti</div>
-            <div class="nav-item" onclick="window.setVi            
-                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachDashboard');closeNav()">🎯 Dashboard Coach</div>
-            <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachAtleti');closeNav()">👥 I Miei Atleti</div>
-            <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachMessaggi');closeNav()">📨 Messaggi Coach</div>
-
-
-
-        </div>
-    `;
-}
-if (athleteIsCoach) {
-    items += `
-        <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
-            <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
-            <div class="nav-item" onclick="window.setView('coachDashboard');closeNav()">🎯 Dashboard Coach</div>
-            <div class="nav-item" onclick="window.setView('coachAtleti');closeNav()">👥 I Miei Atleti</div>
-            <div class="nav-item" onclick="window.setView('coachMessaggi');closeNav()">📨 Messaggi Coach</div>
-        </div>
-    `;
-}
+    if (athleteIsAdmin) {
+            // Sezione Gestionale ASD
+            items += `
+                <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+                    <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
+                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
+                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Tutti gli Atleti</div>
+                    <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi ASD</div>        
+                    <div class="nav-item" style="color:var(--gold-light);border-top:1px dashed var(--border);margin-top:0.5rem" 
+                         onclick="if(confirm('Vuoi ricaricare forzatamente l\'app?')){window.location.reload(true);}">
+                        🔄 Ricarica Forzata App
+                    </div>
+                </div>
+            `;
+            
+            // Sezione Gestionale Coach (visibile solo se l'atleta è anche Tecnico)
+            if (athleteIsCoach) {
+                items += `
+                    <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+                        <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
+                        <div class="nav-item" onclick="window.setView('coachDashboard');closeNav()">📊 Dashboard Coach</div>
+                        <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 I miei Atleti</div>
+                        <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi Coach</div>
+                    </div>
+                `;
+            }
+        }
 
 
         items += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
