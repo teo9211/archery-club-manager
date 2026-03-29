@@ -3,14 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- PWA Meta Tags -->
-<meta name="theme-color" content="#0f0f0f">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Archery Club">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-
     <title>Archery Club Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
@@ -276,19 +268,6 @@ const firebaseConfig = {
     messagingSenderId: "959832767060",
     appId: "1:959832767060:web:1c356fe08f6b7402a2cbc1"
 };
-// Registrazione PWA Service Worker
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then(reg => {
-                console.log('SW registrato:', reg.scope);
-                // Controlla aggiornamenti ogni ora
-                setInterval(() => reg.update(), 3600000);
-            })
-            .catch(err => console.warn('SW non registrato:', err));
-    });
-}
-
 const APP_NS = 'club_manager_v1'; // namespace separato dalla webapp originale
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 
@@ -296,44 +275,17 @@ const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','
 let db, auth;
 window.S = {
     view: 'loading',
-    role: null,
-    asd: null,
-    atleta: null,
+    role: null,          // 'asd' | 'atleta' | null
+    asd: null,           // { id, nome, email, ... }
+    atleta: null,        // { id, nome, cognome, ... }
     allAsd: [],
-    atleti: [],
-    sessioni: [],
+    atleti: [],          // atleti della ASD corrente
+    sessioni: [],        // sessioni atleta
     messaggi: [],
-    cache: {
-        sessioniLoadedAt: null,
-        atletiLoadedAt: null,
-    }
 };
-
-window._currentMode = 'asd'; // 'asd' | 'coach'
-
-
 
 // ── HELPERS ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-// Invalida la cache dopo un salvataggio
-function invalidateSessioniCache() {
-    S.cache.sessioniLoadedAt = null;
-}
-
-// Carica sessioni solo se necessario
-async function loadAtletaSessioniCached(forceReload = false) {
-    const CACHE_TTL = 60000; // 1 minuto
-    const now = Date.now();
-    const cacheValid = S.cache.sessioniLoadedAt &&
-                       (now - S.cache.sessioniLoadedAt) < CACHE_TTL &&
-                       S.sessioni.length > 0;
-    if (!forceReload && cacheValid) {
-        return; // usa dati già in memoria
-    }
-    await loadAtletaSessioni();
-    S.cache.sessioniLoadedAt = Date.now();
-}
-
 const render = html => { $('main-view').innerHTML = `<div class="anim">${html}</div>`; };
 function showModal(title, bodyHtml, actions=[]) {
     $('modal-title').textContent = title;
@@ -349,18 +301,15 @@ function showModal(title, bodyHtml, actions=[]) {
     $('modal-overlay').classList.add('show');
 }
 function closeModal() { $('modal-overlay').classList.remove('show'); }
-async function hashPwd(password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + '_ACM_SALT_2025');
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return 'sha_' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+function hashPwd(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) { h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; }
+    return 'h_' + Math.abs(h).toString(36);
 }
-
 // ── CHIAVE MASTER (cambia la password qui, poi aggiorna l'hash) ─────────────
 // Password attuale: ACMadmin2025! → hash: h_1l8b8k7k
 // Per cambiarla: apri la console e digita hashPwd('nuovapassword') poi incolla il risultato qui
-const MASTER_HASH = null; // Spostato su Firestore
+const MASTER_HASH = 'h_yyy2o4';
 function fmtDate(d) {
     if (!d) return 'N/D';
     let s = '';
@@ -438,26 +387,6 @@ function showPrivacy() {
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 }
 
-function showPrivacyConsent(onAccept, onRefuse) {
-    showModal('🛡️ Privacy & Consenso — TEST', `
-        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;line-height:1.6">
-            <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700">
-                ⚠️ AMBIENTE DI TEST — Questi dati non vengono trasmessi a terzi.
-            </div>
-            <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
-            <p>I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app.</p>
-            <p>Non vengono ceduti a terzi né usati per scopi commerciali.</p>
-            <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;border:1px solid var(--border);font-size:0.75rem;color:var(--muted)">
-                🧪 <em>Versione di test: le funzionalità di privacy reale saranno integrate nella versione definitiva.</em>
-            </div>
-        </div>
-    `, [
-        {text:'❌ Rifiuto', cls:'btn-danger', fn: onRefuse},
-        {text:'✅ Accetto', cls:'btn-gold', fn: onAccept}
-    ]);
-}
-
-
 function buildNav() {
     let items = '', userName = '';
 
@@ -504,34 +433,26 @@ function buildNav() {
             { icon:'📨', label:'Messaggi',          fn:"window.setView('atletaMessaggi')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
 
-    if (athleteIsAdmin) {
-            // Sezione Gestionale ASD
+        if (athleteIsAdmin) {
             items += `
                 <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
                     <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
-                    <div class="nav-item" onclick="window._currentMode='asd';window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
-                    <div class="nav-item" onclick="window._currentMode='asd';window.setView('asdAtleti');closeNav()">👥 Tutti gli Atleti</div>
-                    <div class="nav-item" onclick="window._currentMode='asd';window.setView('asdMessaggi');closeNav()">📨 Messaggi ASD</div>     
-                    <div class="nav-item" style="color:var(--gold-light);border-top:1px dashed var(--border);margin-top:0.5rem" 
-                         onclick="if(confirm('Vuoi ricaricare forzatamente l\'app?')){window.location.reload(true);}">
-                        🔄 Ricarica Forzata App
-                    </div>
+                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
+                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Atleti</div>
+                    <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi</div>
                 </div>
             `;
-            
-            // Sezione Gestionale Coach (visibile solo se l'atleta è anche Tecnico)
-            if (athleteIsCoach) {
-                items += `
-                    <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
-                        <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
-                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachDashboard');closeNav()">📊 Dashboard Coach</div>
-                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('asdAtleti');closeNav()">👥 I miei Atleti</div>
-                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('asdMessaggi');closeNav()">📨 Messaggi Coach</div>
-                    </div>
-                `;
-            }
         }
-
+        if (athleteIsCoach) {
+            items += `
+                <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+                    <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
+                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard Coach</div>
+                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 I Miei Atleti</div>
+                    <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi Coach</div>
+                </div>
+            `;
+        }
 
         items += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
             <div class="nav-item" style="color:var(--danger)" onclick="logoutAtleta()">🚪 Logout</div>
@@ -545,15 +466,6 @@ function buildNav() {
 const app = initializeApp(firebaseConfig);
 db   = getFirestore(app);
 auth = getAuth(app);
-window._db = db;
-window._auth = auth;
-window._hashPwd = hashPwd;
-window._setDoc = setDoc;
-window._doc = doc;
-window._getDoc = getDoc;
-
-
-
 
 onAuthStateChanged(auth, async user => {
     if (!user) {
@@ -674,9 +586,6 @@ window.setView = async (view, params={}) => {
         case 'atletaGrafici':      return window.renderAtletaGrafici();
         case 'impostazioni':       return renderImpostazioni();
         case 'masterPanel':        return window._masterLogged?renderMasterPanel():window.setView('homeLogin');
-        case 'coachDashboard': return renderCoachDashboard();
-       case 'coachAtleti':    return renderCoachAtleti();
-       case 'coachMessaggi':  return renderCoachMessaggi();
         default: renderHomeLogin();
     }
 };
@@ -755,30 +664,14 @@ window._masterLogin = () => {
 window._masterAuth = async () => {
     const pwd = document.getElementById('master-pwd')?.value || '';
     if (!pwd) return;
-    try {
-        const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
-        if (!masterSnap.exists()) {
-            showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
-            return;
-        }
-        const storedHash = masterSnap.data()?.hash;
-        const inputHash = await hashPwd(pwd);
-        console.log('storedHash:', storedHash);
-        console.log('inputHash:', inputHash);
-        if (inputHash !== storedHash) {
-            await new Promise(r => setTimeout(r, 1500));
-            showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
-            return;
-        }
-        window._masterLogged = true;
-        await loadAllAsd();
-        window.setView('masterPanel');
-    } catch(e) {
-        showModal('❌ Errore', 'Impossibile verificare: ' + e.message, [{text:'OK'}]);
+    if (hashPwd(pwd) !== MASTER_HASH) {
+        showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
+        return;
     }
+    window._masterLogged = true;
+    await loadAllAsd();
+    window.setView('masterPanel');
 };
-
-
 
 async function renderMasterPanel() {
     setHeader('🔑 Pannello Sviluppatore', 'Accesso Admin');
@@ -787,7 +680,7 @@ async function renderMasterPanel() {
     // Carica config globale
     let globalConfig = { alertActive: false, alertTitle: '', alertMessage: '' };
     try {
-        const confSnap = await getDoc(doc(db, APP_NS, 'app_config'));
+        const confSnap = await getDoc(doc(db, `${APP_NS}/config/global`));
         if (confSnap.exists()) globalConfig = confSnap.data();
     } catch(e) {}
 
@@ -930,7 +823,7 @@ window._masterResetAsdPwd = (asdId, nomeAsd) => {
             const p2=document.getElementById('master-new-pwd2')?.value||'';
             if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
             if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash: await hashPwd(p1)});
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash:hashPwd(p1)});
             showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAsd}</strong> è stata resettata.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
         }}
     ]);
@@ -950,7 +843,7 @@ window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
             const p2=document.getElementById('master-atl-pwd2')?.value||'';
             if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
             if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash: await hashPwd(p1)});
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash:hashPwd(p1)});
             showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
         }}
     ]);
@@ -1491,8 +1384,9 @@ window.doAsdRegister = async function() {
 async function renderAsdDashboard() {
     window._navHistory = [{view:'asdDashboard',params:{}}];
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
     setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
+    // Conta sessioni totali
     let totalSessioni = 0, totalFrecce = 0;
     for (const atl of S.atleti) {
         const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
@@ -1502,7 +1396,9 @@ async function renderAsdDashboard() {
             totalFrecce += parseInt(s.frecceAggiuntive||0) + (s.frecceTotali||0);
         });
     }
+    // Messaggi non letti
     const msgSnap = await getDocs(msgCol(S.asd.id));
+
     render(`
         <div style="padding-top:0.5rem">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
@@ -1514,24 +1410,37 @@ async function renderAsdDashboard() {
                     <div style="font-size:0.78rem;color:var(--muted)">${S.asd.citta||''}</div>
                 </div>
             </div>
+
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem">
                 <div class="stat-box"><div class="stat-num">${S.atleti.length}</div><div class="stat-label">Atleti</div></div>
                 <div class="stat-box"><div class="stat-num">${totalSessioni}</div><div class="stat-label">Sessioni</div></div>
                 <div class="stat-box"><div class="stat-num">${msgSnap.size}</div><div class="stat-label">Messaggi</div></div>
             </div>
+
             <div class="gold-line"></div>
+
+            <!-- Box record notifiche (nascosto di default) -->
             <div id="asd-record-box" style="display:none;background:rgba(201,162,39,0.07);border:1.5px solid var(--gold);border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
+
+            <!-- Box messaggi esterni (nascosto di default) -->
             <div id="asd-ext-msg-box" style="display:none;background:rgba(61,153,112,0.06);border:1.5px solid #3d9970;border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
+
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                 <div class="card card-hover" onclick="window.setView('asdAtleti')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">
+                        ${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}
+                    </div>
+                    <div style="font-size:0.78rem;color:var(--muted)">
+                        ${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}
+                    </div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdStats',{})">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">
+                        ${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}
+                    </div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdRecords')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
@@ -1565,88 +1474,6 @@ async function renderAsdDashboard() {
     setTimeout(checkMessaggiEsterni, 1200);
 }
 
-async function renderCoachDashboard() {
-    window._navHistory = [{view:'coachDashboard',params:{}}];
-    await loadAtleti();
-    setHeader('Dashboard Coach', S.asd?.nome || '');
-    const mieiAtleti = S.atleti;
-    render(`
-        <div style="padding-top:0.5rem">
-            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
-                <div class="avatar avatar-lg">${initials(S.atleta.nome, S.atleta.cognome)}</div>
-                <div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text)">${S.atleta.nome} ${S.atleta.cognome}</div>
-                    <div style="font-size:0.78rem;color:var(--gold)">🎯 Tecnico — ${S.asd?.nome || ''}</div>
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.6rem;margin-bottom:1.25rem">
-                <div class="stat-box">
-                    <div class="stat-num">${mieiAtleti.length}</div>
-                    <div class="stat-label">I Miei Atleti</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-num">🎯</div>
-                    <div class="stat-label">Coach</div>
-                </div>
-            </div>
-            <div class="gold-line"></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-                <div class="card card-hover" onclick="window.setView('coachAtleti')">
-                    <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">I Miei Atleti</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">Visualizza i profili assegnati</div>
-                </div>
-                <div class="card card-hover" onclick="window.setView('coachMessaggi')">
-                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📨</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Messaggi</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">Invia note ai tuoi atleti</div>
-                </div>
-                <div class="card card-hover" onclick="window.setView('asdStats')">
-                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">Risultati dei tuoi atleti</div>
-                </div>
-                <div class="card card-hover" onclick="window.setView('asdRecords')">
-                    <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Record</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">Migliori punteggi</div>
-                </div>
-            </div>
-        </div>
-    `);
-}
-
-async function renderCoachAtleti() {
-    await loadAtleti();
-    setHeader('👥 I Miei Atleti', S.asd?.nome || '');
-    const list = S.atleti.length === 0
-        ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessun atleta assegnato.</p>`
-        : S.atleti.map(atl => `
-            <div class="session-card" style="display:flex;align-items:center;gap:0.85rem">
-                ${atl.fotoBase64
-                    ? `<img src="${atl.fotoBase64}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
-                    : `<div class="avatar">${initials(atl.nome,atl.cognome)}</div>`}
-                <div style="flex:1;min-width:0">
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem">${atl.nome} ${atl.cognome}</div>
-                    <div style="font-size:0.75rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
-                </div>
-                <button class="btn btn-outline btn-sm" onclick="window.setView('asdAtletaDetail',{atletaId:'${atl.id}'})">📊</button>
-            </div>
-        `).join('');
-    render(`
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-            <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">
-                👥 I Miei Atleti (${S.atleti.length})
-            </h2>
-        </div>
-        ${list}
-    `);
-}
-
-async function renderCoachMessaggi() {
-    return renderAsdMessaggi();
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // ── ASD ATLETI (gestione) ────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
@@ -1658,27 +1485,21 @@ async function loadAtleti() {
     // Memorizza tutti i tecnici per i dropdown di assegnazione
     S.allTecnici = all.filter(a => a.isTecnico);
 
-    // Logica a tre livelli:
-    // - Account ASD → tutto
-    // - Atleta con isAdmin o nome corrispondente adminName → tutto
-    // - Coach puro (isTecnico senza isAdmin) → solo propri atleti assegnati + sé stesso
-    const isFullAdmin = S.role === 'asd' || isAtletaAdmin();
-    const isCoachMode = window._currentMode === 'coach' && S.atleta?.isTecnico;
-
-    if (isCoachMode) {
+    // Filtro per i tecnici: se loggato come atleta e tecnico, mostra solo i propri atleti.
+    // Se loggato come account societario (ASD) o come atleta-admin, mostra tutto.
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    if (S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin) {
+        // Includiamo gli atleti assegnati e se stessi
         S.atleti = all.filter(a => a.tecnicoId === S.atleta.id || a.id === S.atleta.id);
     } else {
         S.atleti = all;
     }
-
 }
-
 
 async function renderAsdAtleti() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
-    const isCoach = window._currentMode === 'coach' && S.atleta?.isTecnico;
-
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isCoach = S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin;
     setHeader(isCoach ? '👥 I Miei Atleti' : '👥 Atleti Registrati', S.asd?.nome || '');
 
     const list = S.atleti.length === 0
@@ -1759,23 +1580,12 @@ function showAddAtleta(existing=null) {
                     </select>
                 </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:0.5rem;margin:0.5rem 0;background:var(--dark3);border-radius:10px;padding:0.75rem">
-    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.9rem">
-        <input type="checkbox" id="atl-is-tecnico" ${atl.isTecnico?'checked':''}
-               onchange="window.toggleAdminCheckbox(this.checked)" style="width:18px;height:18px">
-        <span style="font-weight:700;color:var(--gold)">L'atleta è un TECNICO / COACH</span>
-    </label>
-    <div id="atl-admin-wrap" style="display:${atl.isTecnico?'block':'none'};padding-left:1.5rem;border-left:2px solid rgba(201,162,39,0.3)">
-        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem">
-            <input type="checkbox" id="atl-is-admin" ${atl.isAdmin?'checked':''} style="width:16px;height:16px">
-            <div>
-                <span style="font-weight:700;color:#5dba94">Accesso Admin ASD</span>
-                <div style="font-size:0.7rem;color:var(--muted);margin-top:1px">Può vedere e gestire tutti gli atleti della società</div>
+            <div style="margin: 0.5rem 0">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.9rem">
+                    <input type="checkbox" id="atl-is-tecnico" ${atl.isTecnico?'checked':''} style="width:18px;height:18px">
+                    <span style="font-weight:700;color:var(--gold)">L'atleta è un TECNICO / COACH</span>
+                </label>
             </div>
-        </label>
-    </div>
-</div>
-
             <div><label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
                 <input class="inp" id="atl-pwd" type="password" placeholder="${isEdit?'Nuova password (opzionale)':'Password di accesso'}"></div>
         </div>
@@ -1795,7 +1605,6 @@ async function saveAtleta(existingId=null, existingData=null) {
     const tipoArco        = $('atl-arco')?.value;
     const tecnicoId       = $('atl-tecnico')?.value;
     const isTecnico       = $('atl-is-tecnico')?.checked || false;
-    const isAdmin         = $('atl-is-admin')?.checked || false;
     const pwd             = $('atl-pwd')?.value.trim();
     const wrap            = $('foto-atleta-wrap');
     const fotoBase64      = wrap?._pendingBase64 || existingData?.fotoBase64 || '';
@@ -1803,8 +1612,8 @@ async function saveAtleta(existingId=null, existingData=null) {
     if (!nome) return showModal('Errore','Il nome è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
     if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
-    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, isAdmin, fotoBase64, updatedAt: new Date().toISOString() };
-    if (pwd) data.pwdHash = await hashPwd(pwd);
+    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, fotoBase64, updatedAt: new Date().toISOString() };
+    if (pwd) data.pwdHash = hashPwd(pwd);
 
     if (existingId) {
         await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
@@ -1832,14 +1641,6 @@ async function deleteAtleta(atletaId, nome) {
         }}
     ]);
 }
-window.toggleAdminCheckbox = (checked) => {
-    const wrap = document.getElementById('atl-admin-wrap');
-    if (wrap) wrap.style.display = checked ? 'block' : 'none';
-    if (!checked) {
-        const adminCb = document.getElementById('atl-is-admin');
-        if (adminCb) adminCb.checked = false;
-    }
-};
 
 window.deleteAtleta = deleteAtleta;
 window.editAtleta   = editAtleta;
@@ -1987,10 +1788,9 @@ async function renderAsdStats() {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdMessaggi() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
     const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isOnlyCoach = window._currentMode === 'coach' && coachAthlete;
-
+    const isOnlyCoach = coachAthlete && !isMainAdmin;
 
     setHeader(isOnlyCoach ? '📨 Messaggi Coach' : '📨 Messaggi ASD', S.asd?.nome||'');
 
@@ -2354,8 +2154,7 @@ window.saveAsdPwd = async function() {
     const p2 = $('prof-pwd2')?.value.trim();
     if (!p1 || p1.length<6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK'}]);
     if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
-    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: await hashPwd(p1) });
-
+    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: hashPwd(p1) });
     showModal('✅ Password aggiornata!','',[{text:'OK'}]);
 };
 
@@ -2463,9 +2262,10 @@ window.scriviAllAsd = (asdId, asdNome) => {
 window.loginAtletaConPassword = async () => {
     const pwd = $('atl-login-pwd')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    const pwdH = await hashPwd(pwd);
+    const pwdH = hashPwd(pwd);
     const atleti = S._tempAtleti || [];
 
+    // Cerca atleta solo per password
     const matches = atleti.filter(a => a.pwdHash === pwdH);
     let trovato = null;
 
@@ -2476,39 +2276,15 @@ window.loginAtletaConPassword = async () => {
     }
 
     if (!trovato) return showModal('❌ Errore','Password non valida o atleta non trovato.',[{text:'OK'}]);
-
-       S.role   = 'atleta';
+    // Login diretto: non mostrare nome/foto, vai subito al menu
+    S.role   = 'atleta';
     S.asd    = S._tempAsd;
     S.atleta = trovato;
-
-    const privacyKey = `privacy_accepted_${trovato.id}`;
-    const alreadyAccepted = localStorage.getItem(privacyKey);
-
-    if (alreadyAccepted) {
-        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
-        buildNav();
-        await loadAtletaSessioni();
-        window.setView('atletaMenu');
-        setTimeout(checkDraftSession, 400);
-    } else {
-        showPrivacyConsent(
-            async () => {
-                // Accetta
-                localStorage.setItem(privacyKey, '1');
-                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
-                buildNav();
-                await loadAtletaSessioni();
-                window.setView('atletaMenu');
-                setTimeout(checkDraftSession, 400);
-            },
-            () => {
-                // Rifiuta
-                S.role = null; S.asd = null; S.atleta = null;
-                window.setView('homeLogin');
-            }
-        );
-    }
-
+    localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
+    buildNav();
+    await loadAtletaSessioni();
+    window.setView('atletaMenu');
+    setTimeout(checkDraftSession, 400);
 };
 
 window.selectAtleta = (atletaId) => {
@@ -2591,51 +2367,25 @@ window.doAtletaLogin = async function() {
 
     const pwd = $('atl-pwd-login')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    if (await hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
+    if (hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
 
-        S.role   = 'atleta';
+    S.role   = 'atleta';
     S.asd    = asd;
     S.atleta = atleta;
-
-    const privacyKey = `privacy_accepted_${atleta.id}`;
-    const alreadyAccepted = localStorage.getItem(privacyKey);
-
-    if (alreadyAccepted) {
-        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
-        buildNav();
-        await loadAtletaSessioni();
-        window.setView('atletaMenu');
-        setTimeout(checkDraftSession, 400);
-    } else {
-        showPrivacyConsent(
-            async () => {
-                localStorage.setItem(privacyKey, '1');
-                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
-                buildNav();
-                await loadAtletaSessioni();
-                window.setView('atletaMenu');
-                setTimeout(checkDraftSession, 400);
-            },
-            () => {
-                S.role = null; S.asd = null; S.atleta = null;
-                window.setView('homeLogin');
-            }
-        );
-    }
-
+    localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
+    buildNav();
+    await loadAtletaSessioni();
+    window.setView('atletaMenu');
+    // Controlla se c'è una bozza di sessione salvata
+    setTimeout(checkDraftSession, 400);
 };
 
 function isAtletaAdmin() {
-    if (!S.atleta || !S.asd) return false;
-    // Admin tramite flag isAdmin sul profilo atleta
-    if (S.atleta.isAdmin) return true;
-    // Admin tramite nome corrispondente all'adminName della ASD
-    if (!S.asd.adminName) return false;
+    if (!S.atleta || !S.asd || !S.asd.adminName) return false;
     const atlFull = `${S.atleta.nome||''} ${S.atleta.cognome||''}`.trim().toLowerCase();
     const admFull = S.asd.adminName.trim().toLowerCase();
     return atlFull === admFull;
 }
-
 
 async function logoutAtleta() {
     try {
@@ -2835,28 +2585,20 @@ function renderAtletaMenu() {
             </div>
 
             ${(isAtletaAdmin() || S.atleta?.isTecnico) ? `
-<div class="gold-line"></div>
-${isAtletaAdmin() ? `
-            <div class="card card-hover" style="border:2px solid var(--gold);background:rgba(201,162,39,0.05);margin-bottom:0.5rem" onclick="window._currentMode='asd';window.setView('asdDashboard')">
-    <div style="display:flex;align-items:center;gap:0.75rem">
-        <div style="font-size:2rem">⚙️</div>
-        <div>
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">Area Gestionale ASD</div>
-            <div style="font-size:0.8rem;color:var(--muted)">Gestisci tutti gli atleti e i dati della società</div>
-        </div>
-    </div>
-</div>` : ''}
-${S.atleta?.isTecnico ? `
-<div class="card card-hover" style="border:2px solid #3d9970;background:rgba(61,153,112,0.05)" onclick="window._currentMode='coach';window.setView('coachDashboard')">
-    <div style="display:flex;align-items:center;gap:0.75rem">
-        <div style="font-size:2rem">👤</div>
-        <div>
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#5dba94;font-size:1.1rem">Area Coach</div>
-            <div style="font-size:0.8rem;color:var(--muted)">${isAtletaAdmin() ? 'Accedi alla vista dei tuoi atleti assegnati' : 'Gestisci i tuoi atleti assegnati'}</div>
-        </div>
-    </div>
-</div>` : ''}` : ''}
-
+            <div class="gold-line"></div>
+            <div class="card card-hover" style="border: 2px solid var(--gold); background: rgba(201,162,39,0.05)" onclick="window.setView('asdDashboard')">
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                    <div style="font-size:2rem">⚙️</div>
+                    <div>
+                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">
+                            ${isAtletaAdmin() ? 'Area Gestionale ASD' : 'Area Gestionale Coach'}
+                        </div>
+                        <div style="font-size:0.8rem;color:var(--muted)">
+                            ${isAtletaAdmin() ? 'Gestisci atleti, messaggi e dati della società' : 'Gestisci i tuoi atleti, invia messaggi e obiettivi'}
+                        </div>
+                    </div>
+                </div>
+            </div>` : ''}
         </div>
     `);
     // Controlla messaggi nuovi dopo il render (asincrono)
@@ -3096,9 +2838,9 @@ function tkRenderScoring(){
     // Notes
     const notes=isT?`<div class="form-section">
         <label class="form-label">🩺 Note Fisiche</label>
-        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <textarea class="inp" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
-        <textarea class="inp" id="tk-eserciz-svolti" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+        <textarea class="inp" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
     </div>`:`<div class="form-section">
         <label class="form-label">📝 Note Pre-Gara</label>
         <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
@@ -3307,8 +3049,7 @@ window.tkSave3D = async () => {
             await addDoc(sessioniCol(S.asd.id),sessionData);
         await tkDecrementEsercCoach();
             tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-            invalidateSessioniCache();
-            await loadAtletaSessioniCached(true);
+            await loadAtletaSessioni();
             showModal('✅ Salvato!',`3D ${d3.ente}: ${st.score} pt · ${st.piazzoleComplete} piazzole`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
         }catch(e){
             const qk=`offline_queue_${S.atleta?.id||''}`;
@@ -3316,8 +3057,6 @@ window.tkSave3D = async () => {
             q.push({asdId:S.asd.id,data:sessionData,savedAt:new Date().toISOString()});
             localStorage.setItem(qk,JSON.stringify(q));
             tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-            invalidateSessioniCache();
-            await loadAtletaSessioniCached(true);
             showModal('⚠️ Salvato Offline',`3D ${d3.ente}: ${st.score} pt — Sarà sincronizzato alla riconnessione.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
         }
     }}]);
@@ -3371,11 +3110,10 @@ window.tkFineTurno=async(isFinal)=>{
                     totalAverage:totShots>0?totalScore/totShots:0,
                     turn1Score:t1.score,turn2Score:t2.score,
                     frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                    esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
-                    noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                    esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
+                    noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                     notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
-                    turn1:s.turn1?
-{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
+                    turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
                     turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{},arrowPositions:s.turn2.arrowPositions||[]}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                 };
@@ -3385,8 +3123,7 @@ window.tkFineTurno=async(isFinal)=>{
                 await tkDecrementEsercCoach();
                 tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-                invalidateSessioniCache();
-                await loadAtletaSessioniCached(true);
+                await loadAtletaSessioni();
                 showModal('✅ Salvato!',`Punteggio: ${totalScore} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
             }catch(e){
                 // Salva offline se senza rete
@@ -3396,8 +3133,7 @@ window.tkFineTurno=async(isFinal)=>{
                 localStorage.setItem(qk,JSON.stringify(q));
                 tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-                invalidateSessioniCache();
-                await loadAtletaSessioniCached(true);
+                await loadAtletaSessioni();
                 showModal('⚠️ Salvato Offline',`Punteggio: ${totalScore} pt — Sei offline. La sessione verrà sincronizzata automaticamente alla riconnessione.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
             }
         }}]);
@@ -3430,19 +3166,17 @@ window.tkFineTurno=async(isFinal)=>{
                         totalAverage:totShots>0?t1.score/totShots:0,
                         turn1Score:t1.score,turn2Score:0,
                         frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                        esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
-                        noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                        esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
+                        noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                         notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
-                        turn1:{summary:
-{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
+                        turn1:{summary:{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
                                grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{},arrowPositions:s.turn1?.arrowPositions||[]},
                         timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                     });
                     await tkDecrementEsercCoach();
                     tkClearDraft();
                     TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-                    invalidateSessioniCache();
-                    await loadAtletaSessioniCached(true);
+                    await loadAtletaSessioni();
                     showModal('✅ Salvato!',`Turno 1: ${t1.score} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
                 }catch(e){showModal('Errore','Salvataggio fallito: '+e.message,[{text:'OK'}]);}
             }}
@@ -3893,8 +3627,7 @@ window.tkSaveQS=async()=>{
         });
         await tkDecrementEsercCoach();
         TK.session=null;
-        invalidateSessioniCache();
-        await loadAtletaSessioniCached(true);
+        await loadAtletaSessioni();
         showModal('✅ Salvato!',`Punteggio: ${t1+t2} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
     }catch(e){showModal('Errore',e.message,[{text:'OK'}]);}
 };
@@ -3933,8 +3666,7 @@ window.tkSaveTN=async()=>{
         });
         await tkDecrementEsercCoach();
         TK.session=null;
-        invalidateSessioniCache();
-        await loadAtletaSessioniCached(true);
+        await loadAtletaSessioni();
         showModal('✅ Salvato!','',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaMenu')}]);
     }catch(e){showModal('Errore',e.message,[{text:'OK'}]);}
 };
@@ -3947,10 +3679,9 @@ window.saveSession = async function() {};
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAtletaDati() {
     setHeader('📊 I Miei Dati', S.atleta ? `${S.atleta.nome} ${S.atleta.cognome}` : '');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
 
     // ── Stats globali (sempre su tutte le sessioni) ──
-
     const allList  = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
     const bestScore = allList.length > 0 ? Math.max(...allList.map(s=>s.totalScore||0)) : 0;
     const sessCount = S.sessioni.length;
@@ -4519,10 +4250,9 @@ window.eliminaSessione = async (sessionId, dataStr) => {
 // ── CALENDARIO ATLETA ───────────────────────────────────────────────────────
 async function renderAtletaCalendario() {
     setHeader('📅 Calendario', S.atleta?.nome||'');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
 
-    // Mantieni lo stato se già esistente
-
+    // Mantieni lo stato se già esistente (per tornare allo stesso mese)
     if (!window._calState) {
         const now = new Date();
         window._calState = { m: now.getMonth(), y: now.getFullYear() };
@@ -5124,8 +4854,9 @@ async function renderAtletaObiettivi() {
     try {
         setHeader('🏅 Obiettivi', S.atleta?.nome||'');
         // Pre-ensure sessions are loaded if not already
-        await loadAtletaSessioniCached();
-
+        if (!S.sessioni || S.sessioni.length === 0) {
+            await loadAtletaSessioni();
+        }
         const goals = await loadObiettivi();
         console.log("Goals loaded:", goals);
         console.log("Sessions available for goals:", S.sessioni);
@@ -5318,9 +5049,8 @@ window.deleteObiettivo = async (id) => {
 window._selSess = [];
 async function renderConfronta() {
     setHeader('⚖️ Confronta Sessioni', S.atleta?.nome||'');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
     window._selSess = [];
-
     const valid = S.sessioni.filter(s => !s.trainingWithoutScore);
 
     render(`
@@ -5449,7 +5179,7 @@ window.eseguiConfronto = () => {
 // ── STATISTICHE BERSAGLIO ───────────────────────────────────────────────────
 async function renderTargetStats() {
     setHeader('🎯 Stat. Bersaglio', S.atleta?.nome||'');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
 
     const getArrows = (s) => {
         const d=s.arrowPositions||[],t1=s.turn1?.arrowPositions||[],t2=s.turn2?.arrowPositions||[];
@@ -5585,7 +5315,7 @@ async function renderTargetStats() {
 // ── CONTATORE FRECCE ────────────────────────────────────────────────────────
 async function renderContatoreFrecce() {
     setHeader('🪃 Contatore Frecce', S.atleta?.nome||'');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
     const sess = S.sessioni;
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -5632,7 +5362,7 @@ async function renderContatoreFrecce() {
 // ── ESPORTA & BACKUP ────────────────────────────────────────────────────────
 async function renderEsportaDati() {
     setHeader('📥 Esporta Dati', S.atleta?.nome||'');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
     render(`
         <div class="card card-gold" style="margin-bottom:1rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📊 Esporta in CSV</div>
@@ -5749,7 +5479,7 @@ window.renderAtletaGrafici = async function() {
     };
 
     setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
-    await loadAtletaSessioniCached();
+    await loadAtletaSessioni();
 
     const history = { years: [], monthsByYear: {} };
     S.sessioni.forEach(s => {
@@ -6522,10 +6252,9 @@ window.applyBulk = async () => {
 // ── MESSAGGI ESTERNI (da visitatori/pubblico) ────────────────────────────────
 async function renderAsdMessaggiEsterni() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
+    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
     const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isOnlyCoach = window._currentMode === 'coach' && coachAthlete;
-
+    const isOnlyCoach = coachAthlete && !isMainAdmin;
 
     setHeader(isOnlyCoach ? '📬 Messaggi dai miei Atleti' : '📬 Messaggi Esterni', S.asd?.nome||'');
     // Segna come letti
@@ -7096,64 +6825,6 @@ setTimeout(() => {
 
 window.saveSessionWithFallback = saveSessionWithFallback;
 window.syncOfflineQueue = syncOfflineQueue;
-</script>
-
-<div id="pwa-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;background:var(--dark2);border-top:2px solid var(--gold);padding:1rem;animation:fadeSlide 0.3s ease">
-    <div style="display:flex;align-items:center;gap:0.75rem;max-width:600px;margin:0 auto">
-        <div style="font-size:2rem;flex-shrink:0">🏹</div>
-        <div style="flex:1">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Installa Archery Club</div>
-            <div id="pwa-banner-text" style="font-size:0.75rem;color:var(--muted)"></div>
-        </div>
-        <div style="display:flex;gap:0.5rem;flex-shrink:0">
-            <button id="pwa-install-btn" style="display:none;background:var(--gold);color:#000;border:none;border-radius:8px;padding:0.5rem 0.85rem;font-family:'Rajdhani',sans-serif;font-weight:700;cursor:pointer;font-size:0.85rem">Installa</button>
-            <button onclick="document.getElementById('pwa-banner').style.display='none';localStorage.setItem('pwa_banner_dismissed','1')" style="background:var(--dark3);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.75rem;cursor:pointer;font-size:0.8rem">✕</button>
-        </div>
-    </div>
-</div>
-
-<script>
-// Gestione banner PWA
-(function() {
-    if (localStorage.getItem('pwa_banner_dismissed')) return;
-    if (window.matchMedia('(display-mode: standalone)').matches) return;
-    if (window.navigator.standalone === true) return;
-
-    const banner = document.getElementById('pwa-banner');
-    const bannerText = document.getElementById('pwa-banner-text');
-    const installBtn = document.getElementById('pwa-install-btn');
-
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const isAndroid = /android/i.test(navigator.userAgent);
-
-    if (isIOS) {
-        bannerText.textContent = 'Tocca ⬆️ poi "Aggiungi a schermata Home"';
-        setTimeout(() => { banner.style.display = 'block'; }, 3000);
-    } else if (isAndroid) {
-        let deferredPrompt;
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            bannerText.textContent = 'Usala come app, anche offline!';
-            installBtn.style.display = 'block';
-            setTimeout(() => { banner.style.display = 'block'; }, 2000);
-        });
-        installBtn.addEventListener('click', async () => {
-            if (!deferredPrompt) return;
-            deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
-            if (outcome === 'accepted') {
-                banner.style.display = 'none';
-                localStorage.setItem('pwa_banner_dismissed', '1');
-            }
-            deferredPrompt = null;
-        });
-        window.addEventListener('appinstalled', () => {
-            banner.style.display = 'none';
-            localStorage.setItem('pwa_banner_dismissed', '1');
-        });
-    }
-})();
 </script>
 </body>
 </html>
