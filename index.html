@@ -310,6 +310,26 @@ window.S = {
 };
 
 window._currentMode = 'asd'; // 'asd' | 'coach'
+// ── Auto-logout per inattività (4 ore) — solo per atleti ────────────────
+let _inactivityTimer = null;
+const INACTIVITY_LIMIT = 4 * 60 * 60 * 1000; // 4 ore in ms
+
+function resetInactivityTimer() {
+    if (S.role !== 'atleta') return;
+    clearTimeout(_inactivityTimer);
+    _inactivityTimer = setTimeout(async () => {
+        if (S.role === 'atleta') {
+            await logoutAtleta();
+            showModal('⏰ Sessione Scaduta',
+                'Sei stato disconnesso automaticamente per inattività.',
+                [{text:'OK'}]);
+        }
+    }, INACTIVITY_LIMIT);
+}
+
+['click', 'touchstart', 'keydown', 'scroll'].forEach(evt =>
+    document.addEventListener(evt, resetInactivityTimer, { passive: true })
+);
 
 
 
@@ -1736,10 +1756,17 @@ function showAddAtleta(existing=null) {
                 </label>
             </div>
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Nome *</label><input class="inp" id="atl-nome" value="${atl.nome}" placeholder="Nome"></div>
                 <div><label class="form-label">Cognome</label><input class="inp" id="atl-cognome" value="${atl.cognome||''}" placeholder="Cognome (opzionale)"></div>
             </div>
+            <div>
+                <label class="form-label">Username * <span style="color:var(--muted);font-size:0.72rem">(usato per il login, senza spazi)</span></label>
+                <input class="inp" id="atl-username" value="${atl.username||''}" placeholder="Es: mario.rossi"
+                    oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+                <div style="font-size:0.7rem;color:var(--muted);margin-top:3px">Solo lettere minuscole, numeri, punti e trattini</div>
+            </div>
+
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Tessera Fitarco</label><input class="inp" id="atl-tessera-fitarco" value="${atl.tesseraFitarco||''}" placeholder="N. tessera Fitarco"></div>
                 <div><label class="form-label">Data Nascita</label><input class="inp" id="atl-nascita" type="date" value="${atl.dataNascita||''}"></div>
@@ -1776,8 +1803,22 @@ function showAddAtleta(existing=null) {
     </div>
 </div>
 
-            <div><label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
-                <input class="inp" id="atl-pwd" type="password" placeholder="${isEdit?'Nuova password (opzionale)':'Password di accesso'}"></div>
+                        <div>
+                <label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
+                <input class="inp" id="atl-pwd" type="password"
+                    placeholder="${isEdit?'Nuova password (opzionale)':'Minimo 6 caratteri'}"
+                    oninput="
+                        const v=this.value;
+                        const hint=document.getElementById('pwd-hint');
+                        if(!hint)return;
+                        if(v.length===0){hint.textContent='';hint.style.color='var(--muted)';}
+                        else if(v.length<6){hint.textContent='⚠️ Troppo corta (min. 6)';hint.style.color='var(--danger)';}
+                        else if(v.length<8){hint.textContent='⚠️ Accettabile ma debole';hint.style.color='#f97316';}
+                        else{hint.textContent='✅ Password OK';hint.style.color='#3d9970';}
+                    ">
+                <div id="pwd-hint" style="font-size:0.72rem;margin-top:3px"></div>
+            </div>
+
         </div>
     `, [
         { text:'Annulla', cls:'btn-ghost' },
@@ -1788,6 +1829,7 @@ function showAddAtleta(existing=null) {
 async function saveAtleta(existingId=null, existingData=null) {
     const nome            = $('atl-nome')?.value.trim();
     const cognome         = $('atl-cognome')?.value.trim();
+    const username        = $('atl-username')?.value.trim().toLowerCase();
     const tesseraFitarco  = $('atl-tessera-fitarco')?.value.trim();
     const tesseraAltro    = $('atl-tessera-altro')?.value.trim();
     const enteAltro       = $('atl-ente-altro')?.value.trim();
@@ -1801,9 +1843,16 @@ async function saveAtleta(existingId=null, existingData=null) {
     const fotoBase64      = wrap?._pendingBase64 || existingData?.fotoBase64 || '';
 
     if (!nome) return showModal('Errore','Il nome è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
-    if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (!username) return showModal('Errore','Lo username è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    // Verifica univocità username nella ASD
+    const usernameEsistente = S.atleti.find(a => a.username === username && a.id !== existingId);
+    if (usernameEsistente) return showModal('Errore','Username già in uso in questa ASD. Scegline un altro.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
-    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, isAdmin, fotoBase64, updatedAt: new Date().toISOString() };
+    if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (pwd && pwd.length < 6) return showModal('Errore','La password deve essere di almeno 6 caratteri.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+
+
+    const data = { nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, isAdmin, fotoBase64, updatedAt: new Date().toISOString() };
     if (pwd) data.pwdHash = await hashPwd(pwd);
 
     if (existingId) {
@@ -2413,17 +2462,28 @@ async function renderAtletaSelect({ asdId }) {
         <div style="max-width:400px;margin:0 auto">
             <button class="btn btn-ghost btn-sm" onclick="window.setView('homeLogin')" style="margin-bottom:1rem">← Indietro</button>
             ${asdInfo}
-            <div class="card" style="border-color:var(--gold)">
+                        <div class="card" style="border-color:var(--gold)">
                 <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1rem">🔐 Accedi al tuo Profilo</div>
                 <div style="display:flex;flex-direction:column;gap:0.65rem">
                     <div>
+                        <label class="form-label">Username *</label>
+                        <input class="inp" type="text" id="atl-login-username"
+                            placeholder="Es: mario.rossi"
+                            autocomplete="username"
+                            oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')"
+                            onkeydown="if(event.key==='Enter')document.getElementById('atl-login-pwd').focus()">
+                    </div>
+                    <div>
                         <label class="form-label">Password *</label>
-                        <input class="inp" type="password" id="atl-login-pwd" placeholder="Inserisci la tua password"
-                               onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
+                        <input class="inp" type="password" id="atl-login-pwd"
+                            placeholder="La tua password"
+                            autocomplete="current-password"
+                            onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
                     </div>
                     <button class="btn btn-gold btn-full btn-lg" onclick="window.loginAtletaConPassword()">Accedi</button>
                 </div>
             </div>
+
         </div>
     `);
 }
@@ -2461,31 +2521,75 @@ window.scriviAllAsd = (asdId, asdNome) => {
 };
 
 window.loginAtletaConPassword = async () => {
+    // ── Rate limiting: max 5 tentativi in 10 minuti ──────────────────────
+    const rlKey = `login_rl_${S._tempAsd?.id || 'x'}`;
+    const now = Date.now();
+    let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
+    attempts = attempts.filter(t => now - t < 600000);
+    if (attempts.length >= 5) {
+        const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
+        return showModal('🔒 Accesso Bloccato',
+            `Troppi tentativi errati. Riprova tra <strong>${waitMin} minuto/i</strong>.`,
+            [{text:'OK'}]);
+    }
+
     const pwd = $('atl-login-pwd')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
+
+    const username = $('atl-login-username')?.value.trim().toLowerCase();
+    if (!username) return showModal('Errore','Inserisci il tuo username.',[{text:'OK'}]);
+
     const pwdH = await hashPwd(pwd);
     const atleti = S._tempAtleti || [];
 
-    const matches = atleti.filter(a => a.pwdHash === pwdH);
+    // Cerca prima per username (preciso), poi verifica password
+    const byUsername = atleti.filter(a => a.username === username);
     let trovato = null;
 
-    if (matches.length === 1) {
-        trovato = matches[0];
-    } else if (matches.length > 1) {
-        return showModal('⚠️ Password non univoca', 'Più atleti hanno questa password. Contatta la tua ASD per impostare una password unica.', [{text:'OK'}]);
+    if (byUsername.length === 0) {
+        // Username non trovato — stessa risposta generica per non rivelare info
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('❌ Credenziali non valide',
+            `Username o password errati. Tentativo ${attempts.length}/5.`,
+            [{text:'OK'}]);
     }
 
-    if (!trovato) return showModal('❌ Errore','Password non valida o atleta non trovato.',[{text:'OK'}]);
+    if (byUsername[0].pwdHash === pwdH) {
+        trovato = byUsername[0];
+    }
 
-       S.role   = 'atleta';
+
+       if (!trovato) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('❌ Credenziali non valide',
+            `Username o password errati. Tentativo ${attempts.length}/5.`,
+            [{text:'OK'}]);
+    }
+
+
+    // Login OK → azzera contatore tentativi
+    localStorage.removeItem(rlKey);
+
+    S.role   = 'atleta';
     S.asd    = S._tempAsd;
     S.atleta = trovato;
+
+    // Sessione con scadenza 8 ore
+    const sessionData = {
+        asdId: S._tempAsd.id,
+        atletaId: trovato.id,
+        expiresAt: Date.now() + (8 * 60 * 60 * 1000)
+    };
 
     const privacyKey = `privacy_accepted_${trovato.id}`;
     const alreadyAccepted = localStorage.getItem(privacyKey);
 
     if (alreadyAccepted) {
-        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
+        localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
         buildNav();
         await loadAtletaSessioni();
         window.setView('atletaMenu');
@@ -2493,23 +2597,21 @@ window.loginAtletaConPassword = async () => {
     } else {
         showPrivacyConsent(
             async () => {
-                // Accetta
                 localStorage.setItem(privacyKey, '1');
-                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
+                localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
                 buildNav();
                 await loadAtletaSessioni();
                 window.setView('atletaMenu');
                 setTimeout(checkDraftSession, 400);
             },
             () => {
-                // Rifiuta
                 S.role = null; S.asd = null; S.atleta = null;
                 window.setView('homeLogin');
             }
         );
     }
-
 };
+
 
 window.selectAtleta = (atletaId) => {
     const atleta = S._tempAtleti?.find(a => a.id === atletaId);
@@ -2589,11 +2691,32 @@ window.doAtletaLogin = async function() {
     const atleta = S._loginAtleta;
     if (!asd || !atleta) return window.setView('homeLogin');
 
+    // Rate limiting
+    const rlKey = `login_rl_${atleta.id}`;
+    const now = Date.now();
+    let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
+    attempts = attempts.filter(t => now - t < 600000);
+    if (attempts.length >= 5) {
+        const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
+        return showModal('🔒 Accesso Bloccato',
+            `Troppi tentativi. Riprova tra ${waitMin} minuto/i.`,
+            [{text:'OK'}]);
+    }
+
     const pwd = $('atl-pwd-login')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    if (await hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
 
-        S.role   = 'atleta';
+    if (await hashPwd(pwd) !== atleta.pwdHash) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('Errore',`Password errata. Tentativo ${attempts.length}/5.`,[{text:'OK'}]);
+    }
+
+    localStorage.removeItem(rlKey);
+
+
+    S.role   = 'atleta';
     S.asd    = asd;
     S.atleta = atleta;
 
@@ -2601,7 +2724,7 @@ window.doAtletaLogin = async function() {
     const alreadyAccepted = localStorage.getItem(privacyKey);
 
     if (alreadyAccepted) {
-        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
+        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) }));
         buildNav();
         await loadAtletaSessioni();
         window.setView('atletaMenu');
@@ -2610,7 +2733,7 @@ window.doAtletaLogin = async function() {
         showPrivacyConsent(
             async () => {
                 localStorage.setItem(privacyKey, '1');
-                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
+                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) }));
                 buildNav();
                 await loadAtletaSessioni();
                 window.setView('atletaMenu');
@@ -4155,6 +4278,11 @@ async function tryRestoreSession() {
     // Try atleta session
     const atlSess = JSON.parse(localStorage.getItem('acm_atleta_session')||'null');
     if (atlSess?.asdId && atlSess?.atletaId) {
+                // Verifica scadenza sessione
+        if (atlSess.expiresAt && Date.now() > atlSess.expiresAt) {
+            localStorage.removeItem('acm_atleta_session');
+            return false;
+        }
         await loadAllAsd();
         const asd = S.allAsd.find(a=>a.id===atlSess.asdId);
         if (asd) {
