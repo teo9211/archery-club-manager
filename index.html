@@ -2986,7 +2986,7 @@ window.scriviAllAsd = (asdId, asdNome) => {
 };
 
 window.loginAtletaConPassword = async () => {
-    // Rate limiting
+    // 1. Rate limiting (Protezione Brute Force dal tuo vecchio codice)
     const rlKey = `login_rl_${S._tempAsd?.id || 'x'}`;
     const now = Date.now();
     let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
@@ -2998,117 +2998,79 @@ window.loginAtletaConPassword = async () => {
             [{text:'OK'}]);
     }
 
-    const username = $('atl-login-username')?.value.trim().toLowerCase();
-    const pwd = $('atl-login-pwd')?.value.trim();
-    if (!username) return showModal('Errore','Inserisci il tuo username.',[{text:'OK'}]);
-    if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
+    // 2. Recupero dati dai campi
+    const asdId = S._tempAsd?.id;
+    const usernameInput = document.getElementById('atl-login-username')?.value.trim();
+    const pwd = document.getElementById('atl-login-pwd')?.value.trim();
 
-    // GDPR FIX: cerchiamo l'atleta per username tramite query Firestore
-    // (non abbiamo più la lista pre-caricata per utenti anonimi)
-    let trovato = null;
+    if (!asdId || !usernameInput || !pwd) {
+        showModal('Errore', 'Inserisci username e password.', [{text:'OK'}]);
+        return;
+    }
+    const username = usernameInput.toLowerCase();
+
     try {
-        const asdId = S._tempAsd?.id;
-        if (!asdId) return showModal('Errore', 'Sessione scaduta. Ricarica la pagina.', [{text:'OK'}]);
-
-        // Prima prova con Firebase Auth tramite email fittizia derivata dall'username
-        // costruendo la email come fa atletaEmail()
-        const cleanUsername = username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+        // 3. Costruiamo l'email tecnica (Logica GDPR sicura)
+        const cleanUsername = username.replace(/[^a-z0-9]/g, '').substring(0, 20);
         const cleanAsd = asdId.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
-        const derivedEmail = `${cleanUsername}.${cleanAsd}@acm-atleta.app`;
+        const techEmail = `${cleanUsername}.${cleanAsd}@acm-atleta.app`;
 
-        try {
-            await signInWithEmailAndPassword(auth, derivedEmail, pwd);
-            // onAuthStateChanged completerà il login
-            localStorage.removeItem(rlKey);
-            return;
-        } catch(authErr) {
-            if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
-                attempts.push(now);
-                localStorage.setItem(rlKey, JSON.stringify(attempts));
-                await new Promise(r => setTimeout(r, 1200));
-                return showModal('❌ Credenziali non valide',
-                    `Username o password errati. Tentativo ${attempts.length}/5.`,
-                    [{text:'OK'}]);
-            }
-            // Email non trovata in Auth → atleta legacy senza authEmail, proseguiamo con hash
+        // 4. TENTATIVO DI LOGIN (bypassiamo le regole Firestore fallaci)
+        await signInWithEmailAndPassword(auth, techEmail, pwd);
+        
+        // 5. LOGIN RIUSCITO: Ora leggiamo il documento (le regole ora permettono la lettura)
+        const atletaDoc = await getDoc(doc(db, `club_manager_v1/data/asd/${asdId}/atleti`, username));
+
+        if (!atletaDoc.exists()) {
+            await signOut(auth);
+            throw new Error("Profilo atleta non trovato nel database.");
         }
 
-        // Fallback legacy: cerca per username e verifica hash
-        const q = query(atletiCol(asdId), where('username', '==', username));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-            trovato = { id: snap.docs[0].id, ...snap.docs[0].data() };
-        }
-    } catch(e) {
-        return showModal('❌ Errore', 'Impossibile verificare le credenziali: ' + e.message, [{text:'OK'}]);
-    }
+        const trovato = { id: atletaDoc.id, ...atletaDoc.data() };
+        localStorage.removeItem(rlKey); // Reset tentativi falliti
 
-    if (!trovato) {
+        // 6. GESTIONE PRIVACY E SESSIONE (Dal tuo vecchio codice, fondamentale per GDPR)
+        const privacyKey = `privacy_accepted_${trovato.id}`;
+        const alreadyAccepted = localStorage.getItem(privacyKey);
+        const sessionData = { 
+            asdId: asdId, 
+            atletaId: trovato.id, 
+            expiresAt: Date.now() + (8 * 60 * 60 * 1000) 
+        };
+
+        const completaLogin = async () => {
+            S.role = 'atleta';
+            S.asd = S._tempAsd;
+            S.atleta = trovato;
+            localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
+            buildNav();
+            await loadAtletaSessioni();
+            window.setView('atletaMenu');
+            if (typeof checkDraftSession === 'function') setTimeout(checkDraftSession, 400);
+        };
+
+        if (alreadyAccepted) {
+            await completaLogin();
+        } else {
+            // Se non ha ancora accettato la privacy, mostra il consenso
+            showPrivacyConsent(
+                async () => {
+                    localStorage.setItem(privacyKey, '1');
+                    await completaLogin();
+                },
+                () => { signOut(auth); S.role = null; window.setView('homeLogin'); }
+            );
+        }
+
+    } catch (error) {
+        console.error("Errore login atleta:", error);
         attempts.push(now);
         localStorage.setItem(rlKey, JSON.stringify(attempts));
-        await new Promise(r => setTimeout(r, 1200));
-        return showModal('❌ Credenziali non valide',
-            `Username o password errati. Tentativo ${attempts.length}/5.`,
-            [{text:'OK'}]);
-    }
-
-    // Se l'atleta ha authEmail alternativa (email generata con attempt > 0)
-    if (trovato.authEmail && trovato.authEmail !== `${username.replace(/[^a-z0-9]/g,'').substring(0,20)}.${(S._tempAsd?.id||'').replace(/[^a-z0-9]/g,'').substring(0,20)}@acm-atleta.app`) {
-        try {
-            await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
-            localStorage.removeItem(rlKey);
-            return;
-        } catch(e) {
-            if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                attempts.push(now);
-                localStorage.setItem(rlKey, JSON.stringify(attempts));
-                await new Promise(r => setTimeout(r, 1200));
-                return showModal('❌ Credenziali non valide',
-                    `Username o password errati. Tentativo ${attempts.length}/5.`,
-                    [{text:'OK'}]);
-            }
-        }
-    }
-
-    // Verifica hash (atleti senza Firebase Auth)
-    const pwdH = await hashPwd(pwd);
-    if (trovato.pwdHash !== pwdH) {
-        attempts.push(now);
-        localStorage.setItem(rlKey, JSON.stringify(attempts));
-        await new Promise(r => setTimeout(r, 1200));
-        return showModal('❌ Credenziali non valide',
-            `Username o password errati. Tentativo ${attempts.length}/5.`,
-            [{text:'OK'}]);
-    }
-
-    // Login OK con hash (atleta legacy) → completa login manualmente
-    localStorage.removeItem(rlKey);
-    S.role   = 'atleta';
-    S.asd    = S._tempAsd;
-    S.atleta = trovato;
-
-    const privacyKey = `privacy_accepted_${trovato.id}`;
-    const alreadyAccepted = localStorage.getItem(privacyKey);
-    const sessionData = { asdId: S._tempAsd.id, atletaId: trovato.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) };
-
-    if (alreadyAccepted) {
-        localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
-        buildNav();
-        await loadAtletaSessioni();
-        window.setView('atletaMenu');
-        setTimeout(checkDraftSession, 400);
-    } else {
-        showPrivacyConsent(
-            async () => {
-                localStorage.setItem(privacyKey, '1');
-                localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
-                buildNav();
-                await loadAtletaSessioni();
-                window.setView('atletaMenu');
-                setTimeout(checkDraftSession, 400);
-            },
-            () => { S.role = null; S.asd = null; S.atleta = null; window.setView('homeLogin'); }
-        );
+        
+        let msg = "Credenziali non corrette o utente non trovato.";
+        if (error.code === 'auth/network-request-failed') msg = "Problema di connessione internet.";
+        
+        showModal('❌ Accesso Negato', `${msg}<br><small>Tentativo ${attempts.length}/5</small>`, [{text:'OK'}]);
     }
 };
 
