@@ -3,6 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- PWA Meta Tags -->
+<meta name="theme-color" content="#0f0f0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Archery Club">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+
     <title>Archery Club Manager</title>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
@@ -256,7 +264,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
 import { getFirestore, doc, addDoc, deleteDoc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, serverTimestamp, updateDoc, orderBy } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
 
 // ── FIREBASE CONFIG (test project) ─────────────────────────────────────────
@@ -268,6 +276,19 @@ const firebaseConfig = {
     messagingSenderId: "959832767060",
     appId: "1:959832767060:web:1c356fe08f6b7402a2cbc1"
 };
+// Registrazione PWA Service Worker
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => {
+                console.log('SW registrato:', reg.scope);
+                // Controlla aggiornamenti ogni ora
+                setInterval(() => reg.update(), 3600000);
+            })
+            .catch(err => console.warn('SW non registrato:', err));
+    });
+}
+
 const APP_NS = 'club_manager_v1'; // namespace separato dalla webapp originale
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 
@@ -275,17 +296,64 @@ const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','
 let db, auth;
 window.S = {
     view: 'loading',
-    role: null,          // 'asd' | 'atleta' | null
-    asd: null,           // { id, nome, email, ... }
-    atleta: null,        // { id, nome, cognome, ... }
+    role: null,
+    asd: null,
+    atleta: null,
     allAsd: [],
-    atleti: [],          // atleti della ASD corrente
-    sessioni: [],        // sessioni atleta
+    atleti: [],
+    sessioni: [],
     messaggi: [],
+    cache: {
+        sessioniLoadedAt: null,
+        atletiLoadedAt: null,
+    }
 };
+
+window._currentMode = 'asd'; // 'asd' | 'coach'
+// ── Auto-logout per inattività (4 ore) — solo per atleti ────────────────
+let _inactivityTimer = null;
+const INACTIVITY_LIMIT = 4 * 60 * 60 * 1000; // 4 ore in ms
+
+function resetInactivityTimer() {
+    if (S.role !== 'atleta') return;
+    clearTimeout(_inactivityTimer);
+    _inactivityTimer = setTimeout(async () => {
+        if (S.role === 'atleta') {
+            await logoutAtleta();
+            showModal('⏰ Sessione Scaduta',
+                'Sei stato disconnesso automaticamente per inattività.',
+                [{text:'OK'}]);
+        }
+    }, INACTIVITY_LIMIT);
+}
+
+['click', 'touchstart', 'keydown', 'scroll'].forEach(evt =>
+    document.addEventListener(evt, resetInactivityTimer, { passive: true })
+);
+
+
 
 // ── HELPERS ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+// Invalida la cache dopo un salvataggio
+function invalidateSessioniCache() {
+    S.cache.sessioniLoadedAt = null;
+}
+
+// Carica sessioni solo se necessario
+async function loadAtletaSessioniCached(forceReload = false) {
+    const CACHE_TTL = 60000; // 1 minuto
+    const now = Date.now();
+    const cacheValid = S.cache.sessioniLoadedAt &&
+                       (now - S.cache.sessioniLoadedAt) < CACHE_TTL &&
+                       S.sessioni.length > 0;
+    if (!forceReload && cacheValid) {
+        return; // usa dati già in memoria
+    }
+    await loadAtletaSessioni();
+    S.cache.sessioniLoadedAt = Date.now();
+}
+
 const render = html => { $('main-view').innerHTML = `<div class="anim">${html}</div>`; };
 function showModal(title, bodyHtml, actions=[]) {
     $('modal-title').textContent = title;
@@ -301,15 +369,51 @@ function showModal(title, bodyHtml, actions=[]) {
     $('modal-overlay').classList.add('show');
 }
 function closeModal() { $('modal-overlay').classList.remove('show'); }
-function hashPwd(s) {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) { h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; }
-    return 'h_' + Math.abs(h).toString(36);
+async function hashPwd(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + '_ACM_SALT_2025');
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return 'sha_' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+// ── Genera email fittizia per atleta ────────────────────────────────────────
+function atletaEmail(asdId, atletaId) {
+    // Crea email fittizia univoca basata su asdId e atletaId
+    const clean = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+    return `${clean(atletaId)}.${clean(asdId)}@acm-atleta.app`;
+}
+
+// ── Genera email alternativa se la principale è già in uso ──────────────────
+function atletaEmailAlt(asdId, atletaId, attempt) {
+    const clean = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 15);
+    return `${clean(atletaId)}${attempt}.${clean(asdId)}@acm-atleta.app`;
+}
+
+// ── Crea account Firebase Auth per un atleta, con retry su email duplicata ──
+async function createAtletaAuth(asdId, atletaId, password) {
+    let email = atletaEmail(asdId, atletaId);
+    let attempt = 0;
+    while (attempt < 5) {
+        try {
+            const cred = await createUserWithEmailAndPassword(auth, email, password);
+            return { uid: cred.user.uid, email };
+        } catch(e) {
+            if (e.code === 'auth/email-already-in-use') {
+                attempt++;
+                email = atletaEmailAlt(asdId, atletaId, attempt);
+            } else {
+                throw e;
+            }
+        }
+    }
+    throw new Error('Impossibile creare account Auth dopo 5 tentativi.');
+}
+
 // ── CHIAVE MASTER (cambia la password qui, poi aggiorna l'hash) ─────────────
 // Password attuale: ACMadmin2025! → hash: h_1l8b8k7k
 // Per cambiarla: apri la console e digita hashPwd('nuovapassword') poi incolla il risultato qui
-const MASTER_HASH = 'h_yyy2o4';
+const MASTER_HASH = null; // Spostato su Firestore
 function fmtDate(d) {
     if (!d) return 'N/D';
     let s = '';
@@ -387,6 +491,26 @@ function showPrivacy() {
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 }
 
+function showPrivacyConsent(onAccept, onRefuse) {
+    showModal('🛡️ Privacy & Consenso — TEST', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;line-height:1.6">
+            <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700">
+                ⚠️ AMBIENTE DI TEST — Questi dati non vengono trasmessi a terzi.
+            </div>
+            <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
+            <p>I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app.</p>
+            <p>Non vengono ceduti a terzi né usati per scopi commerciali.</p>
+            <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;border:1px solid var(--border);font-size:0.75rem;color:var(--muted)">
+                🧪 <em>Versione di test: le funzionalità di privacy reale saranno integrate nella versione definitiva.</em>
+            </div>
+        </div>
+    `, [
+        {text:'❌ Rifiuto', cls:'btn-danger', fn: onRefuse},
+        {text:'✅ Accetto', cls:'btn-gold', fn: onAccept}
+    ]);
+}
+
+
 function buildNav() {
     let items = '', userName = '';
 
@@ -433,26 +557,34 @@ function buildNav() {
             { icon:'📨', label:'Messaggi',          fn:"window.setView('atletaMessaggi')" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
 
-        if (athleteIsAdmin) {
+    if (athleteIsAdmin) {
+            // Sezione Gestionale ASD
             items += `
                 <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
                     <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale ASD</div>
-                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
-                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 Atleti</div>
-                    <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi</div>
+                    <div class="nav-item" onclick="window._currentMode='asd';window.setView('asdDashboard');closeNav()">🏠 Dashboard ASD</div>
+                    <div class="nav-item" onclick="window._currentMode='asd';window.setView('asdAtleti');closeNav()">👥 Tutti gli Atleti</div>
+                    <div class="nav-item" onclick="window._currentMode='asd';window.setView('asdMessaggi');closeNav()">📨 Messaggi ASD</div>     
+                    <div class="nav-item" style="color:var(--gold-light);border-top:1px dashed var(--border);margin-top:0.5rem" 
+                         onclick="if(confirm('Vuoi ricaricare forzatamente l\'app?')){window.location.reload(true);}">
+                        🔄 Ricarica Forzata App
+                    </div>
                 </div>
             `;
+            
+            // Sezione Gestionale Coach (visibile solo se l'atleta è anche Tecnico)
+            if (athleteIsCoach) {
+                items += `
+                    <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+                        <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
+                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('coachDashboard');closeNav()">📊 Dashboard Coach</div>
+                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('asdAtleti');closeNav()">👥 I miei Atleti</div>
+                        <div class="nav-item" onclick="window._currentMode='coach';window.setView('asdMessaggi');closeNav()">📨 Messaggi Coach</div>
+                    </div>
+                `;
+            }
         }
-        if (athleteIsCoach) {
-            items += `
-                <div style="margin-top:1rem;padding-top:0.5rem;border-top:1px solid var(--border)">
-                    <div style="font-size:0.7rem;color:var(--gold);padding:0 1rem 0.5rem;font-weight:700;text-transform:uppercase">Gestionale Coach</div>
-                    <div class="nav-item" onclick="window.setView('asdDashboard');closeNav()">🏠 Dashboard Coach</div>
-                    <div class="nav-item" onclick="window.setView('asdAtleti');closeNav()">👥 I Miei Atleti</div>
-                    <div class="nav-item" onclick="window.setView('asdMessaggi');closeNav()">📨 Messaggi Coach</div>
-                </div>
-            `;
-        }
+
 
         items += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
             <div class="nav-item" style="color:var(--danger)" onclick="logoutAtleta()">🚪 Logout</div>
@@ -466,52 +598,12 @@ function buildNav() {
 const app = initializeApp(firebaseConfig);
 db   = getFirestore(app);
 auth = getAuth(app);
-
-onAuthStateChanged(auth, async user => {
-    if (!user) {
-        await signInAnonymously(auth);
-        return;
-    }
-
-    await loadAllAsd();
-
-    if (!user.isAnonymous) {
-        // Possibile ASD loggata
-        const asdSnap = await getDoc(doc(db, `${APP_NS}/data/asd`, user.uid));
-        if (asdSnap.exists()) {
-            S.role = 'asd';
-            S.asd = { id: asdSnap.id, ...asdSnap.data() };
-            await loadAtleti();
-            buildNav();
-            window.setView('asdDashboard');
-            return;
-        }
-    }
-
-    // Se arriviamo qui, o è anonimo o non è una ASD (magari sessione atleta persistente?)
-    // Per ora, l'atleta usa ancora il login "legacy" basato su localStorage per la sessione,
-    // ma verifichiamo se c'è un match in localStorage
-    const atlSess = localStorage.getItem('acm_atleta_session');
-    if (atlSess) {
-        try {
-            const { asdId, atletaId } = JSON.parse(atlSess);
-            const asd = S.allAsd.find(a => a.id === asdId);
-            if (asd) {
-                const atlSnap = await getDoc(doc(db, `${APP_NS}/data/asd/${asdId}/atleti`, atletaId));
-                if (atlSnap.exists()) {
-                    S.role = 'atleta';
-                    S.asd = asd;
-                    S.atleta = { id: atlSnap.id, ...atlSnap.data() };
-                    buildNav();
-                    window.setView('atletaMenu');
-                    return;
-                }
-            }
-        } catch(e) {}
-    }
-
-    window.setView('homeLogin');
-});
+window._db = db;
+window._auth = auth;
+window._hashPwd = hashPwd;
+window._setDoc = setDoc;
+window._doc = doc;
+window._getDoc = getDoc;
 
 async function loadAllAsd() {
     try {
@@ -586,6 +678,9 @@ window.setView = async (view, params={}) => {
         case 'atletaGrafici':      return window.renderAtletaGrafici();
         case 'impostazioni':       return renderImpostazioni();
         case 'masterPanel':        return window._masterLogged?renderMasterPanel():window.setView('homeLogin');
+        case 'coachDashboard': return renderCoachDashboard();
+       case 'coachAtleti':    return renderCoachAtleti();
+       case 'coachMessaggi':  return renderCoachMessaggi();
         default: renderHomeLogin();
     }
 };
@@ -664,14 +759,77 @@ window._masterLogin = () => {
 window._masterAuth = async () => {
     const pwd = document.getElementById('master-pwd')?.value || '';
     if (!pwd) return;
-    if (hashPwd(pwd) !== MASTER_HASH) {
-        showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
-        return;
+    try {
+        const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
+
+        // SETUP INIZIALE: se il documento esiste ma non ha masterUid, crea l'account
+        if (masterSnap.exists() && !masterSnap.data()?.masterUid) {
+            const masterEmail = masterSnap.data()?.email;
+            if (!masterEmail) {
+                return showModal('❌ Errore', 'Configura prima l\'email master nel documento Firestore.', [{text:'OK'}]);
+            }
+            // Verifica hash password
+            const storedHash = masterSnap.data()?.hash;
+            const inputHash = await hashPwd(pwd);
+            if (inputHash !== storedHash) {
+                await new Promise(r => setTimeout(r, 1500));
+                return showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
+            }
+            // Crea account Firebase Auth per il master
+            try {
+                const cred = await createUserWithEmailAndPassword(auth, masterEmail, pwd);
+                await updateDoc(doc(db, 'club_manager_v1_config', 'master'), {
+                    masterUid: cred.user.uid,
+                    setupAt: new Date().toISOString()
+                });
+                window._masterLogged = true;
+                await loadAllAsd();
+                window.setView('masterPanel');
+                return;
+            } catch(e) {
+                if (e.code === 'auth/email-already-in-use') {
+                    // L'account esiste già: prova il login
+                } else {
+                    return showModal('❌ Errore', 'Creazione account master: ' + e.message, [{text:'OK'}]);
+                }
+            }
+        }
+
+        // LOGIN NORMALE: usa Firebase Auth con email+password
+        if (masterSnap.exists() && masterSnap.data()?.masterUid) {
+            const masterEmail = masterSnap.data()?.email;
+            if (!masterEmail) return showModal('❌ Errore', 'Email master non configurata.', [{text:'OK'}]);
+            try {
+                await signInWithEmailAndPassword(auth, masterEmail, pwd);
+                // onAuthStateChanged gestirà il redirect a masterPanel
+                return;
+            } catch(e) {
+                await new Promise(r => setTimeout(r, 1500));
+                return showModal('❌ Accesso Negato', 'Email o password non validi.', [{text:'OK'}]);
+            }
+        }
+
+        // Fallback: verifica solo hash (primo accesso senza email configurata)
+        if (!masterSnap.exists()) {
+            return showModal('❌ Errore', 'Configurazione master non trovata.', [{text:'OK'}]);
+        }
+        const storedHash = masterSnap.data()?.hash;
+        const inputHash = await hashPwd(pwd);
+        if (inputHash !== storedHash) {
+            await new Promise(r => setTimeout(r, 1500));
+            return showModal('❌ Accesso Negato', 'Chiave non valida.', [{text:'OK'}]);
+        }
+        window._masterLogged = true;
+        await loadAllAsd();
+        window.setView('masterPanel');
+
+    } catch(e) {
+        showModal('❌ Errore', 'Impossibile verificare: ' + e.message, [{text:'OK'}]);
     }
-    window._masterLogged = true;
-    await loadAllAsd();
-    window.setView('masterPanel');
 };
+
+
+
 
 async function renderMasterPanel() {
     setHeader('🔑 Pannello Sviluppatore', 'Accesso Admin');
@@ -680,7 +838,7 @@ async function renderMasterPanel() {
     // Carica config globale
     let globalConfig = { alertActive: false, alertTitle: '', alertMessage: '' };
     try {
-        const confSnap = await getDoc(doc(db, `${APP_NS}/config/global`));
+        const confSnap = await getDoc(doc(db, APP_NS, 'app_config'));
         if (confSnap.exists()) globalConfig = confSnap.data();
     } catch(e) {}
 
@@ -738,6 +896,15 @@ async function renderMasterPanel() {
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#60a5fa;margin-bottom:0.4rem">📦 Migrazione Dati</div>
             <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.6rem">Importa sessioni dalla vecchia webapp (Archery Tracker) verso un atleta di questa app.</p>
             <button onclick="window._masterMigrazione()" class="btn btn-outline btn-full" style="border-color:#3b82f6;color:#60a5fa">📥 Avvia Migrazione Dati</button>
+            <div style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem">
+    <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.5rem">
+        🔐 Migrazione Auth: crea account Firebase Auth per gli atleti che usano ancora solo username+password hash.
+    </div>
+    <button onclick="window._masterMigrazioneAuth()" class="btn btn-outline btn-full" style="border-color:#a855f7;color:#a855f7">
+        🔐 Migra Atleti → Firebase Auth
+    </button>
+</div>
+
         </div>
 
         <!-- LISTA ASD -->
@@ -750,9 +917,10 @@ async function renderMasterPanel() {
                             <div style="font-weight:700;color:var(--text)">${asd.nome}</div>
                             <div style="font-size:0.73rem;color:var(--muted)">${asd.citta||''}</div>
                         </div>
-                        <div style="display:flex;gap:0.4rem">
+                        <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
                             <button onclick="window._masterViewAsd('${asd.id}')" class="btn btn-ghost btn-sm">👁️ Vedi</button>
-                            <button onclick="window._masterResetAsdPwd('${asd.id}','${asd.nome.replace(/'/g,"\'")}')" class="btn btn-outline btn-sm">🔑 Reset Pwd</button>
+                            <button onclick="window._masterResetAsdPwd('${asd.id}','${asd.nome.replace(/'/g,"\'")}')" class="btn btn-outline btn-sm">🔑 Pwd</button>
+                            <button onclick="window._masterResetAsdUsername('${asd.id}','${asd.nome.replace(/'/g,"\'")}','${(asd.username||'').replace(/'/g,"\'")}')" class="btn btn-ghost btn-sm" style="border-color:#60a5fa;color:#60a5fa">✏️ User</button>
                         </div>
                     </div>
                 </div>
@@ -760,6 +928,77 @@ async function renderMasterPanel() {
         </div>
     `);
 }
+
+window._masterMigrazioneAuth = async () => {
+    await loadAllAsd();
+    showModal('🔐 Migrazione Firebase Auth', `
+        <div style="font-size:0.85rem">
+            <p style="margin-bottom:0.75rem">Questa operazione crea un account Firebase Auth per ogni atleta che non ne ha ancora uno.</p>
+            <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);border-radius:8px;padding:0.65rem;font-size:0.78rem;color:#c084fc">
+                ⚠️ Gli atleti dovranno impostare una nuova password al prossimo login, oppure puoi impostarne una dal pannello di reset.
+            </div>
+            <div style="margin-top:0.75rem">
+                <label class="form-label">Password temporanea per gli atleti migrati *</label>
+                <input class="inp" type="password" id="mig-auth-pwd" placeholder="Min. 6 caratteri">
+                <div style="font-size:0.72rem;color:var(--muted);margin-top:3px">Tutti gli atleti senza Auth riceveranno questa password temporanea. Comunicala ai tuoi atleti.</div>
+            </div>
+        </div>
+    `, [
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'🚀 Avvia Migrazione', cls:'btn-gold', fn: async () => {
+            const tempPwd = document.getElementById('mig-auth-pwd')?.value.trim();
+            if (!tempPwd || tempPwd.length < 6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK',fn:window._masterMigrazioneAuth}]);
+
+            showModal('⏳ Migrazione in corso...', '<div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><p id="mig-auth-prog" style="margin-top:0.5rem;color:var(--muted)">Inizio...</p></div>', []);
+
+            let ok=0, skip=0, fail=0, total=0;
+            for (const asd of S.allAsd) {
+                const snap = await getDocs(atletiCol(asd.id));
+                const atleti = snap.docs.map(d=>({id:d.id,...d.data()}));
+                total += atleti.length;
+                for (const atl of atleti) {
+                    const prog = document.getElementById('mig-auth-prog');
+                    if (prog) prog.textContent = `${asd.nome}: ${atl.nome} ${atl.cognome}...`;
+
+                    if (atl.authUid) { skip++; continue; } // già migrato
+
+                    try {
+                        const { uid: authUid, email: authEmail } = await createAtletaAuth(asd.id, atl.id, tempPwd);
+                        await updateDoc(doc(db, `${APP_NS}/data/asd/${asd.id}/atleti/${atl.id}`), {
+                            authUid, authEmail,
+                            pwdHash: await hashPwd(tempPwd) // aggiorna hash con password temporanea
+                        });
+                        ok++;
+                    } catch(e) {
+                        console.warn(`Migrazione fallita per ${atl.nome}:`, e.message);
+                        fail++;
+                    }
+                    // Piccola pausa per non sovraccaricare Firebase Auth
+                    await new Promise(r => setTimeout(r, 300));
+                }
+            }
+
+            // Dopo la migrazione, rilogga come master (la creazione utenti ha cambiato auth)
+            try {
+                const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
+                if (masterSnap.data()?.email) {
+                    // Rilogga silenziosamente (la password master la conosce già l'utente)
+                }
+            } catch(e) {}
+
+            showModal('✅ Migrazione Completata!', `
+                <div style="text-align:center;font-size:0.9rem">
+                    <div style="font-size:2rem;margin-bottom:0.5rem">🎉</div>
+                    <p><strong style="color:#5dba94">${ok}</strong> atleti migrati</p>
+                    <p style="color:var(--muted)">${skip} già migrati · ${fail} falliti</p>
+                    <p style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem">
+                        Password temporanea assegnata. Comunica agli atleti di cambiarla.
+                    </p>
+                </div>
+            `, [{text:'OK', cls:'btn-gold', fn:()=>window.setView('masterPanel')}]);
+        }}
+    ]);
+};
 
 window._masterSaveConfig = async () => {
     const alertActive = document.getElementById('conf-alert-active')?.checked || false;
@@ -801,7 +1040,10 @@ window._masterViewAsd = async (asdId) => {
                             <div style="font-weight:700">${atl.nome} ${atl.cognome}</div>
                             <div style="font-size:0.72rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
                         </div>
-                        <button onclick="window._masterResetAtletaPwd('${asdId}','${atl.id}','${(atl.nome+' '+atl.cognome).replace(/'/g,"\'")}')" style="font-size:0.72rem;background:none;border:1px solid var(--gold);color:var(--gold);border-radius:6px;padding:3px 8px;cursor:pointer">🔑 Reset</button>
+                        <div style="display:flex;gap:0.35rem">
+                            <button onclick="window._masterResetAtletaPwd('${asdId}','${atl.id}','${(atl.nome+' '+atl.cognome).replace(/'/g,"\'")}')" style="font-size:0.72rem;background:none;border:1px solid var(--gold);color:var(--gold);border-radius:6px;padding:3px 8px;cursor:pointer">🔑 Pwd</button>
+                            <button onclick="window._masterResetAtletaUsername('${asdId}','${atl.id}','${(atl.nome+' '+atl.cognome).replace(/'/g,"\'")}','${(atl.username||'').replace(/'/g,"\'")}')" style="font-size:0.72rem;background:none;border:1px solid #60a5fa;color:#60a5fa;border-radius:6px;padding:3px 8px;cursor:pointer">✏️ User</button>
+                        </div>
                     </div>
                 `).join('')}
             </div>
@@ -823,7 +1065,7 @@ window._masterResetAsdPwd = (asdId, nomeAsd) => {
             const p2=document.getElementById('master-new-pwd2')?.value||'';
             if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
             if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash:hashPwd(p1)});
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash: await hashPwd(p1)});
             showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAsd}</strong> è stata resettata.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
         }}
     ]);
@@ -843,8 +1085,71 @@ window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
             const p2=document.getElementById('master-atl-pwd2')?.value||'';
             if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
             if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash:hashPwd(p1)});
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash: await hashPwd(p1)});
             showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
+        }}
+    ]);
+};
+
+window._masterResetAtletaUsername = (asdId, atletaId, nomeAtleta, usernameAttuale) => {
+    showModal(`✏️ Reset Username — ${nomeAtleta}`, `
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <p style="font-size:0.82rem;color:var(--muted)">Username attuale: <strong style="color:var(--gold)">${usernameAttuale || '—'}</strong></p>
+            <input class="inp" type="text" id="master-atl-user" placeholder="Nuovo username (es: mario.rossi)"
+                value="${usernameAttuale || ''}" autocomplete="off" autocapitalize="none"
+                oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+            <p style="font-size:0.72rem;color:var(--muted)">Solo lettere minuscole, numeri, punti, trattini. Niente spazi.</p>
+        </div>
+    `, [
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+            const newUser = document.getElementById('master-atl-user')?.value.trim().toLowerCase() || '';
+            if (!newUser) return showModal('Errore','Inserisci il nuovo username.',[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+            if (newUser === usernameAttuale) return showModal('Attenzione','Lo username è uguale a quello attuale.',[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+            // Verifica unicità nella ASD
+            try {
+                const snap = await getDocs(atletiCol(asdId));
+                const duplicato = snap.docs.find(d => d.id !== atletaId && d.data().username === newUser);
+                if (duplicato) return showModal('Errore',`Username <strong>${newUser}</strong> già in uso da un altro atleta di questa ASD.`,[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+                await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{username: newUser});
+                // Aggiorna anche S.atleti in memoria se siamo nella stessa ASD
+                const idx = (S.atleti||[]).findIndex(a=>a.id===atletaId);
+                if (idx>=0) S.atleti[idx].username = newUser;
+                showModal('✅ Username Aggiornato!',`Lo username di <strong>${nomeAtleta}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,[{text:'OK'}]);
+            } catch(e) {
+                showModal('❌ Errore', e.message, [{text:'OK'}]);
+            }
+        }}
+    ]);
+};
+
+window._masterResetAsdUsername = (asdId, nomeAsd, usernameAttuale) => {
+    showModal(`✏️ Reset Username ASD — ${nomeAsd}`, `
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <p style="font-size:0.82rem;color:var(--muted)">Username attuale: <strong style="color:var(--gold)">${usernameAttuale || '—'}</strong></p>
+            <input class="inp" type="text" id="master-asd-user" placeholder="Nuovo username ASD"
+                value="${usernameAttuale || ''}" autocomplete="off" autocapitalize="none"
+                oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+            <p style="font-size:0.72rem;color:var(--muted)">Solo lettere minuscole, numeri, punti, trattini. Niente spazi.</p>
+        </div>
+    `, [
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+            const newUser = document.getElementById('master-asd-user')?.value.trim().toLowerCase() || '';
+            if (!newUser) return showModal('Errore','Inserisci il nuovo username.',[{text:'OK',fn:()=>window._masterResetAsdUsername(asdId,nomeAsd,usernameAttuale)}]);
+            if (newUser === usernameAttuale) return showModal('Attenzione','Lo username è uguale a quello attuale.',[{text:'OK',fn:()=>window._masterResetAsdUsername(asdId,nomeAsd,usernameAttuale)}]);
+            // Verifica unicità tra tutte le ASD
+            const duplicata = S.allAsd.find(a => a.id !== asdId && (a.username||'').toLowerCase() === newUser);
+            if (duplicata) return showModal('Errore',`Username <strong>${newUser}</strong> già in uso da un'altra ASD.`,[{text:'OK',fn:()=>window._masterResetAsdUsername(asdId,nomeAsd,usernameAttuale)}]);
+            try {
+                await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{username: newUser});
+                // Aggiorna S.allAsd in memoria
+                const idx = S.allAsd.findIndex(a=>a.id===asdId);
+                if (idx>=0) S.allAsd[idx].username = newUser;
+                showModal('✅ Username ASD Aggiornato!',`Lo username di <strong>${nomeAsd}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
+            } catch(e) {
+                showModal('❌ Errore', e.message, [{text:'OK'}]);
+            }
         }}
     ]);
 };
@@ -1384,9 +1689,8 @@ window.doAsdRegister = async function() {
 async function renderAsdDashboard() {
     window._navHistory = [{view:'asdDashboard',params:{}}];
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
-    // Conta sessioni totali
     let totalSessioni = 0, totalFrecce = 0;
     for (const atl of S.atleti) {
         const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
@@ -1396,9 +1700,7 @@ async function renderAsdDashboard() {
             totalFrecce += parseInt(s.frecceAggiuntive||0) + (s.frecceTotali||0);
         });
     }
-    // Messaggi non letti
     const msgSnap = await getDocs(msgCol(S.asd.id));
-
     render(`
         <div style="padding-top:0.5rem">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
@@ -1410,37 +1712,24 @@ async function renderAsdDashboard() {
                     <div style="font-size:0.78rem;color:var(--muted)">${S.asd.citta||''}</div>
                 </div>
             </div>
-
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.25rem">
                 <div class="stat-box"><div class="stat-num">${S.atleti.length}</div><div class="stat-label">Atleti</div></div>
                 <div class="stat-box"><div class="stat-num">${totalSessioni}</div><div class="stat-label">Sessioni</div></div>
                 <div class="stat-box"><div class="stat-num">${msgSnap.size}</div><div class="stat-label">Messaggi</div></div>
             </div>
-
             <div class="gold-line"></div>
-
-            <!-- Box record notifiche (nascosto di default) -->
             <div id="asd-record-box" style="display:none;background:rgba(201,162,39,0.07);border:1.5px solid var(--gold);border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
-
-            <!-- Box messaggi esterni (nascosto di default) -->
             <div id="asd-ext-msg-box" style="display:none;background:rgba(61,153,112,0.06);border:1.5px solid #3d9970;border-radius:12px;padding:0.85rem;margin-bottom:1rem"></div>
-
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                 <div class="card card-hover" onclick="window.setView('asdAtleti')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
-                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">
-                        ${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}
-                    </div>
-                    <div style="font-size:0.78rem;color:var(--muted)">
-                        ${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}
-                    </div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">${isMainAdmin ? 'Gestisci Atleti' : 'I Miei Atleti'}</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">${isMainAdmin ? 'Crea, modifica, visualizza profili' : 'Visualizza i profili assegnati'}</div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdStats',{})">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
                     <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
-                    <div style="font-size:0.78rem;color:var(--muted)">
-                        ${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}
-                    </div>
+                    <div style="font-size:0.78rem;color:var(--muted)">${isMainAdmin ? 'Punteggi e dati atleti' : 'Risultati dei tuoi atleti'}</div>
                 </div>
                 <div class="card card-hover" onclick="window.setView('asdRecords')">
                     <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
@@ -1474,6 +1763,88 @@ async function renderAsdDashboard() {
     setTimeout(checkMessaggiEsterni, 1200);
 }
 
+async function renderCoachDashboard() {
+    window._navHistory = [{view:'coachDashboard',params:{}}];
+    await loadAtleti();
+    setHeader('Dashboard Coach', S.asd?.nome || '');
+    const mieiAtleti = S.atleti;
+    render(`
+        <div style="padding-top:0.5rem">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
+                <div class="avatar avatar-lg">${initials(S.atleta.nome, S.atleta.cognome)}</div>
+                <div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text)">${S.atleta.nome} ${S.atleta.cognome}</div>
+                    <div style="font-size:0.78rem;color:var(--gold)">🎯 Tecnico — ${S.asd?.nome || ''}</div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.6rem;margin-bottom:1.25rem">
+                <div class="stat-box">
+                    <div class="stat-num">${mieiAtleti.length}</div>
+                    <div class="stat-label">I Miei Atleti</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-num">🎯</div>
+                    <div class="stat-label">Coach</div>
+                </div>
+            </div>
+            <div class="gold-line"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                <div class="card card-hover" onclick="window.setView('coachAtleti')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">👥</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">I Miei Atleti</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Visualizza i profili assegnati</div>
+                </div>
+                <div class="card card-hover" onclick="window.setView('coachMessaggi')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📨</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Messaggi</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Invia note ai tuoi atleti</div>
+                </div>
+                <div class="card card-hover" onclick="window.setView('asdStats')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">📊</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Statistiche</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Risultati dei tuoi atleti</div>
+                </div>
+                <div class="card card-hover" onclick="window.setView('asdRecords')">
+                    <div style="font-size:1.8rem;margin-bottom:0.4rem">🏆</div>
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Record</div>
+                    <div style="font-size:0.78rem;color:var(--muted)">Migliori punteggi</div>
+                </div>
+            </div>
+        </div>
+    `);
+}
+
+async function renderCoachAtleti() {
+    await loadAtleti();
+    setHeader('👥 I Miei Atleti', S.asd?.nome || '');
+    const list = S.atleti.length === 0
+        ? `<p style="text-align:center;color:var(--muted);padding:2rem 0">Nessun atleta assegnato.</p>`
+        : S.atleti.map(atl => `
+            <div class="session-card" style="display:flex;align-items:center;gap:0.85rem">
+                ${atl.fotoBase64
+                    ? `<img src="${atl.fotoBase64}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);object-fit:cover;flex-shrink:0">`
+                    : `<div class="avatar">${initials(atl.nome,atl.cognome)}</div>`}
+                <div style="flex:1;min-width:0">
+                    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:1rem">${atl.nome} ${atl.cognome}</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">${atl.tipoArco||'—'}</div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="window.setView('asdAtletaDetail',{atletaId:'${atl.id}'})">📊</button>
+            </div>
+        `).join('');
+    render(`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <h2 style="font-family:'Rajdhani',sans-serif;font-size:1.4rem;font-weight:700;color:var(--gold)">
+                👥 I Miei Atleti (${S.atleti.length})
+            </h2>
+        </div>
+        ${list}
+    `);
+}
+
+async function renderCoachMessaggi() {
+    return renderAsdMessaggi();
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ── ASD ATLETI (gestione) ────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
@@ -1485,21 +1856,27 @@ async function loadAtleti() {
     // Memorizza tutti i tecnici per i dropdown di assegnazione
     S.allTecnici = all.filter(a => a.isTecnico);
 
-    // Filtro per i tecnici: se loggato come atleta e tecnico, mostra solo i propri atleti.
-    // Se loggato come account societario (ASD) o come atleta-admin, mostra tutto.
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
-    if (S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin) {
-        // Includiamo gli atleti assegnati e se stessi
+    // Logica a tre livelli:
+    // - Account ASD → tutto
+    // - Atleta con isAdmin o nome corrispondente adminName → tutto
+    // - Coach puro (isTecnico senza isAdmin) → solo propri atleti assegnati + sé stesso
+    const isFullAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isCoachMode = window._currentMode === 'coach' && S.atleta?.isTecnico;
+
+    if (isCoachMode) {
         S.atleti = all.filter(a => a.tecnicoId === S.atleta.id || a.id === S.atleta.id);
     } else {
         S.atleti = all;
     }
+
 }
+
 
 async function renderAsdAtleti() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
-    const isCoach = S.role === 'atleta' && S.atleta?.isTecnico && !isMainAdmin;
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
+    const isCoach = window._currentMode === 'coach' && S.atleta?.isTecnico;
+
     setHeader(isCoach ? '👥 I Miei Atleti' : '👥 Atleti Registrati', S.asd?.nome || '');
 
     const list = S.atleti.length === 0
@@ -1557,10 +1934,17 @@ function showAddAtleta(existing=null) {
                 </label>
             </div>
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Nome *</label><input class="inp" id="atl-nome" value="${atl.nome}" placeholder="Nome"></div>
                 <div><label class="form-label">Cognome</label><input class="inp" id="atl-cognome" value="${atl.cognome||''}" placeholder="Cognome (opzionale)"></div>
             </div>
+            <div>
+                <label class="form-label">Username * <span style="color:var(--muted);font-size:0.72rem">(usato per il login, senza spazi)</span></label>
+                <input class="inp" id="atl-username" value="${atl.username||''}" placeholder="Es: mario.rossi"
+                    oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+                <div style="font-size:0.7rem;color:var(--muted);margin-top:3px">Solo lettere minuscole, numeri, punti e trattini</div>
+            </div>
+
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
                 <div><label class="form-label">Tessera Fitarco</label><input class="inp" id="atl-tessera-fitarco" value="${atl.tesseraFitarco||''}" placeholder="N. tessera Fitarco"></div>
                 <div><label class="form-label">Data Nascita</label><input class="inp" id="atl-nascita" type="date" value="${atl.dataNascita||''}"></div>
@@ -1580,14 +1964,39 @@ function showAddAtleta(existing=null) {
                     </select>
                 </div>
             </div>
-            <div style="margin: 0.5rem 0">
-                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.9rem">
-                    <input type="checkbox" id="atl-is-tecnico" ${atl.isTecnico?'checked':''} style="width:18px;height:18px">
-                    <span style="font-weight:700;color:var(--gold)">L'atleta è un TECNICO / COACH</span>
-                </label>
+            <div style="display:flex;flex-direction:column;gap:0.5rem;margin:0.5rem 0;background:var(--dark3);border-radius:10px;padding:0.75rem">
+    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.9rem">
+        <input type="checkbox" id="atl-is-tecnico" ${atl.isTecnico?'checked':''}
+               onchange="window.toggleAdminCheckbox(this.checked)" style="width:18px;height:18px">
+        <span style="font-weight:700;color:var(--gold)">L'atleta è un TECNICO / COACH</span>
+    </label>
+    <div id="atl-admin-wrap" style="display:${atl.isTecnico?'block':'none'};padding-left:1.5rem;border-left:2px solid rgba(201,162,39,0.3)">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem">
+            <input type="checkbox" id="atl-is-admin" ${atl.isAdmin?'checked':''} style="width:16px;height:16px">
+            <div>
+                <span style="font-weight:700;color:#5dba94">Accesso Admin ASD</span>
+                <div style="font-size:0.7rem;color:var(--muted);margin-top:1px">Può vedere e gestire tutti gli atleti della società</div>
             </div>
-            <div><label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
-                <input class="inp" id="atl-pwd" type="password" placeholder="${isEdit?'Nuova password (opzionale)':'Password di accesso'}"></div>
+        </label>
+    </div>
+</div>
+
+                        <div>
+                <label class="form-label">Password Atleta *${isEdit?' <span style="color:var(--muted);font-size:0.72rem">(lascia vuoto per non cambiare)</span>':''}</label>
+                <input class="inp" id="atl-pwd" type="password"
+                    placeholder="${isEdit?'Nuova password (opzionale)':'Minimo 6 caratteri'}"
+                    oninput="
+                        const v=this.value;
+                        const hint=document.getElementById('pwd-hint');
+                        if(!hint)return;
+                        if(v.length===0){hint.textContent='';hint.style.color='var(--muted)';}
+                        else if(v.length<6){hint.textContent='⚠️ Troppo corta (min. 6)';hint.style.color='var(--danger)';}
+                        else if(v.length<8){hint.textContent='⚠️ Accettabile ma debole';hint.style.color='#f97316';}
+                        else{hint.textContent='✅ Password OK';hint.style.color='#3d9970';}
+                    ">
+                <div id="pwd-hint" style="font-size:0.72rem;margin-top:3px"></div>
+            </div>
+
         </div>
     `, [
         { text:'Annulla', cls:'btn-ghost' },
@@ -1598,6 +2007,7 @@ function showAddAtleta(existing=null) {
 async function saveAtleta(existingId=null, existingData=null) {
     const nome            = $('atl-nome')?.value.trim();
     const cognome         = $('atl-cognome')?.value.trim();
+    const username        = $('atl-username')?.value.trim().toLowerCase();
     const tesseraFitarco  = $('atl-tessera-fitarco')?.value.trim();
     const tesseraAltro    = $('atl-tessera-altro')?.value.trim();
     const enteAltro       = $('atl-ente-altro')?.value.trim();
@@ -1605,26 +2015,84 @@ async function saveAtleta(existingId=null, existingData=null) {
     const tipoArco        = $('atl-arco')?.value;
     const tecnicoId       = $('atl-tecnico')?.value;
     const isTecnico       = $('atl-is-tecnico')?.checked || false;
+    const isAdmin         = $('atl-is-admin')?.checked || false;
     const pwd             = $('atl-pwd')?.value.trim();
     const wrap            = $('foto-atleta-wrap');
     const fotoBase64      = wrap?._pendingBase64 || existingData?.fotoBase64 || '';
 
     if (!nome) return showModal('Errore','Il nome è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
-    if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (!username) return showModal('Errore','Lo username è obbligatorio.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
-    const data = { nome, cognome, tesseraFitarco, tesseraAltro, enteAltro, dataNascita: nascita, tipoArco, tecnicoId, isTecnico, fotoBase64, updatedAt: new Date().toISOString() };
-    if (pwd) data.pwdHash = hashPwd(pwd);
+    const usernameEsistente = S.atleti.find(a => a.username === username && a.id !== existingId);
+    if (usernameEsistente) return showModal('Errore','Username già in uso in questa ASD.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+    if (pwd && pwd.length < 6) return showModal('Errore','La password deve essere di almeno 6 caratteri.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
+
+    const data = {
+        nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro,
+        dataNascita: nascita, tipoArco, tecnicoId, isTecnico, isAdmin,
+        fotoBase64, updatedAt: new Date().toISOString()
+    };
 
     if (existingId) {
+        // MODIFICA atleta esistente
+        if (pwd) {
+            data.pwdHash = await hashPwd(pwd);
+            // Se ha già un account Firebase Auth, aggiorna anche la password Auth
+            if (existingData?.authUid && existingData?.authEmail) {
+                try {
+                    // Aggiorna password Firebase Auth tramite Admin SDK non disponibile lato client.
+                    // Soluzione: salviamo un flag per forzare reset al prossimo login.
+                    data.pwdResetPending = true;
+                    data.pwdHash = await hashPwd(pwd); // mantieni hash come fallback
+                } catch(e) {}
+            }
+        }
         await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
     } else {
+        // CREA nuovo atleta
         data.createdAt = new Date().toISOString();
-        await addDoc(atletiCol(S.asd.id), data);
+        data.pwdHash = await hashPwd(pwd);
+
+        // Crea prima il documento Firestore per ottenere l'ID
+        const docRef = await addDoc(atletiCol(S.asd.id), data);
+        const atletaId = docRef.id;
+
+        // Ora crea l'account Firebase Auth
+        // Salva l'utente ASD corrente per ripristinarlo dopo
+        const currentUser = auth.currentUser;
+        try {
+    const { uid: authUid, email: authEmail } = await createAtletaAuth(S.asd.id, atletaId, pwd);
+    await updateDoc(docRef, { authUid, authEmail });
+    // Dopo aver creato l'atleta, Firebase ha cambiato l'utente corrente.
+    // Dobbiamo riloggare l'ASD. Poiché non abbiamo la password ASD,
+    // forziamo un reload della pagina solo se siamo loggati come ASD Firebase Auth.
+    if (currentUser && !currentUser.isAnonymous) {
+        // Ripristina il token ASD tramite re-auth silenziosa
+        // L'ASD dovrà riloggarsi automaticamente tramite onAuthStateChanged
+        await signOut(auth);
+        showModal('⚠️ Riaccedi come ASD',
+            `Atleta <strong>${nome} ${cognome}</strong> creato con successo.<br><br>Per motivi tecnici devi rieffettuare il login ASD.`,
+            [{text:'OK', cls:'btn-gold', fn:()=>window.setView('asdLogin')}]);
+        return;
     }
+} catch(e) {
+    console.warn('Firebase Auth creation failed for atleta:', e.message);
+    showModal('⚠️ Nota', `Atleta creato correttamente. Account Auth non creato: ${e.message}`, [{text:'OK'}]);
+}
+
+
+        await loadAtleti();
+        window.setView('asdAtleti');
+        showModal('✅ Creato!', `Atleta ${nome} ${cognome} creato con successo.`, [{text:'OK'}]);
+        return;
+    }
+
     await loadAtleti();
     window.setView('asdAtleti');
-    showModal('✅ Salvato!', `Atleta ${nome} ${cognome} ${existingId?'aggiornato':'creato'} con successo.`,[{text:'OK'}]);
+    showModal('✅ Salvato!', `Atleta ${nome} ${cognome} aggiornato con successo.`, [{text:'OK'}]);
 }
+
 
 async function editAtleta(atletaId) {
     const atl = S.atleti.find(a => a.id === atletaId);
@@ -1641,6 +2109,14 @@ async function deleteAtleta(atletaId, nome) {
         }}
     ]);
 }
+window.toggleAdminCheckbox = (checked) => {
+    const wrap = document.getElementById('atl-admin-wrap');
+    if (wrap) wrap.style.display = checked ? 'block' : 'none';
+    if (!checked) {
+        const adminCb = document.getElementById('atl-is-admin');
+        if (adminCb) adminCb.checked = false;
+    }
+};
 
 window.deleteAtleta = deleteAtleta;
 window.editAtleta   = editAtleta;
@@ -1738,11 +2214,209 @@ async function renderAsdAtletaDetail({ atletaId }) {
             </div>
         </div>
 
+        <div class="card" style="margin-bottom:1rem;border-color:var(--border)">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.6rem">💾 Backup & Ripristino</div>
+            <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.75rem">Esporta tutti i dati di <strong>${atl.nome} ${atl.cognome}</strong> o ripristinali da un backup precedente.</p>
+            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                <button class="btn btn-outline btn-full" onclick="window.asdBackupAtleta('${atl.id}')">📥 Scarica Backup Atleta</button>
+                <div style="border-top:1px solid var(--border);padding-top:0.5rem">
+                    <label style="font-size:0.78rem;color:var(--muted);display:block;margin-bottom:0.3rem">Ripristina da file JSON</label>
+                    <input type="file" id="asd-restore-file-${atl.id}" accept=".json" class="inp" style="font-size:0.8rem;margin-bottom:0.4rem">
+                    <button class="btn btn-danger btn-full" onclick="window.asdRipristinaAtleta('${atl.id}')">📤 Ripristina Dati Atleta</button>
+                </div>
+            </div>
+        </div>
+
         <div class="gold-line"></div>
         <h3 style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">📋 Sessioni Recenti</h3>
         ${sessionList}
     `);
 }
+
+// ── ASD: BACKUP ATLETA ───────────────────────────────────────────────────────
+window.asdBackupAtleta = async (atletaId) => {
+    const atl = S.atleti.find(a => a.id === atletaId);
+    if (!atl) return;
+
+    showModal('⏳ Preparazione Backup...', '<div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:0.5rem">Raccolta dati in corso...</p></div>', []);
+
+    try {
+        const sessSnap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atletaId)));
+        const sessioni = sessSnap.docs.map(d => _normSess({ id: d.id, ...d.data() }));
+
+        const goalsSnap = await getDocs(collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}/goals`));
+        const goals = goalsSnap.docs.map(d => _normGoal({ id: d.id, ...d.data() }));
+
+        const eqSnap = await getDoc(equipmentRef(S.asd.id, atletaId));
+        const equipment = eqSnap.exists() ? eqSnap.data() : null;
+
+        const backupData = {
+            version: "2.0",
+            exportDate: new Date().toISOString(),
+            exportedBy: 'asd',
+            atleta: {
+                id: atl.id,
+                nome: atl.nome,
+                cognome: atl.cognome,
+                tipoArco: atl.tipoArco || '',
+                tesseraFitarco: atl.tesseraFitarco || ''
+            },
+            asd: { id: S.asd.id, nome: S.asd.nome },
+            sessions: sessioni,
+            goals: goals,
+            equipment: equipment
+        };
+
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backup_${atl.nome}_${atl.cognome}_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showModal('✅ Backup Completato!', `
+            <div style="text-align:center;font-size:0.9rem">
+                <p><strong>${atl.nome} ${atl.cognome}</strong></p>
+                <p>${sessioni.length} sessioni · ${goals.length} obiettivi${equipment ? ' · Materiali inclusi' : ''}</p>
+            </div>`, [{ text: 'OK', cls: 'btn-gold' }]);
+    } catch(e) {
+        showModal('❌ Errore Backup', e.message, [{ text: 'Chiudi', cls: 'btn-ghost' }]);
+    }
+};
+
+// ── ASD: RIPRISTINO ATLETA ───────────────────────────────────────────────────
+window.asdRipristinaAtleta = async (atletaId) => {
+    const atl = S.atleti.find(a => a.id === atletaId);
+    if (!atl) return;
+
+    const fileInput = document.getElementById(`asd-restore-file-${atletaId}`);
+    const file = fileInput?.files[0];
+    if (!file) return showModal('⚠️ Attenzione', 'Seleziona prima un file di backup (.json).', [{ text: 'OK' }]);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!data.sessions && !data.goals && !data.equipment) {
+                throw new Error('Il file non contiene dati validi.');
+            }
+
+            const nSess = data.sessions?.length || 0;
+            const nGoal = data.goals?.length || 0;
+            const hasEq = !!data.equipment;
+
+            const sameName = data.atleta?.nome === atl.nome && data.atleta?.cognome === atl.cognome;
+            const warningHtml = !sameName
+                ? `<p style="background:rgba(192,57,43,0.15);border:1px solid var(--danger);border-radius:8px;padding:0.6rem;font-size:0.78rem;color:var(--danger);margin-bottom:0.75rem">
+                    ⚠️ Il backup appartiene a <strong>${data.atleta?.nome||'?'} ${data.atleta?.cognome||'?'}</strong>,
+                    ma stai ripristinando su <strong>${atl.nome} ${atl.cognome}</strong>. Procedi solo se sei sicuro.
+                   </p>` : '';
+
+            showModal('📤 Configura Ripristino', `
+                <div style="font-size:0.85rem">
+                    ${warningHtml}
+                    <p style="margin-bottom:0.75rem">Seleziona cosa importare da <strong>${file.name}</strong>:</p>
+                    <div style="display:flex;flex-direction:column;gap:0.65rem;background:var(--dark3);padding:0.85rem;border-radius:12px;border:1px solid var(--border)">
+                        <label style="display:flex;align-items:center;gap:0.7rem;cursor:pointer">
+                            <input type="checkbox" id="asd-res-sess" style="width:18px;height:18px" ${nSess?'checked':''} ${!nSess?'disabled':''}>
+                            <div><strong>Sessioni</strong> (${nSess} trovate)</div>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.7rem;cursor:pointer">
+                            <input type="checkbox" id="asd-res-goal" style="width:18px;height:18px" ${nGoal?'checked':''} ${!nGoal?'disabled':''}>
+                            <div><strong>Obiettivi</strong> (${nGoal} trovati)</div>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.7rem;cursor:pointer">
+                            <input type="checkbox" id="asd-res-eq" style="width:18px;height:18px" ${hasEq?'checked':''} ${!hasEq?'disabled':''}>
+                            <div><strong>Materiali</strong> (${hasEq?'Presenti':'Non presenti'}) — <span style="color:var(--danger)">verranno sovrascritti</span></div>
+                        </label>
+                    </div>
+                </div>
+            `, [
+                { text: 'Annulla', cls: 'btn-ghost' },
+                { text: 'Avvia Ripristino', cls: 'btn-gold', fn: () => window._asdExecuteRestore(atletaId, data) }
+            ]);
+        } catch(err) {
+            showModal('❌ Errore File', 'Impossibile leggere il file: ' + err.message, [{ text: 'OK' }]);
+        }
+    };
+    reader.readAsText(file);
+};
+
+window._asdExecuteRestore = async (atletaId, data) => {
+    const atl = S.atleti.find(a => a.id === atletaId);
+    const doSess = document.getElementById('asd-res-sess')?.checked;
+    const doGoal = document.getElementById('asd-res-goal')?.checked;
+    const doEq   = document.getElementById('asd-res-eq')?.checked;
+
+    if (!doSess && !doGoal && !doEq) {
+        return showModal('⚠️ Attenzione', 'Seleziona almeno una categoria.', [{ text: 'OK' }]);
+    }
+
+    showModal('⏳ Ripristino in corso...', '<div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><p id="asd-restore-prog">Inizializzazione...</p></div>', []);
+
+    try {
+        let sessOk = 0, sessSkip = 0, sessFail = 0;
+        if (doSess && data.sessions?.length) {
+            const sessCol = sessioniCol(S.asd.id);
+            const existingSnap = await getDocs(query(sessCol, where('archerId','==',atletaId)));
+            const existingKeys = existingSnap.docs.map(d => {
+                const s = d.data();
+                return `${s.data}_${s.totalScore}_${s.type}`;
+            });
+            for (const s of data.sessions) {
+                const key = `${s.data}_${s.totalScore}_${s.type}`;
+                if (!existingKeys.includes(key)) {
+                    const newSess = { ...s };
+                    delete newSess.id; delete newSess.docId; delete newSess._id;
+                    newSess.archerId = atletaId;
+                    newSess.arciere = `${atl.nome} ${atl.cognome}`;
+                    newSess.asdId = S.asd.id;
+                    try {
+                        await addDoc(sessCol, newSess);
+                        sessOk++;
+                    } catch(e) { sessFail++; }
+                } else { sessSkip++; }
+                const p = document.getElementById('asd-restore-prog');
+                if (p) p.textContent = `Sessioni: ${sessOk+sessSkip+sessFail}/${data.sessions.length}...`;
+            }
+        }
+
+        let goalOk = 0, goalSkip = 0;
+        if (doGoal && data.goals?.length) {
+            const gColRef = collection(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}/goals`);
+            const existingGoalsSnap = await getDocs(gColRef);
+            const existingTitles = existingGoalsSnap.docs.map(d => d.data().title);
+            for (const g of data.goals) {
+                if (!existingTitles.includes(g.title)) {
+                    const newGoal = { ...g };
+                    delete newGoal.id; delete newGoal.docId;
+                    newGoal.atletaId = atletaId;
+                    try { await addDoc(gColRef, newGoal); goalOk++; } catch(e) {}
+                } else { goalSkip++; }
+            }
+        }
+
+        let eqMsg = '';
+        if (doEq && data.equipment) {
+            await setDoc(equipmentRef(S.asd.id, atletaId), data.equipment);
+            eqMsg = '<p><strong>Materiali:</strong> Ripristinati.</p>';
+        }
+
+        showModal('✅ Ripristino Completato!', `
+            <div style="text-align:center;font-size:0.9rem">
+                ${doSess ? `<p><strong>Sessioni:</strong> ${sessOk} importate, ${sessSkip} ignorate${sessFail>0?`, <span style="color:var(--danger)">${sessFail} fallite</span>`:''}.</p>` : ''}
+                ${doGoal ? `<p><strong>Obiettivi:</strong> ${goalOk} importati, ${goalSkip} ignorati.</p>` : ''}
+                ${eqMsg}
+            </div>
+        `, [{ text: 'Perfetto', cls: 'btn-gold', fn: () => window.setView('asdAtletaDetail', { atletaId }) }]);
+
+    } catch(err) {
+        showModal('❌ Errore Ripristino', err.message, [{ text: 'OK' }]);
+    }
+};
 
 async function showSessionDetail(sessionId, atletaId) {
     window.asdDettaglioSessione(sessionId);
@@ -1788,9 +2462,10 @@ async function renderAsdStats() {
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAsdMessaggi() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isOnlyCoach = coachAthlete && !isMainAdmin;
+    const isOnlyCoach = window._currentMode === 'coach' && coachAthlete;
+
 
     setHeader(isOnlyCoach ? '📨 Messaggi Coach' : '📨 Messaggi ASD', S.asd?.nome||'');
 
@@ -2154,7 +2829,8 @@ window.saveAsdPwd = async function() {
     const p2 = $('prof-pwd2')?.value.trim();
     if (!p1 || p1.length<6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK'}]);
     if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK'}]);
-    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: hashPwd(p1) });
+    await updateDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}`), { pwdHash: await hashPwd(p1) });
+
     showModal('✅ Password aggiornata!','',[{text:'OK'}]);
 };
 
@@ -2212,17 +2888,28 @@ async function renderAtletaSelect({ asdId }) {
         <div style="max-width:400px;margin:0 auto">
             <button class="btn btn-ghost btn-sm" onclick="window.setView('homeLogin')" style="margin-bottom:1rem">← Indietro</button>
             ${asdInfo}
-            <div class="card" style="border-color:var(--gold)">
+                        <div class="card" style="border-color:var(--gold)">
                 <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:1rem;font-size:1rem">🔐 Accedi al tuo Profilo</div>
                 <div style="display:flex;flex-direction:column;gap:0.65rem">
                     <div>
+                        <label class="form-label">Username *</label>
+                        <input class="inp" type="text" id="atl-login-username"
+                            placeholder="Es: mario.rossi"
+                            autocomplete="username"
+                            oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')"
+                            onkeydown="if(event.key==='Enter')document.getElementById('atl-login-pwd').focus()">
+                    </div>
+                    <div>
                         <label class="form-label">Password *</label>
-                        <input class="inp" type="password" id="atl-login-pwd" placeholder="Inserisci la tua password"
-                               onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
+                        <input class="inp" type="password" id="atl-login-pwd"
+                            placeholder="La tua password"
+                            autocomplete="current-password"
+                            onkeydown="if(event.key==='Enter')window.loginAtletaConPassword()">
                     </div>
                     <button class="btn btn-gold btn-full btn-lg" onclick="window.loginAtletaConPassword()">Accedi</button>
                 </div>
             </div>
+
         </div>
     `);
 }
@@ -2260,31 +2947,96 @@ window.scriviAllAsd = (asdId, asdNome) => {
 };
 
 window.loginAtletaConPassword = async () => {
-    const pwd = $('atl-login-pwd')?.value.trim();
-    if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    const pwdH = hashPwd(pwd);
-    const atleti = S._tempAtleti || [];
-
-    // Cerca atleta solo per password
-    const matches = atleti.filter(a => a.pwdHash === pwdH);
-    let trovato = null;
-
-    if (matches.length === 1) {
-        trovato = matches[0];
-    } else if (matches.length > 1) {
-        return showModal('⚠️ Password non univoca', 'Più atleti hanno questa password. Contatta la tua ASD per impostare una password unica.', [{text:'OK'}]);
+    // Rate limiting
+    const rlKey = `login_rl_${S._tempAsd?.id || 'x'}`;
+    const now = Date.now();
+    let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
+    attempts = attempts.filter(t => now - t < 600000);
+    if (attempts.length >= 5) {
+        const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
+        return showModal('🔒 Accesso Bloccato',
+            `Troppi tentativi errati. Riprova tra <strong>${waitMin} minuto/i</strong>.`,
+            [{text:'OK'}]);
     }
 
-    if (!trovato) return showModal('❌ Errore','Password non valida o atleta non trovato.',[{text:'OK'}]);
-    // Login diretto: non mostrare nome/foto, vai subito al menu
+    const username = $('atl-login-username')?.value.trim().toLowerCase();
+    const pwd = $('atl-login-pwd')?.value.trim();
+    if (!username) return showModal('Errore','Inserisci il tuo username.',[{text:'OK'}]);
+    if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
+
+    const atleti = S._tempAtleti || [];
+    const trovato = atleti.find(a => a.username === username);
+
+    if (!trovato) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('❌ Credenziali non valide',
+            `Username o password errati. Tentativo ${attempts.length}/5.`,
+            [{text:'OK'}]);
+    }
+
+    // Se l'atleta ha un authUid (Firebase Auth), usa signInWithEmailAndPassword
+    if (trovato.authEmail) {
+        try {
+            await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
+            // onAuthStateChanged gestirà il resto
+            localStorage.removeItem(rlKey);
+            return;
+        } catch(e) {
+            // Se fallisce per password errata
+            if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+                attempts.push(now);
+                localStorage.setItem(rlKey, JSON.stringify(attempts));
+                await new Promise(r => setTimeout(r, 1200));
+                return showModal('❌ Credenziali non valide',
+                    `Username o password errati. Tentativo ${attempts.length}/5.`,
+                    [{text:'OK'}]);
+            }
+            // Altro errore: fallback al metodo hash
+        }
+    }
+
+    // Fallback: verifica password con hash (atleti non ancora migrati)
+    const pwdH = await hashPwd(pwd);
+    if (trovato.pwdHash !== pwdH) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('❌ Credenziali non valide',
+            `Username o password errati. Tentativo ${attempts.length}/5.`,
+            [{text:'OK'}]);
+    }
+
+    // Login OK con hash (atleta legacy) → completa login manualmente
+    localStorage.removeItem(rlKey);
     S.role   = 'atleta';
     S.asd    = S._tempAsd;
     S.atleta = trovato;
-    localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: S._tempAsd.id, atletaId: trovato.id }));
-    buildNav();
-    await loadAtletaSessioni();
-    window.setView('atletaMenu');
-    setTimeout(checkDraftSession, 400);
+
+    const privacyKey = `privacy_accepted_${trovato.id}`;
+    const alreadyAccepted = localStorage.getItem(privacyKey);
+    const sessionData = { asdId: S._tempAsd.id, atletaId: trovato.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) };
+
+    if (alreadyAccepted) {
+        localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
+        buildNav();
+        await loadAtletaSessioni();
+        window.setView('atletaMenu');
+        setTimeout(checkDraftSession, 400);
+    } else {
+        showPrivacyConsent(
+            async () => {
+                localStorage.setItem(privacyKey, '1');
+                localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
+                buildNav();
+                await loadAtletaSessioni();
+                window.setView('atletaMenu');
+                setTimeout(checkDraftSession, 400);
+            },
+            () => { S.role = null; S.asd = null; S.atleta = null; window.setView('homeLogin'); }
+        );
+    }
 };
 
 window.selectAtleta = (atletaId) => {
@@ -2365,27 +3117,74 @@ window.doAtletaLogin = async function() {
     const atleta = S._loginAtleta;
     if (!asd || !atleta) return window.setView('homeLogin');
 
+    // Rate limiting
+    const rlKey = `login_rl_${atleta.id}`;
+    const now = Date.now();
+    let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
+    attempts = attempts.filter(t => now - t < 600000);
+    if (attempts.length >= 5) {
+        const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
+        return showModal('🔒 Accesso Bloccato',
+            `Troppi tentativi. Riprova tra ${waitMin} minuto/i.`,
+            [{text:'OK'}]);
+    }
+
     const pwd = $('atl-pwd-login')?.value.trim();
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
-    if (hashPwd(pwd) !== atleta.pwdHash) return showModal('Errore','Password errata.',[{text:'OK'}]);
+
+    if (await hashPwd(pwd) !== atleta.pwdHash) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('Errore',`Password errata. Tentativo ${attempts.length}/5.`,[{text:'OK'}]);
+    }
+
+    localStorage.removeItem(rlKey);
+
 
     S.role   = 'atleta';
     S.asd    = asd;
     S.atleta = atleta;
-    localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id }));
-    buildNav();
-    await loadAtletaSessioni();
-    window.setView('atletaMenu');
-    // Controlla se c'è una bozza di sessione salvata
-    setTimeout(checkDraftSession, 400);
+
+    const privacyKey = `privacy_accepted_${atleta.id}`;
+    const alreadyAccepted = localStorage.getItem(privacyKey);
+
+    if (alreadyAccepted) {
+        localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) }));
+        buildNav();
+        await loadAtletaSessioni();
+        window.setView('atletaMenu');
+        setTimeout(checkDraftSession, 400);
+    } else {
+        showPrivacyConsent(
+            async () => {
+                localStorage.setItem(privacyKey, '1');
+                localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) }));
+                buildNav();
+                await loadAtletaSessioni();
+                window.setView('atletaMenu');
+                setTimeout(checkDraftSession, 400);
+            },
+            () => {
+                S.role = null; S.asd = null; S.atleta = null;
+                window.setView('homeLogin');
+            }
+        );
+    }
+
 };
 
 function isAtletaAdmin() {
-    if (!S.atleta || !S.asd || !S.asd.adminName) return false;
+    if (!S.atleta || !S.asd) return false;
+    // Admin tramite flag isAdmin sul profilo atleta
+    if (S.atleta.isAdmin) return true;
+    // Admin tramite nome corrispondente all'adminName della ASD
+    if (!S.asd.adminName) return false;
     const atlFull = `${S.atleta.nome||''} ${S.atleta.cognome||''}`.trim().toLowerCase();
     const admFull = S.asd.adminName.trim().toLowerCase();
     return atlFull === admFull;
 }
+
 
 async function logoutAtleta() {
     try {
@@ -2585,20 +3384,28 @@ function renderAtletaMenu() {
             </div>
 
             ${(isAtletaAdmin() || S.atleta?.isTecnico) ? `
-            <div class="gold-line"></div>
-            <div class="card card-hover" style="border: 2px solid var(--gold); background: rgba(201,162,39,0.05)" onclick="window.setView('asdDashboard')">
-                <div style="display:flex;align-items:center;gap:0.75rem">
-                    <div style="font-size:2rem">⚙️</div>
-                    <div>
-                        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">
-                            ${isAtletaAdmin() ? 'Area Gestionale ASD' : 'Area Gestionale Coach'}
-                        </div>
-                        <div style="font-size:0.8rem;color:var(--muted)">
-                            ${isAtletaAdmin() ? 'Gestisci atleti, messaggi e dati della società' : 'Gestisci i tuoi atleti, invia messaggi e obiettivi'}
-                        </div>
-                    </div>
-                </div>
-            </div>` : ''}
+<div class="gold-line"></div>
+${isAtletaAdmin() ? `
+            <div class="card card-hover" style="border:2px solid var(--gold);background:rgba(201,162,39,0.05);margin-bottom:0.5rem" onclick="window._currentMode='asd';window.setView('asdDashboard')">
+    <div style="display:flex;align-items:center;gap:0.75rem">
+        <div style="font-size:2rem">⚙️</div>
+        <div>
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);font-size:1.1rem">Area Gestionale ASD</div>
+            <div style="font-size:0.8rem;color:var(--muted)">Gestisci tutti gli atleti e i dati della società</div>
+        </div>
+    </div>
+</div>` : ''}
+${S.atleta?.isTecnico ? `
+<div class="card card-hover" style="border:2px solid #3d9970;background:rgba(61,153,112,0.05)" onclick="window._currentMode='coach';window.setView('coachDashboard')">
+    <div style="display:flex;align-items:center;gap:0.75rem">
+        <div style="font-size:2rem">👤</div>
+        <div>
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#5dba94;font-size:1.1rem">Area Coach</div>
+            <div style="font-size:0.8rem;color:var(--muted)">${isAtletaAdmin() ? 'Accedi alla vista dei tuoi atleti assegnati' : 'Gestisci i tuoi atleti assegnati'}</div>
+        </div>
+    </div>
+</div>` : ''}` : ''}
+
         </div>
     `);
     // Controlla messaggi nuovi dopo il render (asincrono)
@@ -2838,9 +3645,9 @@ function tkRenderScoring(){
     // Notes
     const notes=isT?`<div class="form-section">
         <label class="form-label">🩺 Note Fisiche</label>
-        <textarea class="inp" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
+        <textarea class="inp" id="tk-note-fisiche" rows="2" placeholder="Stanchezza, dolori, meteo..." oninput="TK.session.noteCondizioniFisiche=this.value">${s.noteCondizioniFisiche||''}</textarea>
         <label class="form-label" style="margin-top:0.5rem">✅ Esercizi Svolti</label>
-        <textarea class="inp" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
+        <textarea class="inp" id="tk-eserciz-svolti" rows="2" placeholder="Cosa hai praticato..." oninput="TK.session.esercizSvolti=this.value">${s.esercizSvolti||''}</textarea>
     </div>`:`<div class="form-section">
         <label class="form-label">📝 Note Pre-Gara</label>
         <textarea class="inp" rows="2" oninput="TK.session.notePreGara=this.value">${s.notePreGara||''}</textarea>
@@ -3049,7 +3856,8 @@ window.tkSave3D = async () => {
             await addDoc(sessioniCol(S.asd.id),sessionData);
         await tkDecrementEsercCoach();
             tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-            await loadAtletaSessioni();
+            invalidateSessioniCache();
+            await loadAtletaSessioniCached(true);
             showModal('✅ Salvato!',`3D ${d3.ente}: ${st.score} pt · ${st.piazzoleComplete} piazzole`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
         }catch(e){
             const qk=`offline_queue_${S.atleta?.id||''}`;
@@ -3057,6 +3865,8 @@ window.tkSave3D = async () => {
             q.push({asdId:S.asd.id,data:sessionData,savedAt:new Date().toISOString()});
             localStorage.setItem(qk,JSON.stringify(q));
             tkClearDraft();TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
+            invalidateSessioniCache();
+            await loadAtletaSessioniCached(true);
             showModal('⚠️ Salvato Offline',`3D ${d3.ente}: ${st.score} pt — Sarà sincronizzato alla riconnessione.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
         }
     }}]);
@@ -3110,10 +3920,11 @@ window.tkFineTurno=async(isFinal)=>{
                     totalAverage:totShots>0?totalScore/totShots:0,
                     turn1Score:t1.score,turn2Score:t2.score,
                     frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                    esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
-                    noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                    esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
+                    noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                     notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
-                    turn1:s.turn1?{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
+                    turn1:s.turn1?
+{summary:s.turn1.summary,grid:(s.turn1.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1.volleyNotes||{},arrowPositions:s.turn1.arrowPositions||[]}:null,
                     turn2:s.turn2?{summary:s.turn2.summary,grid:(s.turn2.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn2.volleyNotes||{},arrowPositions:s.turn2.arrowPositions||[]}:null,
                     timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                 };
@@ -3123,7 +3934,8 @@ window.tkFineTurno=async(isFinal)=>{
                 await tkDecrementEsercCoach();
                 tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-                await loadAtletaSessioni();
+                invalidateSessioniCache();
+                await loadAtletaSessioniCached(true);
                 showModal('✅ Salvato!',`Punteggio: ${totalScore} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
             }catch(e){
                 // Salva offline se senza rete
@@ -3133,7 +3945,8 @@ window.tkFineTurno=async(isFinal)=>{
                 localStorage.setItem(qk,JSON.stringify(q));
                 tkClearDraft();
                 TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-                await loadAtletaSessioni();
+                invalidateSessioniCache();
+                await loadAtletaSessioniCached(true);
                 showModal('⚠️ Salvato Offline',`Punteggio: ${totalScore} pt — Sei offline. La sessione verrà sincronizzata automaticamente alla riconnessione.`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
             }
         }}]);
@@ -3166,17 +3979,19 @@ window.tkFineTurno=async(isFinal)=>{
                         totalAverage:totShots>0?t1.score/totShots:0,
                         turn1Score:t1.score,turn2Score:0,
                         frecceAggiuntive:s.frecceAggiuntive,frecceProgrammate:parseInt(s.frecceProgrammate)||0,
-                        esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:s.esercizSvolti||'',
-                        noteCondizioniFisiche:s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
+                        esercizConsigliati:s.esercizConsigliati||'',esercizSvolti:document.getElementById('tk-eserciz-svolti')?.value||s.esercizSvolti||'',
+                        noteCondizioniFisiche:document.getElementById('tk-note-fisiche')?.value||s.noteCondizioniFisiche||'',notePreGara:s.notePreGara||'',
                         notePostGara:s.notePostGara||'',trainingWithoutScore:false,quickScore:false,
-                        turn1:{summary:{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
+                        turn1:{summary:
+{score:t1.score,X:t1.X||0,Ten:t1.Ten||0,Nine:t1.Nine||0,fired:t1.fired||0,avg:t1.avg||0},
                                grid:(s.turn1?.grid||[]).map(r=>JSON.stringify(r)),volleyNotes:s.turn1?.volleyNotes||{},arrowPositions:s.turn1?.arrowPositions||[]},
                         timestamp:serverTimestamp(),createdAt:new Date().toISOString()
                     });
                     await tkDecrementEsercCoach();
                     tkClearDraft();
                     TK.session=null;TK.turn=1;TK.grid=null;TK.volleyNotes={};
-                    await loadAtletaSessioni();
+                    invalidateSessioniCache();
+                    await loadAtletaSessioniCached(true);
                     showModal('✅ Salvato!',`Turno 1: ${t1.score} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
                 }catch(e){showModal('Errore','Salvataggio fallito: '+e.message,[{text:'OK'}]);}
             }}
@@ -3627,7 +4442,8 @@ window.tkSaveQS=async()=>{
         });
         await tkDecrementEsercCoach();
         TK.session=null;
-        await loadAtletaSessioni();
+        invalidateSessioniCache();
+        await loadAtletaSessioniCached(true);
         showModal('✅ Salvato!',`Punteggio: ${t1+t2} pt`,[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaDati')}]);
     }catch(e){showModal('Errore',e.message,[{text:'OK'}]);}
 };
@@ -3666,7 +4482,8 @@ window.tkSaveTN=async()=>{
         });
         await tkDecrementEsercCoach();
         TK.session=null;
-        await loadAtletaSessioni();
+        invalidateSessioniCache();
+        await loadAtletaSessioniCached(true);
         showModal('✅ Salvato!','',[{text:'OK',cls:'btn-gold',fn:()=>window.setView('atletaMenu')}]);
     }catch(e){showModal('Errore',e.message,[{text:'OK'}]);}
 };
@@ -3679,9 +4496,10 @@ window.saveSession = async function() {};
 // ════════════════════════════════════════════════════════════════════════════
 async function renderAtletaDati() {
     setHeader('📊 I Miei Dati', S.atleta ? `${S.atleta.nome} ${S.atleta.cognome}` : '');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
 
     // ── Stats globali (sempre su tutte le sessioni) ──
+
     const allList  = S.sessioni.filter(s=>!s.trainingWithoutScore&&(s.totalScore||0)>0);
     const bestScore = allList.length > 0 ? Math.max(...allList.map(s=>s.totalScore||0)) : 0;
     const sessCount = S.sessioni.length;
@@ -3886,6 +4704,11 @@ async function tryRestoreSession() {
     // Try atleta session
     const atlSess = JSON.parse(localStorage.getItem('acm_atleta_session')||'null');
     if (atlSess?.asdId && atlSess?.atletaId) {
+                // Verifica scadenza sessione
+        if (atlSess.expiresAt && Date.now() > atlSess.expiresAt) {
+            localStorage.removeItem('acm_atleta_session');
+            return false;
+        }
         await loadAllAsd();
         const asd = S.allAsd.find(a=>a.id===atlSess.asdId);
         if (asd) {
@@ -3905,13 +4728,87 @@ async function tryRestoreSession() {
     return false;
 }
 
-// ── Override initial load ───────────────────────────────────────────────────
+// ── INIT AUTH ───────────────────────────────────────────────────────────────
 onAuthStateChanged(auth, async user => {
-    if (!user) await signInAnonymously(auth);
+    if (!user) {
+        await signInAnonymously(auth);
+        return;
+    }
+
     await loadAllAsd();
-    const restored = await tryRestoreSession();
-    if (!restored) window.setView('homeLogin');
+
+    // 1. Controlla se è il Master
+    try {
+        const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
+        if (masterSnap.exists() && masterSnap.data()?.masterUid === user.uid) {
+            window._masterLogged = true;
+            await loadAllAsd();
+            buildNav();
+            window.setView('masterPanel');
+            return;
+        }
+    } catch(e) {}
+
+    // 2. Controlla se è un'ASD
+    if (!user.isAnonymous) {
+        const asdSnap = await getDoc(doc(db, `${APP_NS}/data/asd`, user.uid));
+        if (asdSnap.exists()) {
+            S.role = 'asd';
+            S.asd = { id: asdSnap.id, ...asdSnap.data() };
+            await loadAtleti();
+            buildNav();
+            window.setView('asdDashboard');
+            return;
+        }
+    }
+
+    // 3. Controlla se è un atleta con Firebase Auth
+    if (!user.isAnonymous) {
+        for (const asd of S.allAsd) {
+            try {
+                const snap = await getDocs(atletiCol(asd.id));
+                const atl = snap.docs.map(d => ({id:d.id,...d.data()})).find(a => a.authUid === user.uid);
+                if (atl) {
+                    S.role = 'atleta';
+                    S.asd = asd;
+                    S.atleta = atl;
+                    buildNav();
+                    await loadAtletaSessioni();
+                    window.setView('atletaMenu');
+                    return;
+                }
+            } catch(e) {}
+        }
+    }
+
+    // 4. Sessione atleta legacy (localStorage)
+    const atlSess = localStorage.getItem('acm_atleta_session');
+    if (atlSess) {
+        try {
+            const { asdId, atletaId, expiresAt } = JSON.parse(atlSess);
+            if (expiresAt && Date.now() > expiresAt) {
+                localStorage.removeItem('acm_atleta_session');
+            } else {
+                const asd = S.allAsd.find(a => a.id === asdId);
+                if (asd) {
+                    const atlSnap = await getDoc(doc(db, `${APP_NS}/data/asd/${asdId}/atleti`, atletaId));
+                    if (atlSnap.exists()) {
+                        S.role = 'atleta';
+                        S.asd = asd;
+                        S.atleta = { id: atlSnap.id, ...atlSnap.data() };
+                        buildNav();
+                        window.setView('atletaMenu');
+                        return;
+                    }
+                }
+            }
+        } catch(e) {}
+        localStorage.removeItem('acm_atleta_session');
+    }
+
+    window.setView('homeLogin');
 });
+
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4250,9 +5147,10 @@ window.eliminaSessione = async (sessionId, dataStr) => {
 // ── CALENDARIO ATLETA ───────────────────────────────────────────────────────
 async function renderAtletaCalendario() {
     setHeader('📅 Calendario', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
 
-    // Mantieni lo stato se già esistente (per tornare allo stesso mese)
+    // Mantieni lo stato se già esistente
+
     if (!window._calState) {
         const now = new Date();
         window._calState = { m: now.getMonth(), y: now.getFullYear() };
@@ -4854,9 +5752,8 @@ async function renderAtletaObiettivi() {
     try {
         setHeader('🏅 Obiettivi', S.atleta?.nome||'');
         // Pre-ensure sessions are loaded if not already
-        if (!S.sessioni || S.sessioni.length === 0) {
-            await loadAtletaSessioni();
-        }
+        await loadAtletaSessioniCached();
+
         const goals = await loadObiettivi();
         console.log("Goals loaded:", goals);
         console.log("Sessions available for goals:", S.sessioni);
@@ -5049,8 +5946,9 @@ window.deleteObiettivo = async (id) => {
 window._selSess = [];
 async function renderConfronta() {
     setHeader('⚖️ Confronta Sessioni', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
     window._selSess = [];
+
     const valid = S.sessioni.filter(s => !s.trainingWithoutScore);
 
     render(`
@@ -5179,7 +6077,7 @@ window.eseguiConfronto = () => {
 // ── STATISTICHE BERSAGLIO ───────────────────────────────────────────────────
 async function renderTargetStats() {
     setHeader('🎯 Stat. Bersaglio', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
 
     const getArrows = (s) => {
         const d=s.arrowPositions||[],t1=s.turn1?.arrowPositions||[],t2=s.turn2?.arrowPositions||[];
@@ -5315,7 +6213,7 @@ async function renderTargetStats() {
 // ── CONTATORE FRECCE ────────────────────────────────────────────────────────
 async function renderContatoreFrecce() {
     setHeader('🪃 Contatore Frecce', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
     const sess = S.sessioni;
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -5362,7 +6260,7 @@ async function renderContatoreFrecce() {
 // ── ESPORTA & BACKUP ────────────────────────────────────────────────────────
 async function renderEsportaDati() {
     setHeader('📥 Esporta Dati', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
     render(`
         <div class="card card-gold" style="margin-bottom:1rem">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📊 Esporta in CSV</div>
@@ -5479,7 +6377,7 @@ window.renderAtletaGrafici = async function() {
     };
 
     setHeader('📊 Grafici e Analisi', S.atleta?.nome||'');
-    await loadAtletaSessioni();
+    await loadAtletaSessioniCached();
 
     const history = { years: [], monthsByYear: {} };
     S.sessioni.forEach(s => {
@@ -5968,59 +6866,84 @@ window._executeRestore = async (data) => {
     showModal('⏳ Ripristino in corso...', '<div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><p id="restore-progress">Inizializzazione...</p></div>', []);
 
     try {
-        let sessOk = 0, sessSkip = 0;
+        let sessOk = 0, sessSkip = 0, sessFail = 0;
         if (doSess && data.sessions) {
             const sessCol = sessioniCol(S.asd.id);
-            await loadAtletaSessioni();
-            const existingSessDates = S.sessioni.map(s => `${s.data}_${s.totalScore}_${s.type}`);
+            if (!S.sessioni || S.sessioni.length === 0) {
+                try { await loadAtletaSessioni(); } catch(e) { /* ignora errori di permesso in lettura */ }
+            }
+            const existingSessDates = (S.sessioni || []).map(s => `${s.data}_${s.totalScore}_${s.type}`);
             for (const s of data.sessions) {
                 const key = `${s.data}_${s.totalScore}_${s.type}`;
                 if (!existingSessDates.includes(key)) {
                     const newSess = { ...s };
-                    delete newSess.id; delete newSess.docId;
+                    delete newSess.id; delete newSess.docId; delete newSess._id;
                     newSess.archerId = S.atleta.id;
                     newSess.arciere = `${S.atleta.nome} ${S.atleta.cognome}`;
-                    await addDoc(sessCol, newSess);
-                    sessOk++;
+                    newSess.asdId = S.asd.id;
+                    try {
+                        await addDoc(sessCol, newSess);
+                        sessOk++;
+                    } catch(e) {
+                        console.warn('Sessione non importata:', e.message);
+                        sessFail++;
+                    }
                 } else {
                     sessSkip++;
                 }
                 const p = document.getElementById('restore-progress');
-                if (p) p.textContent = `Sessioni: ${sessOk + sessSkip}/${data.sessions.length}...`;
+                if (p) p.textContent = `Sessioni: ${sessOk + sessSkip + sessFail}/${data.sessions.length}...`;
             }
         }
 
-        let goalOk = 0, goalSkip = 0;
+        let goalOk = 0, goalSkip = 0, goalFail = 0;
         if (doGoal && data.goals) {
-            const existingGoals = await loadObiettivi();
+            let existingGoals = [];
+            try { existingGoals = await loadObiettivi(); } catch(e) { /* ignora */ }
             const existingGoalTitles = existingGoals.map(g => g.title);
             const gCol = goalsCol();
-            for (const g of data.goals) {
-                if (!existingGoalTitles.includes(g.title)) {
-                    const newGoal = { ...g };
-                    delete newGoal.id;
-                    await addDoc(gCol, newGoal);
-                    goalOk++;
-                } else {
-                    goalSkip++;
+            if (gCol) {
+                for (const g of data.goals) {
+                    if (!existingGoalTitles.includes(g.title)) {
+                        const newGoal = { ...g };
+                        delete newGoal.id; delete newGoal.docId;
+                        newGoal.atletaId = S.atleta.id;
+                        try {
+                            await addDoc(gCol, newGoal);
+                            goalOk++;
+                        } catch(e) {
+                            console.warn('Obiettivo non importato:', e.message);
+                            goalFail++;
+                        }
+                    } else {
+                        goalSkip++;
+                    }
                 }
             }
         }
 
+        let eqMsg = '';
         if (doEq && data.equipment) {
-            await setDoc(equipmentRef(S.asd.id, S.atleta.id), data.equipment);
-            localStorage.setItem(getEquipmentKey(), JSON.stringify(data.equipment));
+            try {
+                await setDoc(equipmentRef(S.asd.id, S.atleta.id), data.equipment);
+                localStorage.setItem(getEquipmentKey(), JSON.stringify(data.equipment));
+                eqMsg = '<p><strong>Materiali:</strong> Ripristinati correttamente.</p>';
+            } catch(e) {
+                eqMsg = `<p style="color:var(--danger)"><strong>Materiali:</strong> Errore durante il ripristino.</p>`;
+            }
         }
+
+        try { await loadAtletaSessioni(); } catch(e) { /* ignora */ }
 
         showModal('✅ Ripristino Completato!', `
             <div style="text-align:center;font-size:0.9rem">
-                ${doSess ? `<p><strong>Sessioni:</strong> ${sessOk} importate, ${sessSkip} ignorate.</p>` : ''}
-                ${doGoal ? `<p><strong>Obiettivi:</strong> ${goalOk} importati, ${goalSkip} ignorati.</p>` : ''}
-                ${doEq ? `<p><strong>Materiali:</strong> Ripristinati correttamente.</p>` : ''}
+                ${doSess ? `<p><strong>Sessioni:</strong> ${sessOk} importate, ${sessSkip} ignorate${sessFail>0?`, <span style="color:var(--danger)">${sessFail} fallite</span>`:''}.</p>` : ''}
+                ${doGoal ? `<p><strong>Obiettivi:</strong> ${goalOk} importati, ${goalSkip} ignorati${goalFail>0?`, <span style="color:var(--danger)">${goalFail} falliti</span>`:''}.</p>` : ''}
+                ${eqMsg}
+                ${sessFail>0||goalFail>0 ? `<p style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem">⚠️ Alcuni elementi non sono stati importati per mancanza di permessi Firestore. Controlla le regole di sicurezza del database.</p>` : ''}
             </div>
         `, [{ text: 'Perfetto', cls: 'btn-gold', fn: () => window.setView('impostazioni') }]);
 
-        await loadAtletaSessioni();
     } catch (err) {
         showModal('❌ Errore Ripristino', 'Si è verificato un errore: ' + err.message, [{ text: 'OK' }]);
     }
@@ -6176,14 +7099,10 @@ async function renderImpostazioni() {
     render(`
         <div class="card" style="margin-bottom:1rem;border-color:var(--gold)">
             <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">💾 Backup & Ripristino</div>
-            <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.75rem">Esegui un backup completo dei tuoi dati (profilo, sessioni, obiettivi, materiale) o ripristinali da un file precedentemente salvato.</p>
-            <div style="display:flex;flex-direction:column;gap:0.6rem">
-                <button class="btn btn-outline btn-full" onclick="window.backupAtletaDati()">📥 Scarica Backup Completo</button>
-                <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
-                    <label class="form-label">Ripristina da file JSON</label>
-                    <input type="file" id="restore-file-input" accept=".json" class="inp" style="font-size:0.8rem;margin-bottom:0.5rem">
-                    <button class="btn btn-danger btn-full" onclick="window.ripristinaAtletaDati()">📤 Ripristina Dati</button>
-                </div>
+            <div style="background:var(--dark3);border:1px solid var(--border);border-radius:10px;padding:0.85rem;font-size:0.82rem;color:var(--muted);line-height:1.5">
+                <div style="font-size:1.4rem;text-align:center;margin-bottom:0.5rem">🔒</div>
+                <p style="margin-bottom:0.4rem">Il backup e il ripristino dei dati vengono gestiti dalla tua <strong style="color:var(--text)">ASD</strong> per garantire la sicurezza dei tuoi dati.</p>
+                <p>Contatta il tuo responsabile di club e chiedi di accedere al <strong style="color:var(--gold)">pannello ASD → scheda atleta</strong> per scaricare o ripristinare il tuo backup.</p>
             </div>
         </div>
 
@@ -6252,9 +7171,10 @@ window.applyBulk = async () => {
 // ── MESSAGGI ESTERNI (da visitatori/pubblico) ────────────────────────────────
 async function renderAsdMessaggiEsterni() {
     await loadAtleti();
-    const isMainAdmin = S.role === 'asd' || isAtletaAdmin();
+    const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     const coachAthlete = S.role === 'atleta' && S.atleta?.isTecnico;
-    const isOnlyCoach = coachAthlete && !isMainAdmin;
+    const isOnlyCoach = window._currentMode === 'coach' && coachAthlete;
+
 
     setHeader(isOnlyCoach ? '📬 Messaggi dai miei Atleti' : '📬 Messaggi Esterni', S.asd?.nome||'');
     // Segna come letti
@@ -6825,6 +7745,64 @@ setTimeout(() => {
 
 window.saveSessionWithFallback = saveSessionWithFallback;
 window.syncOfflineQueue = syncOfflineQueue;
+</script>
+
+<div id="pwa-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;background:var(--dark2);border-top:2px solid var(--gold);padding:1rem;animation:fadeSlide 0.3s ease">
+    <div style="display:flex;align-items:center;gap:0.75rem;max-width:600px;margin:0 auto">
+        <div style="font-size:2rem;flex-shrink:0">🏹</div>
+        <div style="flex:1">
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold)">Installa Archery Club</div>
+            <div id="pwa-banner-text" style="font-size:0.75rem;color:var(--muted)"></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-shrink:0">
+            <button id="pwa-install-btn" style="display:none;background:var(--gold);color:#000;border:none;border-radius:8px;padding:0.5rem 0.85rem;font-family:'Rajdhani',sans-serif;font-weight:700;cursor:pointer;font-size:0.85rem">Installa</button>
+            <button onclick="document.getElementById('pwa-banner').style.display='none';localStorage.setItem('pwa_banner_dismissed','1')" style="background:var(--dark3);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.75rem;cursor:pointer;font-size:0.8rem">✕</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Gestione banner PWA
+(function() {
+    if (localStorage.getItem('pwa_banner_dismissed')) return;
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+    if (window.navigator.standalone === true) return;
+
+    const banner = document.getElementById('pwa-banner');
+    const bannerText = document.getElementById('pwa-banner-text');
+    const installBtn = document.getElementById('pwa-install-btn');
+
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isAndroid = /android/i.test(navigator.userAgent);
+
+    if (isIOS) {
+        bannerText.textContent = 'Tocca ⬆️ poi "Aggiungi a schermata Home"';
+        setTimeout(() => { banner.style.display = 'block'; }, 3000);
+    } else if (isAndroid) {
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            bannerText.textContent = 'Usala come app, anche offline!';
+            installBtn.style.display = 'block';
+            setTimeout(() => { banner.style.display = 'block'; }, 2000);
+        });
+        installBtn.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                banner.style.display = 'none';
+                localStorage.setItem('pwa_banner_dismissed', '1');
+            }
+            deferredPrompt = null;
+        });
+        window.addEventListener('appinstalled', () => {
+            banner.style.display = 'none';
+            localStorage.setItem('pwa_banner_dismissed', '1');
+        });
+    }
+})();
 </script>
 </body>
 </html>
