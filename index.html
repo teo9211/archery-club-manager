@@ -745,19 +745,23 @@ window._masterTap = () => {
 window._masterLogin = () => {
     showModal('🔑 Accesso Sviluppatore', `
         <div style="display:flex;flex-direction:column;gap:0.6rem">
-            <p style="font-size:0.78rem;color:var(--muted)">Inserisci la chiave di accesso sviluppatore.</p>
-            <input class="inp" type="password" id="master-pwd" placeholder="Chiave master"
+            <p style="font-size:0.78rem;color:var(--muted)">Inserisci le credenziali di accesso sviluppatore.</p>
+            <input class="inp" type="email" id="master-email" placeholder="Email master"
+                   onkeydown="if(event.key==='Enter')document.getElementById('master-pwd')?.focus()">
+            <input class="inp" type="password" id="master-pwd" placeholder="Password / Chiave master"
                    onkeydown="if(event.key==='Enter')window._masterAuth()">
         </div>
     `, [
         {text:'Annulla', cls:'btn-ghost'},
         {text:'Accedi', cls:'btn-gold', fn: window._masterAuth}
     ]);
-    setTimeout(()=>document.getElementById('master-pwd')?.focus(), 150);
+    setTimeout(()=>document.getElementById('master-email')?.focus(), 150);
 };
+
 
 window._masterAuth = async () => {
     const pwd = document.getElementById('master-pwd')?.value || '';
+    const emailInput = document.getElementById('master-email')?.value.trim() || '';
     if (!pwd) return;
     try {
         const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
@@ -797,10 +801,12 @@ window._masterAuth = async () => {
 
         // LOGIN NORMALE: usa Firebase Auth con email+password
         if (masterSnap.exists() && masterSnap.data()?.masterUid) {
-            const masterEmail = masterSnap.data()?.email;
-            if (!masterEmail) return showModal('❌ Errore', 'Email master non configurata.', [{text:'OK'}]);
-            try {
-                await signInWithEmailAndPassword(auth, masterEmail, pwd);
+            // Usa l'email inserita dall'utente, oppure quella salvata su Firestore come fallback
+const masterEmail = emailInput || masterSnap.data()?.email;
+if (!masterEmail) return showModal('❌ Errore', 'Inserisci l\'email master.', [{text:'OK'}]);
+try {
+    await signInWithEmailAndPassword(auth, masterEmail, pwd);
+
                 // onAuthStateChanged gestirà il redirect a masterPanel
                 return;
             } catch(e) {
