@@ -2986,19 +2986,6 @@ window.scriviAllAsd = (asdId, asdNome) => {
 };
 
 window.loginAtletaConPassword = async () => {
-    // 1. Rate limiting (Protezione Brute Force dal tuo vecchio codice)
-    const rlKey = `login_rl_${S._tempAsd?.id || 'x'}`;
-    const now = Date.now();
-    let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
-    attempts = attempts.filter(t => now - t < 600000);
-    if (attempts.length >= 5) {
-        const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
-        return showModal('🔒 Accesso Bloccato',
-            `Troppi tentativi errati. Riprova tra <strong>${waitMin} minuto/i</strong>.`,
-            [{text:'OK'}]);
-    }
-
-    // 2. Recupero dati dai campi
     const asdId = S._tempAsd?.id;
     const usernameInput = document.getElementById('atl-login-username')?.value.trim();
     const pwd = document.getElementById('atl-login-pwd')?.value.trim();
@@ -3010,69 +2997,66 @@ window.loginAtletaConPassword = async () => {
     const username = usernameInput.toLowerCase();
 
     try {
-        // 3. Costruiamo l'email tecnica (Logica GDPR sicura)
+        // 1. TENTATIVO MODERNO (Firebase Auth)
         const cleanUsername = username.replace(/[^a-z0-9]/g, '').substring(0, 20);
         const cleanAsd = asdId.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
         const techEmail = `${cleanUsername}.${cleanAsd}@acm-atleta.app`;
 
-        // 4. TENTATIVO DI LOGIN (bypassiamo le regole Firestore fallaci)
-        await signInWithEmailAndPassword(auth, techEmail, pwd);
+        try {
+            const userCred = await signInWithEmailAndPassword(auth, techEmail, pwd);
+            // Se arriviamo qui, l'utente esiste in Auth. Leggiamo il doc.
+            const atletaDoc = await getDoc(doc(db, `club_manager_v1/data/asd/${asdId}/atleti`, username));
+            if (atletaDoc.exists()) {
+                effettuaLoginLocale({ id: atletaDoc.id, ...atletaDoc.data() }, asdId);
+                return;
+            }
+        } catch (authErr) {
+            // Se l'errore è 'user-not-found', proseguiamo col metodo Legacy (pwdHash)
+            console.log("Utente non in Auth, provo metodo Legacy...");
+        }
+
+        // 2. TENTATIVO LEGACY (Per atleti come Luca Moretti con pwdHash)
+        // NOTA: Se le regole GDPR bloccano questa query, dovrai allentarle leggermente 
+        // permettendo la query 'where username' agli utenti non loggati.
+        const q = query(collection(db, `club_manager_v1/data/asd/${asdId}/atleti`), 
+                        where('username', '==', username));
         
-        // 5. LOGIN RIUSCITO: Ora leggiamo il documento (le regole ora permettono la lettura)
-        const atletaDoc = await getDoc(doc(db, `club_manager_v1/data/asd/${asdId}/atleti`, username));
-
-        if (!atletaDoc.exists()) {
-            await signOut(auth);
-            throw new Error("Profilo atleta non trovato nel database.");
+        const snap = await getDocs(q);
+        
+        if (!snap.empty) {
+            const trovato = { id: snap.docs[0].id, ...snap.docs[0].data() };
+            
+            // Verifica la password hashata (sha256)
+            const hashInserita = await hashPwd(pwd); // Assicurati che hashPwd sia definita nel tuo index
+            if (trovato.pwdHash === hashInserita) {
+                effettuaLoginLocale(trovato, asdId);
+                return;
+            }
         }
 
-        const trovato = { id: atletaDoc.id, ...atletaDoc.data() };
-        localStorage.removeItem(rlKey); // Reset tentativi falliti
-
-        // 6. GESTIONE PRIVACY E SESSIONE (Dal tuo vecchio codice, fondamentale per GDPR)
-        const privacyKey = `privacy_accepted_${trovato.id}`;
-        const alreadyAccepted = localStorage.getItem(privacyKey);
-        const sessionData = { 
-            asdId: asdId, 
-            atletaId: trovato.id, 
-            expiresAt: Date.now() + (8 * 60 * 60 * 1000) 
-        };
-
-        const completaLogin = async () => {
-            S.role = 'atleta';
-            S.asd = S._tempAsd;
-            S.atleta = trovato;
-            localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
-            buildNav();
-            await loadAtletaSessioni();
-            window.setView('atletaMenu');
-            if (typeof checkDraftSession === 'function') setTimeout(checkDraftSession, 400);
-        };
-
-        if (alreadyAccepted) {
-            await completaLogin();
-        } else {
-            // Se non ha ancora accettato la privacy, mostra il consenso
-            showPrivacyConsent(
-                async () => {
-                    localStorage.setItem(privacyKey, '1');
-                    await completaLogin();
-                },
-                () => { signOut(auth); S.role = null; window.setView('homeLogin'); }
-            );
-        }
+        throw new Error("Credenziali non valide");
 
     } catch (error) {
-        console.error("Errore login atleta:", error);
-        attempts.push(now);
-        localStorage.setItem(rlKey, JSON.stringify(attempts));
-        
-        let msg = "Credenziali non corrette o utente non trovato.";
-        if (error.code === 'auth/network-request-failed') msg = "Problema di connessione internet.";
-        
-        showModal('❌ Accesso Negato', `${msg}<br><small>Tentativo ${attempts.length}/5</small>`, [{text:'OK'}]);
+        console.error("Errore finale login:", error);
+        showModal('❌ Accesso Negato', "Username o password errati.", [{text:'OK'}]);
     }
 };
+
+// Funzione di supporto per pulire il codice sopra
+function effettuaLoginLocale(atletaData, asdId) {
+    S.role = 'atleta';
+    S.asd = S._tempAsd;
+    S.atleta = atletaData;
+    localStorage.setItem('acm_atleta_session', JSON.stringify({ 
+        asdId, 
+        atletaId: atletaData.id, 
+        expiresAt: Date.now() + (8 * 60 * 60 * 1000) 
+    }));
+    buildNav();
+    loadAtletaSessioni().then(() => {
+        window.setView('atletaMenu');
+    });
+}
 
 window.selectAtleta = (atletaId) => {
     const atleta = S._tempAtleti?.find(a => a.id === atletaId);
