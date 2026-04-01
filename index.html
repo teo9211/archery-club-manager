@@ -2890,10 +2890,11 @@ async function renderAtletaSelect({ asdId }) {
     const asd = S.allAsd.find(a => a.id === asdId);
     if (!asd) return window.setView('homeLogin');
 
-    const snap = await getDocs(atletiCol(asd.id));
-    const atleti = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // GDPR FIX: non carichiamo più la lista completa atleti prima del login
+    // (le nuove regole Firestore lo vietano per utenti anonimi).
+    // La lista verrà caricata in loginAtletaConPassword() solo dopo verifica credenziali.
     S._tempAsd = asd;
-    S._tempAtleti = atleti;
+    S._tempAtleti = []; // lista vuota, verrà popolata dopo il login
 
     const asdInfo = `
         <div class="card card-gold" style="margin-bottom:1rem">
@@ -3002,8 +3003,45 @@ window.loginAtletaConPassword = async () => {
     if (!username) return showModal('Errore','Inserisci il tuo username.',[{text:'OK'}]);
     if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
 
-    const atleti = S._tempAtleti || [];
-    const trovato = atleti.find(a => a.username === username);
+    // GDPR FIX: cerchiamo l'atleta per username tramite query Firestore
+    // (non abbiamo più la lista pre-caricata per utenti anonimi)
+    let trovato = null;
+    try {
+        const asdId = S._tempAsd?.id;
+        if (!asdId) return showModal('Errore', 'Sessione scaduta. Ricarica la pagina.', [{text:'OK'}]);
+
+        // Prima prova con Firebase Auth tramite email fittizia derivata dall'username
+        // costruendo la email come fa atletaEmail()
+        const cleanUsername = username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+        const cleanAsd = asdId.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+        const derivedEmail = `${cleanUsername}.${cleanAsd}@acm-atleta.app`;
+
+        try {
+            await signInWithEmailAndPassword(auth, derivedEmail, pwd);
+            // onAuthStateChanged completerà il login
+            localStorage.removeItem(rlKey);
+            return;
+        } catch(authErr) {
+            if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+                attempts.push(now);
+                localStorage.setItem(rlKey, JSON.stringify(attempts));
+                await new Promise(r => setTimeout(r, 1200));
+                return showModal('❌ Credenziali non valide',
+                    `Username o password errati. Tentativo ${attempts.length}/5.`,
+                    [{text:'OK'}]);
+            }
+            // Email non trovata in Auth → atleta legacy senza authEmail, proseguiamo con hash
+        }
+
+        // Fallback legacy: cerca per username e verifica hash
+        const q = query(atletiCol(asdId), where('username', '==', username));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            trovato = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        }
+    } catch(e) {
+        return showModal('❌ Errore', 'Impossibile verificare le credenziali: ' + e.message, [{text:'OK'}]);
+    }
 
     if (!trovato) {
         attempts.push(now);
@@ -3014,15 +3052,13 @@ window.loginAtletaConPassword = async () => {
             [{text:'OK'}]);
     }
 
-    // Se l'atleta ha un authUid (Firebase Auth), usa signInWithEmailAndPassword
-    if (trovato.authEmail) {
+    // Se l'atleta ha authEmail alternativa (email generata con attempt > 0)
+    if (trovato.authEmail && trovato.authEmail !== `${username.replace(/[^a-z0-9]/g,'').substring(0,20)}.${(S._tempAsd?.id||'').replace(/[^a-z0-9]/g,'').substring(0,20)}@acm-atleta.app`) {
         try {
             await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
-            // onAuthStateChanged gestirà il resto
             localStorage.removeItem(rlKey);
             return;
         } catch(e) {
-            // Se fallisce per password errata
             if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
                 attempts.push(now);
                 localStorage.setItem(rlKey, JSON.stringify(attempts));
@@ -3031,11 +3067,10 @@ window.loginAtletaConPassword = async () => {
                     `Username o password errati. Tentativo ${attempts.length}/5.`,
                     [{text:'OK'}]);
             }
-            // Altro errore: fallback al metodo hash
         }
     }
 
-    // Fallback: verifica password con hash (atleti non ancora migrati)
+    // Verifica hash (atleti senza Firebase Auth)
     const pwdH = await hashPwd(pwd);
     if (trovato.pwdHash !== pwdH) {
         attempts.push(now);
@@ -4801,21 +4836,43 @@ onAuthStateChanged(auth, async user => {
     }
 
     // 3. Controlla se è un atleta con Firebase Auth
+    // GDPR FIX: non iteriamo più su tutte le ASD con getDocs (bloccato dalle nuove regole).
+    // Invece cerchiamo il documento atleta tramite il campo authUid usando una query
+    // su ogni ASD — oppure usiamo la sessione salvata nel localStorage come hint
+    // per sapere in quale ASD cercare, evitando letture non autorizzate.
     if (!user.isAnonymous) {
-        for (const asd of S.allAsd) {
+        // Prova prima con l'hint ASD dal localStorage (login precedente o sessione attiva)
+        const sessHint = localStorage.getItem('acm_atleta_session');
+        const hintAsdIds = [];
+        if (sessHint) {
+            try { hintAsdIds.push(JSON.parse(sessHint).asdId); } catch(e) {}
+        }
+        // Aggiungi tutte le ASD come fallback (la query con where è permessa dalle regole)
+        const allAsdIds = S.allAsd.map(a => a.id);
+        const searchOrder = [...new Set([...hintAsdIds, ...allAsdIds])];
+
+        for (const asdId of searchOrder) {
             try {
-                const snap = await getDocs(atletiCol(asd.id));
-                const atl = snap.docs.map(d => ({id:d.id,...d.data()})).find(a => a.authUid === user.uid);
-                if (atl) {
-                    S.role = 'atleta';
-                    S.asd = asd;
-                    S.atleta = atl;
-                    buildNav();
-                    await loadAtletaSessioni();
-                    window.setView('atletaMenu');
-                    return;
+                // Usa una query filtrata per authUid invece di getDocs su tutta la collezione
+                const q = query(atletiCol(asdId), where('authUid', '==', user.uid));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    const atl = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                    const asd = S.allAsd.find(a => a.id === asdId);
+                    if (asd) {
+                        S.role = 'atleta';
+                        S.asd = asd;
+                        S.atleta = atl;
+                        buildNav();
+                        await loadAtletaSessioni();
+                        window.setView('atletaMenu');
+                        return;
+                    }
                 }
-            } catch(e) {}
+            } catch(e) {
+                // Regole Firestore negano l'accesso: ASD sbagliata, proviamo la prossima
+                continue;
+            }
         }
     }
 
