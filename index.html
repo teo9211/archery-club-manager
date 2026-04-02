@@ -1068,13 +1068,22 @@ window._masterResetAsdPwd = (asdId, nomeAsd) => {
     `, [
         {text:'Annulla',cls:'btn-ghost'},
         {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
-            const p1=document.getElementById('master-new-pwd')?.value||'';
-            const p2=document.getElementById('master-new-pwd2')?.value||'';
-            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
-            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash: await hashPwd(p1)});
-            showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAsd}</strong> è stata resettata.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
+            const p1=document.getElementById('master-atl-pwd')?.value||'';
+            const p2=document.getElementById('master-atl-pwd2')?.value||'';
+            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            try {
+                const newHash = await hashPwd(p1);
+                await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{
+                    pwdHash: newHash,
+                    pwdResetPending: false
+                });
+                showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
+            } catch(e) {
+                showModal('❌ Errore', 'Impossibile aggiornare: ' + e.message, [{text:'OK'}]);
+            }
         }}
+
     ]);
 };
 
@@ -1699,15 +1708,16 @@ async function renderAsdDashboard() {
     const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
     let totalSessioni = 0, totalFrecce = 0;
-    for (const atl of S.atleti) {
-        const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
-        snap.forEach(d => {
+    try {
+        const allSessSnap = await getDocs(collection(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni`));
+        totalSessioni = allSessSnap.size;
+        allSessSnap.forEach(d => {
             const s = d.data();
-            totalSessioni++;
-            totalFrecce += parseInt(s.frecceAggiuntive||0) + (s.frecceTotali||0);
+            totalFrecce += parseInt(s.frecceAggiuntive||0) + parseInt(s.frecceTotali||0);
         });
-    }
-    const msgSnap = await getDocs(msgCol(S.asd.id));
+    } catch(e) { console.warn('Dashboard stats error:', e); }
+    const msgSnap = await getDocs(msgCol(S.asd.id)).catch(()=>({size:0}));
+
     render(`
         <div style="padding-top:0.5rem">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
@@ -2996,51 +3006,74 @@ window.loginAtletaConPassword = async () => {
     }
     const username = usernameInput.toLowerCase();
 
+    // Rate limiting
+    const rlKey = `login_rl_${asdId}_${username}`;
+    const now = Date.now();
+    let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
+    attempts = attempts.filter(t => now - t < 600000);
+    if (attempts.length >= 5) {
+        const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
+        return showModal('🔒 Accesso Bloccato', `Troppi tentativi. Riprova tra ${waitMin} minuto/i.`, [{text:'OK'}]);
+    }
+
     try {
-        // 1. TENTATIVO MODERNO (Firebase Auth)
-        const cleanUsername = username.replace(/[^a-z0-9]/g, '').substring(0, 20);
-        const cleanAsd = asdId.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
-        const techEmail = `${cleanUsername}.${cleanAsd}@acm-atleta.app`;
-
-        try {
-            const userCred = await signInWithEmailAndPassword(auth, techEmail, pwd);
-            // Se arriviamo qui, l'utente esiste in Auth. Leggiamo il doc.
-            const atletaDoc = await getDoc(doc(db, `club_manager_v1/data/asd/${asdId}/atleti`, username));
-            if (atletaDoc.exists()) {
-                effettuaLoginLocale({ id: atletaDoc.id, ...atletaDoc.data() }, asdId);
-                return;
-            }
-        } catch (authErr) {
-            // Se l'errore è 'user-not-found', proseguiamo col metodo Legacy (pwdHash)
-            console.log("Utente non in Auth, provo metodo Legacy...");
-        }
-
-        // 2. TENTATIVO LEGACY (Per atleti come Luca Moretti con pwdHash)
-        // NOTA: Se le regole GDPR bloccano questa query, dovrai allentarle leggermente 
-        // permettendo la query 'where username' agli utenti non loggati.
-        const q = query(collection(db, `club_manager_v1/data/asd/${asdId}/atleti`), 
-                        where('username', '==', username));
-        
+        // STEP 1: Cerca atleta per username (funziona con o senza authUid)
+        const q = query(
+            collection(db, `club_manager_v1/data/asd/${asdId}/atleti`),
+            where('username', '==', username)
+        );
         const snap = await getDocs(q);
-        
-        if (!snap.empty) {
-            const trovato = { id: snap.docs[0].id, ...snap.docs[0].data() };
-            
-            // Verifica la password hashata (sha256)
-            const hashInserita = await hashPwd(pwd); // Assicurati che hashPwd sia definita nel tuo index
-            if (trovato.pwdHash === hashInserita) {
-                effettuaLoginLocale(trovato, asdId);
-                return;
+
+        if (snap.empty) {
+            attempts.push(now);
+            localStorage.setItem(rlKey, JSON.stringify(attempts));
+            await new Promise(r => setTimeout(r, 1200));
+            return showModal('❌ Accesso Negato', 'Username o password errati.', [{text:'OK'}]);
+        }
+
+        const trovato = { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+        // STEP 2: Verifica password hash (metodo universale)
+        const hashInserita = await hashPwd(pwd);
+        if (trovato.pwdHash !== hashInserita) {
+            // STEP 3: Se ha authUid, prova anche Firebase Auth
+            if (trovato.authUid && trovato.authEmail) {
+                try {
+                    await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
+                    // Auth riuscita
+                    localStorage.removeItem(rlKey);
+                    effettuaLoginLocale(trovato, asdId);
+                    return;
+                } catch(authErr) {
+                    // Auth fallita → password sbagliata
+                }
+            }
+            attempts.push(now);
+            localStorage.setItem(rlKey, JSON.stringify(attempts));
+            await new Promise(r => setTimeout(r, 1200));
+            return showModal('❌ Accesso Negato', `Password errata. Tentativo ${attempts.length}/5.`, [{text:'OK'}]);
+        }
+
+        // Password hash corretta
+        localStorage.removeItem(rlKey);
+
+        // Se ha authUid, prova silenziosamente a loggare anche su Firebase Auth
+        if (trovato.authUid && trovato.authEmail) {
+            try {
+                await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
+            } catch(e) {
+                // Fallisce silenziosamente — usiamo il login locale
             }
         }
 
-        throw new Error("Credenziali non valide");
+        effettuaLoginLocale(trovato, asdId);
 
     } catch (error) {
-        console.error("Errore finale login:", error);
-        showModal('❌ Accesso Negato', "Username o password errati.", [{text:'OK'}]);
+        console.error('Errore login atleta:', error);
+        showModal('❌ Errore', 'Errore durante il login: ' + error.message, [{text:'OK'}]);
     }
 };
+
 
 // Funzione di supporto per pulire il codice sopra
 function effettuaLoginLocale(atletaData, asdId) {
@@ -4786,20 +4819,20 @@ onAuthStateChanged(auth, async user => {
     // Invece cerchiamo il documento atleta tramite il campo authUid usando una query
     // su ogni ASD — oppure usiamo la sessione salvata nel localStorage come hint
     // per sapere in quale ASD cercare, evitando letture non autorizzate.
+        // 3. Controlla se è un atleta con Firebase Auth (solo se ha authUid)
     if (!user.isAnonymous) {
-        // Prova prima con l'hint ASD dal localStorage (login precedente o sessione attiva)
         const sessHint = localStorage.getItem('acm_atleta_session');
         const hintAsdIds = [];
         if (sessHint) {
             try { hintAsdIds.push(JSON.parse(sessHint).asdId); } catch(e) {}
         }
-        // Aggiungi tutte le ASD come fallback (la query con where è permessa dalle regole)
         const allAsdIds = S.allAsd.map(a => a.id);
         const searchOrder = [...new Set([...hintAsdIds, ...allAsdIds])];
 
         for (const asdId of searchOrder) {
+            // Salta se questo uid è già un'ASD
+            if (asdId === user.uid) continue;
             try {
-                // Usa una query filtrata per authUid invece di getDocs su tutta la collezione
                 const q = query(atletiCol(asdId), where('authUid', '==', user.uid));
                 const snap = await getDocs(q);
                 if (!snap.empty) {
@@ -4816,11 +4849,11 @@ onAuthStateChanged(auth, async user => {
                     }
                 }
             } catch(e) {
-                // Regole Firestore negano l'accesso: ASD sbagliata, proviamo la prossima
                 continue;
             }
         }
     }
+
 
     // 4. Sessione atleta legacy (localStorage)
     const atlSess = localStorage.getItem('acm_atleta_session');
