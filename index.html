@@ -2074,73 +2074,93 @@ async function saveAtleta(existingId=null, existingData=null) {
     }
 
     const data = {
-        nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro,
-        dataNascita: nascita, tipoArco, tecnicoId, isTecnico, isAdmin,
-        fotoBase64, updatedAt: new Date().toISOString()
+        nome, cognome: cognome||'', username,
+        tesseraFitarco: tesseraFitarco||'', tesseraAltro: tesseraAltro||'', enteAltro: enteAltro||'',
+        dataNascita: nascita||'', tipoArco: tipoArco||'', tecnicoId: tecnicoId||'',
+        isTecnico, isAdmin,
+        fotoBase64: fotoBase64||'', updatedAt: new Date().toISOString()
     };
 
     if (existingId) {
-        // MODIFICA atleta esistente
+        // ── MODIFICA atleta esistente ──────────────────────────────────────
         if (pwd) {
             data.pwdHash = await hashPwd(pwd);
-            // Se ha già un account Firebase Auth, aggiorna anche la password Auth
-            if (existingData?.authUid && existingData?.authEmail) {
-                try {
-                    // Aggiorna password Firebase Auth tramite Admin SDK non disponibile lato client.
-                    // Soluzione: salviamo un flag per forzare reset al prossimo login.
-                    data.pwdResetPending = true;
-                    data.pwdHash = await hashPwd(pwd); // mantieni hash come fallback
-                } catch(e) {}
-            }
+            data.pwdResetPending = true;
         }
-        await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
+        try {
+            await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
+            await loadAtleti();
+            window.setView('asdAtleti');
+            showModal('✅ Salvato!', `Atleta ${nome} ${cognome||''} aggiornato con successo.`, [{text:'OK'}]);
+        } catch(e) {
+            showModal('❌ Errore', 'Impossibile salvare: ' + e.message, [{text:'OK'}]);
+        }
+
     } else {
-        // CREA nuovo atleta
+        // ── CREA nuovo atleta ──────────────────────────────────────────────
         data.createdAt = new Date().toISOString();
         data.pwdHash = await hashPwd(pwd);
 
-        // Crea prima il documento Firestore per ottenere l'ID
-        const docRef = await addDoc(atletiCol(S.asd.id), data);
-        const atletaId = docRef.id;
-
-        // ── GDPR: salva il consenso come documento separato nella subcollection gdpr
-        await saveGdprConsent(S.asd.id, atletaId);
-
-        // Ora crea l'account Firebase Auth
-        // Salva l'utente ASD corrente per ripristinarlo dopo
-        const currentUser = auth.currentUser;
+        let docRef;
         try {
-    const { uid: authUid, email: authEmail } = await createAtletaAuth(S.asd.id, atletaId, pwd);
-    await updateDoc(docRef, { authUid, authEmail });
-    // Dopo aver creato l'atleta, Firebase ha cambiato l'utente corrente.
-    // Dobbiamo riloggare l'ASD. Poiché non abbiamo la password ASD,
-    // forziamo un reload della pagina solo se siamo loggati come ASD Firebase Auth.
-    if (currentUser && !currentUser.isAnonymous) {
-        // Ripristina il token ASD tramite re-auth silenziosa
-        // L'ASD dovrà riloggarsi automaticamente tramite onAuthStateChanged
-        await signOut(auth);
-        showModal('⚠️ Riaccedi come ASD',
-            `Atleta <strong>${nome} ${cognome}</strong> creato con successo.<br><br>Per motivi tecnici devi rieffettuare il login ASD.`,
-            [{text:'OK', cls:'btn-gold', fn:()=>window.setView('asdLogin')}]);
-        return;
+            // 1. Crea documento Firestore per ottenere l'ID
+            docRef = await addDoc(atletiCol(S.asd.id), data);
+            const atletaId = docRef.id;
+
+            // 2. Salva consenso GDPR
+            await saveGdprConsent(S.asd.id, atletaId);
+
+            // 3. Crea account Firebase Auth usando una seconda istanza
+            //    così non disturba la sessione corrente (ASD o atleta-admin)
+            try {
+                const secondApp = initializeApp(firebaseConfig, 'secondary_' + Date.now());
+                const secondAuth = getAuth(secondApp);
+                try {
+                    let email = atletaEmail(S.asd.id, atletaId);
+                    let attempt = 0;
+                    let authUid = null, authEmail = null;
+
+                    while (attempt < 5) {
+                        try {
+                            const cred = await createUserWithEmailAndPassword(secondAuth, email, pwd);
+                            authUid = cred.user.uid;
+                            authEmail = email;
+                            break;
+                        } catch(e2) {
+                            if (e2.code === 'auth/email-already-in-use') {
+                                attempt++;
+                                email = atletaEmailAlt(S.asd.id, atletaId, attempt);
+                            } else {
+                                throw e2;
+                            }
+                        }
+                    }
+
+                    if (authUid) {
+                        await updateDoc(docRef, { authUid, authEmail });
+                    }
+                } finally {
+                    // Elimina la seconda app — la sessione principale rimane intatta
+                    await secondApp.delete();
+                }
+            } catch(authErr) {
+                // Auth non creato, ma atleta Firestore esiste già — non è bloccante
+                console.warn('Firebase Auth creation failed:', authErr.message);
+                showModal('⚠️ Nota', `Atleta creato correttamente nel database. Account Auth non creato: ${authErr.message}`, [{text:'OK'}]);
+            }
+
+            // 4. Ricarica lista e torna alla schermata atleti
+            await loadAtleti();
+            closeModal();
+            window.setView('asdAtleti');
+            showModal('✅ Creato!', `Atleta <strong>${nome} ${cognome||''}</strong> creato con successo.`, [{text:'OK'}]);
+
+        } catch(e) {
+            // Errore nella creazione del documento Firestore
+            showModal('❌ Errore', 'Impossibile creare l\'atleta: ' + e.message, [{text:'OK'}]);
+        }
     }
-} catch(e) {
-    console.warn('Firebase Auth creation failed for atleta:', e.message);
-    showModal('⚠️ Nota', `Atleta creato correttamente. Account Auth non creato: ${e.message}`, [{text:'OK'}]);
 }
-
-
-        await loadAtleti();
-        window.setView('asdAtleti');
-        showModal('✅ Creato!', `Atleta ${nome} ${cognome} creato con successo.`, [{text:'OK'}]);
-        return;
-    }
-
-    await loadAtleti();
-    window.setView('asdAtleti');
-    showModal('✅ Salvato!', `Atleta ${nome} ${cognome} aggiornato con successo.`, [{text:'OK'}]);
-}
-
 
 async function editAtleta(atletaId) {
     const atl = S.atleti.find(a => a.id === atletaId);
@@ -3080,16 +3100,43 @@ function effettuaLoginLocale(atletaData, asdId) {
     S.role = 'atleta';
     S.asd = S._tempAsd;
     S.atleta = atletaData;
-    localStorage.setItem('acm_atleta_session', JSON.stringify({ 
-        asdId, 
-        atletaId: atletaData.id, 
-        expiresAt: Date.now() + (8 * 60 * 60 * 1000) 
-    }));
-    buildNav();
-    loadAtletaSessioni().then(() => {
-        window.setView('atletaMenu');
-    });
+
+    const privacyKey = `privacy_accepted_${atletaData.id}`;
+    const alreadyAccepted = localStorage.getItem(privacyKey);
+
+    const completaLogin = () => {
+        localStorage.setItem('acm_atleta_session', JSON.stringify({
+            asdId,
+            atletaId: atletaData.id,
+            expiresAt: Date.now() + (8 * 60 * 60 * 1000)
+        }));
+        buildNav();
+        loadAtletaSessioni().then(() => {
+            window.setView('atletaMenu');
+            setTimeout(checkDraftSession, 400);
+        });
+    };
+
+    if (alreadyAccepted) {
+        completaLogin();
+    } else {
+        showPrivacyConsent(
+            async () => {
+                localStorage.setItem(privacyKey, '1');
+                // Salva consenso su Firestore
+                try {
+                    await saveGdprConsent(asdId, atletaData.id);
+                } catch(e) { console.warn('GDPR save failed:', e); }
+                completaLogin();
+            },
+            () => {
+                S.role = null; S.asd = null; S.atleta = null;
+                window.setView('homeLogin');
+            }
+        );
+    }
 }
+
 
 window.selectAtleta = (atletaId) => {
     const atleta = S._tempAtleti?.find(a => a.id === atletaId);
@@ -6513,9 +6560,8 @@ async function saveGdprConsent(asdId, atletaId) {
             {
                 consentVersion:       '1.0',
                 consentDate:          new Date().toISOString(),
-                consentedBy:          S.asd?.nome || S.asd?.id || 'ASD',
-                consentedByUid:       auth.currentUser?.uid || null,
-                method:               'checkbox_app',
+                consentedBy:          atletaId,
+                method:               'checkbox_app_atleta',
                 purpose:              'gestione_sportiva',
                 privacyPolicyVersion: '1.0',
             }
@@ -6524,6 +6570,7 @@ async function saveGdprConsent(asdId, atletaId) {
         console.warn('GDPR consent save failed:', e.message);
     }
 }
+
 window.saveGdprConsent = saveGdprConsent;
 
 window.drawMultiChart = function(allSeries, chartType) {
