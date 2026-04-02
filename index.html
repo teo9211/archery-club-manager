@@ -491,23 +491,68 @@ function showPrivacy() {
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 }
 
-function showPrivacyConsent(onAccept, onRefuse) {
-    showModal('🛡️ Privacy & Consenso — TEST', `
-        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;line-height:1.6">
-            <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700">
-                ⚠️ AMBIENTE DI TEST — Questi dati non vengono trasmessi a terzi.
-            </div>
-            <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
-            <p>I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app.</p>
-            <p>Non vengono ceduti a terzi né usati per scopi commerciali.</p>
-            <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;border:1px solid var(--border);font-size:0.75rem;color:var(--muted)">
-                🧪 <em>Versione di test: le funzionalità di privacy reale saranno integrate nella versione definitiva.</em>
-            </div>
+async function showPrivacyConsent(onAccept, onRefuse) {
+    // Mostra subito il modal con uno spinner mentre carica
+    showModal('🛡️ Privacy & Consenso', `
+        <div id="privacy-content" style="display:flex;justify-content:center;padding:1rem">
+            <div class="spinner"></div>
         </div>
-    `, [
-        {text:'❌ Rifiuto', cls:'btn-danger', fn: onRefuse},
-        {text:'✅ Accetto', cls:'btn-gold', fn: onAccept}
-    ]);
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+            <button class="btn btn-danger" onclick="window._privacyRefuse()">❌ Rifiuto</button>
+            <button class="btn btn-gold" onclick="window._privacyAccept()">✅ Accetto</button>
+        </div>
+    `, []);
+
+    // Imposta i callback globali temporanei
+    window._privacyAccept = () => { closeModal(); onAccept(); };
+    window._privacyRefuse = () => { closeModal(); onRefuse(); };
+
+    // Carica il contenuto della privacy policy
+    try {
+        const resp = await fetch('privacy-policy.html');
+        const html = await resp.text();
+        // Estrai solo il body o il contenuto principale
+        const parser = new DOMParser();
+        const doc2 = parser.parseFromString(html, 'text/html');
+        // Prova a prendere il body, altrimenti tutto il testo
+        const bodyContent = doc2.body?.innerHTML || html;
+
+        const contentDiv = document.getElementById('privacy-content');
+        if (contentDiv) {
+            contentDiv.innerHTML = `
+                <div style="
+                    max-height:55vh;
+                    overflow-y:auto;
+                    font-size:0.82rem;
+                    line-height:1.6;
+                    color:var(--text);
+                    padding-right:0.5rem;
+                    border:1px solid var(--border);
+                    border-radius:8px;
+                    padding:0.75rem;
+                    background:var(--dark3)
+                ">${bodyContent}</div>
+                <p style="font-size:0.75rem;color:var(--muted);margin-top:0.6rem;text-align:center">
+                    Scorri per leggere l'intera informativa, poi accetta o rifiuta.
+                </p>
+            `;
+        }
+    } catch(e) {
+        // Fallback se il file non è raggiungibile
+        const contentDiv = document.getElementById('privacy-content');
+        if (contentDiv) {
+            contentDiv.innerHTML = `
+                <div style="font-size:0.85rem;line-height:1.6;color:var(--text)">
+                    <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
+                    <p style="margin-top:0.5rem">I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app. Non vengono ceduti a terzi né usati per scopi commerciali.</p>
+                    <p style="margin-top:0.5rem">Hai diritto di accesso, rettifica e cancellazione dei tuoi dati ai sensi del GDPR (Reg. UE 2016/679).</p>
+                    <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700;margin-top:0.75rem">
+                        ⚠️ File privacy-policy.html non trovato — testo di fallback mostrato.
+                    </div>
+                </div>
+            `;
+        }
+    }
 }
 
 
@@ -2073,6 +2118,55 @@ async function saveAtleta(existingId=null, existingData=null) {
         }
     }
 
+    // ── Se siamo un atleta-admin (non account ASD diretto),
+    //    chiediamo le credenziali ASD per poter creare l'account Auth ──────
+    const isAtletaAdminUser = S.role === 'atleta' && isAtletaAdmin();
+    if (isAtletaAdminUser) {
+        // Chiedi email e password ASD prima di procedere
+        showModal('🔐 Credenziali ASD Richieste', `
+            <div style="display:flex;flex-direction:column;gap:0.65rem">
+                <div style="background:rgba(201,162,39,0.08);border:1px solid rgba(201,162,39,0.3);border-radius:8px;padding:0.65rem;font-size:0.82rem;color:var(--muted)">
+                    Per ${existingId ? 'modificare' : 'creare'} un atleta è necessario autenticare l'operazione con le credenziali dell'account ASD.
+                </div>
+                <div>
+                    <label class="form-label">Email Account ASD</label>
+                    <input class="inp" type="email" id="asd-cred-email" placeholder="email@asd.it" autocomplete="email">
+                </div>
+                <div>
+                    <label class="form-label">Password Account ASD</label>
+                    <input class="inp" type="password" id="asd-cred-pwd" placeholder="Password ASD"
+                        onkeydown="if(event.key==='Enter')window._proceedSaveAtleta()">
+                </div>
+            </div>
+        `, [
+            {text:'Annulla', cls:'btn-ghost'},
+            {text:'✅ Procedi', cls:'btn-gold', fn: () => window._proceedSaveAtleta()}
+        ]);
+
+        // Salva i dati in attesa delle credenziali
+        window._pendingSaveAtleta = { existingId, existingData, nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId, isTecnico, isAdmin, pwd, fotoBase64 };
+        return;
+    }
+
+    // ── Account ASD diretto: procedi normalmente ──────────────────────────
+    await _executeSaveAtleta({ existingId, existingData, nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId, isTecnico, isAdmin, pwd, fotoBase64, asdEmail: null, asdPwd: null });
+}
+
+// Callback chiamato dopo inserimento credenziali ASD da atleta-admin
+window._proceedSaveAtleta = async () => {
+    const asdEmail = document.getElementById('asd-cred-email')?.value.trim();
+    const asdPwd   = document.getElementById('asd-cred-pwd')?.value.trim();
+    if (!asdEmail || !asdPwd) return showModal('Errore','Inserisci email e password ASD.',[{text:'OK'}]);
+    closeModal();
+    const p = window._pendingSaveAtleta;
+    if (!p) return;
+    window._pendingSaveAtleta = null;
+    await _executeSaveAtleta({ ...p, asdEmail, asdPwd });
+};
+
+// Funzione che esegue effettivamente il salvataggio
+async function _executeSaveAtleta({ existingId, existingData, nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId, isTecnico, isAdmin, pwd, fotoBase64, asdEmail, asdPwd }) {
+
     const data = {
         nome, cognome: cognome||'', username,
         tesseraFitarco: tesseraFitarco||'', tesseraAltro: tesseraAltro||'', enteAltro: enteAltro||'',
@@ -2091,7 +2185,7 @@ async function saveAtleta(existingId=null, existingData=null) {
             await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
             await loadAtleti();
             window.setView('asdAtleti');
-            showModal('✅ Salvato!', `Atleta ${nome} ${cognome||''} aggiornato con successo.`, [{text:'OK'}]);
+            showModal('✅ Salvato!', `Atleta <strong>${nome} ${cognome||''}</strong> aggiornato con successo.`, [{text:'OK'}]);
         } catch(e) {
             showModal('❌ Errore', 'Impossibile salvare: ' + e.message, [{text:'OK'}]);
         }
@@ -2101,21 +2195,28 @@ async function saveAtleta(existingId=null, existingData=null) {
         data.createdAt = new Date().toISOString();
         data.pwdHash = await hashPwd(pwd);
 
-        let docRef;
         try {
-            // 1. Crea documento Firestore per ottenere l'ID
-            docRef = await addDoc(atletiCol(S.asd.id), data);
+            // 1. Crea documento Firestore
+            const docRef = await addDoc(atletiCol(S.asd.id), data);
             const atletaId = docRef.id;
 
             // 2. Salva consenso GDPR
             await saveGdprConsent(S.asd.id, atletaId);
 
-            // 3. Crea account Firebase Auth usando una seconda istanza
-            //    così non disturba la sessione corrente (ASD o atleta-admin)
+            // 3. Crea account Firebase Auth con seconda istanza
+            //    Se siamo atleta-admin usiamo le sue credenziali ASD per autenticarsi
+            //    Se siamo account ASD diretto non serve autenticarsi sulla seconda app
             try {
                 const secondApp = initializeApp(firebaseConfig, 'secondary_' + Date.now());
                 const secondAuth = getAuth(secondApp);
+
                 try {
+                    // Se atleta-admin: autentica la seconda istanza con credenziali ASD
+                    if (asdEmail && asdPwd) {
+                        await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
+                    }
+
+                    // Crea l'account Auth per il nuovo atleta
                     let email = atletaEmail(S.asd.id, atletaId);
                     let attempt = 0;
                     let authUid = null, authEmail = null;
@@ -2140,23 +2241,28 @@ async function saveAtleta(existingId=null, existingData=null) {
                         await updateDoc(docRef, { authUid, authEmail });
                     }
                 } finally {
-                    // Elimina la seconda app — la sessione principale rimane intatta
                     await secondApp.delete();
                 }
+
             } catch(authErr) {
-                // Auth non creato, ma atleta Firestore esiste già — non è bloccante
                 console.warn('Firebase Auth creation failed:', authErr.message);
-                showModal('⚠️ Nota', `Atleta creato correttamente nel database. Account Auth non creato: ${authErr.message}`, [{text:'OK'}]);
+                // Non bloccante: atleta è già salvato su Firestore
+                if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+                    showModal('⚠️ Credenziali ASD Errate',
+                        `L'atleta è stato creato nel database ma l'account di accesso non è stato creato per credenziali ASD errate.<br><br>Usa <strong>🔐 Migra Atleti → Firebase Auth</strong> dal pannello Master per crearlo in seguito.`,
+                        [{text:'OK'}]);
+                } else {
+                    showModal('⚠️ Nota Auth', `Atleta creato correttamente. Account Auth non creato: ${authErr.message}`, [{text:'OK'}]);
+                }
             }
 
-            // 4. Ricarica lista e torna alla schermata atleti
+            // 4. Ricarica e torna alla lista
             await loadAtleti();
             closeModal();
             window.setView('asdAtleti');
             showModal('✅ Creato!', `Atleta <strong>${nome} ${cognome||''}</strong> creato con successo.`, [{text:'OK'}]);
 
         } catch(e) {
-            // Errore nella creazione del documento Firestore
             showModal('❌ Errore', 'Impossibile creare l\'atleta: ' + e.message, [{text:'OK'}]);
         }
     }
@@ -3137,7 +3243,6 @@ function effettuaLoginLocale(atletaData, asdId) {
     }
 }
 
-
 window.selectAtleta = (atletaId) => {
     const atleta = S._tempAtleti?.find(a => a.id === atletaId);
     const asd    = S._tempAsd;
@@ -3255,7 +3360,7 @@ window.doAtletaLogin = async function() {
         window.setView('atletaMenu');
         setTimeout(checkDraftSession, 400);
     } else {
-        showPrivacyConsent(
+                   await showPrivacyConsent(
             async () => {
                 localStorage.setItem(privacyKey, '1');
                 localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) }));
@@ -3269,6 +3374,7 @@ window.doAtletaLogin = async function() {
                 window.setView('homeLogin');
             }
         );
+
     }
 
 };
