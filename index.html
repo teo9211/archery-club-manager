@@ -1136,47 +1136,117 @@ window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
     showModal(`🔑 Reset Password — ${nomeAtleta}`, `
         <div style="display:flex;flex-direction:column;gap:0.5rem">
             <p style="font-size:0.82rem;color:var(--muted)">Imposta una nuova password per questo atleta.</p>
-            <input class="inp" type="password" id="master-atl-pwd" placeholder="Nuova password">
+            <input class="inp" type="password" id="master-atl-pwd" placeholder="Nuova password (min. 6 caratteri)">
             <input class="inp" type="password" id="master-atl-pwd2" placeholder="Conferma password">
         </div>
     `, [
-        {text:'Annulla',cls:'btn-ghost'},
-        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
-            const p1=document.getElementById('master-atl-pwd')?.value||'';
-            const p2=document.getElementById('master-atl-pwd2')?.value||'';
-            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash: await hashPwd(p1)});
-            showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'✅ Salva', cls:'btn-gold', fn: async () => {
+            const p1 = document.getElementById('master-atl-pwd')?.value || '';
+            const p2 = document.getElementById('master-atl-pwd2')?.value || '';
+            if (!p1 || p1.length < 6) return showModal('Errore','Password minimo 6 caratteri.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            if (p1 !== p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+
+            try {
+                const newHash = await hashPwd(p1);
+                // Il master usa il db principale — le regole Firestore
+                // permettono isMaster() su tutto, quindi funziona direttamente
+                await updateDoc(
+                    doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                    { pwdHash: newHash, pwdResetPending: false }
+                );
+                showModal('✅ Password Aggiornata!',
+                    `La password di <strong>${nomeAtleta}</strong> è stata resettata con successo.`,
+                    [{text:'OK'}]);
+            } catch(e) {
+                // Se le regole bloccano ancora, prova con la seconda istanza
+                // già autenticata come master (auth.currentUser è il master)
+                try {
+                    const secondApp = initializeApp(firebaseConfig, 'master_pwd_' + Date.now());
+                    const secondAuth = getAuth(secondApp);
+                    const secondDb2  = getFirestore(secondApp);
+                    try {
+                        // Riusa il token master corrente tramite una nuova istanza
+                        const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
+                        const masterEmail = masterSnap.data()?.email;
+                        if (!masterEmail) throw new Error('Email master non trovata');
+                        // Chiedi password master se serve
+                        showModal('🔑 Conferma Password Master', `
+                            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                                <p style="font-size:0.82rem;color:var(--muted)">Inserisci la password master per confermare.</p>
+                                <input class="inp" type="password" id="master-confirm-pwd" placeholder="Password master">
+                            </div>
+                        `, [{
+                            text:'Conferma', cls:'btn-gold', fn: async () => {
+                                const masterPwd = document.getElementById('master-confirm-pwd')?.value || '';
+                                if (!masterPwd) return;
+                                try {
+                                    await signInWithEmailAndPassword(secondAuth, masterEmail, masterPwd);
+                                    await updateDoc(
+                                        doc(secondDb2, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                                        { pwdHash: await hashPwd(p1), pwdResetPending: false }
+                                    );
+                                    showModal('✅ Password Aggiornata!',
+                                        `La password di <strong>${nomeAtleta}</strong> è stata resettata.`,
+                                        [{text:'OK'}]);
+                                } catch(e2) {
+                                    showModal('❌ Errore', e2.message, [{text:'OK'}]);
+                                } finally {
+                                    try { await secondApp.delete(); } catch(e2) {}
+                                }
+                            }
+                        }]);
+                    } catch(e2) {
+                        try { await secondApp.delete(); } catch(e3) {}
+                        showModal('❌ Errore', e2.message, [{text:'OK'}]);
+                    }
+                } catch(e2) {
+                    showModal('❌ Errore Firestore', 'Impossibile aggiornare: ' + e.message, [{text:'OK'}]);
+                }
+            }
         }}
     ]);
 };
+
 
 window._masterResetAtletaUsername = (asdId, atletaId, nomeAtleta, usernameAttuale) => {
     showModal(`✏️ Reset Username — ${nomeAtleta}`, `
         <div style="display:flex;flex-direction:column;gap:0.5rem">
             <p style="font-size:0.82rem;color:var(--muted)">Username attuale: <strong style="color:var(--gold)">${usernameAttuale || '—'}</strong></p>
-            <input class="inp" type="text" id="master-atl-user" placeholder="Nuovo username (es: mario.rossi)"
-                value="${usernameAttuale || ''}" autocomplete="off" autocapitalize="none"
+            <input class="inp" type="text" id="master-atl-user"
+                placeholder="Nuovo username (es: mario.rossi)"
+                value="${usernameAttuale || ''}"
+                autocomplete="off" autocapitalize="none"
                 oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
             <p style="font-size:0.72rem;color:var(--muted)">Solo lettere minuscole, numeri, punti, trattini. Niente spazi.</p>
         </div>
     `, [
-        {text:'Annulla',cls:'btn-ghost'},
-        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+        {text:'Annulla', cls:'btn-ghost'},
+        {text:'✅ Salva', cls:'btn-gold', fn: async () => {
             const newUser = document.getElementById('master-atl-user')?.value.trim().toLowerCase() || '';
             if (!newUser) return showModal('Errore','Inserisci il nuovo username.',[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
             if (newUser === usernameAttuale) return showModal('Attenzione','Lo username è uguale a quello attuale.',[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-            // Verifica unicità nella ASD
+
             try {
+                // Verifica unicità
                 const snap = await getDocs(atletiCol(asdId));
                 const duplicato = snap.docs.find(d => d.id !== atletaId && d.data().username === newUser);
-                if (duplicato) return showModal('Errore',`Username <strong>${newUser}</strong> già in uso da un altro atleta di questa ASD.`,[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-                await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{username: newUser});
-                // Aggiorna anche S.atleti in memoria se siamo nella stessa ASD
-                const idx = (S.atleti||[]).findIndex(a=>a.id===atletaId);
-                if (idx>=0) S.atleti[idx].username = newUser;
-                showModal('✅ Username Aggiornato!',`Lo username di <strong>${nomeAtleta}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,[{text:'OK'}]);
+                if (duplicato) return showModal('Errore',
+                    `Username <strong>${newUser}</strong> già in uso da un altro atleta.`,
+                    [{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+
+                await updateDoc(
+                    doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                    { username: newUser }
+                );
+
+                // Aggiorna S.atleti in memoria se siamo nella stessa ASD
+                const idx = (S.atleti||[]).findIndex(a => a.id === atletaId);
+                if (idx >= 0) S.atleti[idx].username = newUser;
+
+                showModal('✅ Username Aggiornato!',
+                    `Lo username di <strong>${nomeAtleta}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,
+                    [{text:'OK'}]);
             } catch(e) {
                 showModal('❌ Errore', e.message, [{text:'OK'}]);
             }
@@ -2338,15 +2408,82 @@ async function editAtleta(atletaId) {
 }
 
 async function deleteAtleta(atletaId, nome) {
-    showModal('🗑️ Elimina Atleta', `Vuoi eliminare <strong>${nome}</strong>? Tutti i suoi dati verranno cancellati.`, [
-        { text:'Annulla', cls:'btn-ghost' },
-        { text:'Elimina', cls:'btn-danger', fn: async () => {
-            await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`));
-            await loadAtleti();
-            window.setView('asdAtleti');
-        }}
-    ]);
+    const isAtletaAdminUser = S.role === 'atleta' && isAtletaAdmin();
+
+    if (isAtletaAdminUser) {
+        // Chiedi credenziali ASD prima di procedere
+        showModal('🗑️ Elimina Atleta', `
+            <div style="display:flex;flex-direction:column;gap:0.65rem">
+                <div style="background:rgba(192,57,43,0.12);border:1px solid rgba(192,57,43,0.4);border-radius:8px;padding:0.65rem;font-size:0.85rem;color:#e07060">
+                    ⚠️ Vuoi eliminare <strong>${nome}</strong>? Tutti i suoi dati verranno cancellati permanentemente.
+                </div>
+                <div style="background:rgba(201,162,39,0.08);border:1px solid rgba(201,162,39,0.3);border-radius:8px;padding:0.65rem;font-size:0.82rem;color:var(--muted)">
+                    Inserisci le credenziali ASD per autorizzare l'eliminazione.
+                </div>
+                <div>
+                    <label class="form-label">Email Account ASD</label>
+                    <input class="inp" type="email" id="del-asd-email" placeholder="email@asd.it" autocomplete="email">
+                </div>
+                <div>
+                    <label class="form-label">Password Account ASD</label>
+                    <input class="inp" type="password" id="del-asd-pwd" placeholder="Password ASD"
+                        onkeydown="if(event.key==='Enter')window._proceedDeleteAtleta('${atletaId}','${nome.replace(/'/g,"\\'")}')">
+                </div>
+            </div>
+        `, [
+            {text:'Annulla', cls:'btn-ghost'},
+            {text:'🗑️ Elimina', cls:'btn-danger', fn: () => window._proceedDeleteAtleta(atletaId, nome)}
+        ]);
+    } else {
+        // Account ASD diretto: elimina direttamente
+        showModal('🗑️ Elimina Atleta', `Vuoi eliminare <strong>${nome}</strong>? Tutti i suoi dati verranno cancellati.`, [
+            {text:'Annulla', cls:'btn-ghost'},
+            {text:'Elimina', cls:'btn-danger', fn: async () => {
+                try {
+                    await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`));
+                    await loadAtleti();
+                    window.setView('asdAtleti');
+                } catch(e) {
+                    showModal('❌ Errore', 'Impossibile eliminare: ' + e.message, [{text:'OK'}]);
+                }
+            }}
+        ]);
+    }
 }
+
+window._proceedDeleteAtleta = async (atletaId, nome) => {
+    const asdEmail = document.getElementById('del-asd-email')?.value.trim();
+    const asdPwd   = document.getElementById('del-asd-pwd')?.value.trim();
+    if (!asdEmail || !asdPwd) return showModal('Errore', 'Inserisci email e password ASD.', [{text:'OK'}]);
+
+    closeModal();
+
+    let secondApp = null;
+    try {
+        secondApp = initializeApp(firebaseConfig, 'secondary_del_' + Date.now());
+        const secondAuth = getAuth(secondApp);
+        const secondDb2  = getFirestore(secondApp);
+
+        // Autentica come ASD
+        try {
+            await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
+        } catch(e) {
+            showModal('❌ Credenziali ASD Errate', 'Email o password ASD non corrette.', [{text:'OK'}]);
+            return;
+        }
+
+        // Elimina con il db autenticato come ASD
+        await deleteDoc(doc(secondDb2, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`));
+        await loadAtleti();
+        window.setView('asdAtleti');
+        showModal('✅ Eliminato!', `Atleta <strong>${nome}</strong> eliminato con successo.`, [{text:'OK'}]);
+
+    } catch(e) {
+        showModal('❌ Errore', 'Impossibile eliminare: ' + e.message, [{text:'OK'}]);
+    } finally {
+        if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
+    }
+};
 window.toggleAdminCheckbox = (checked) => {
     const wrap = document.getElementById('atl-admin-wrap');
     if (wrap) wrap.style.display = checked ? 'block' : 'none';
@@ -2943,13 +3080,62 @@ async function sendMessaggio() {
 window.sendMessaggio = sendMessaggio;
 
 window.eliminaMessaggioAsd = async (msgId) => {
-    showModal('Elimina messaggio','Sei sicuro di voler eliminare questo messaggio?',[
-        {text:'Annulla',cls:'btn-ghost'},
-        {text:'Elimina',cls:'btn-danger',fn:async()=>{
-            await deleteDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}/messaggi/${msgId}`));
-            window.setView('asdMessaggi');
-        }}
-    ]);
+    const isAtletaAdminUser = S.role === 'atleta' && isAtletaAdmin();
+
+    if (isAtletaAdminUser) {
+        showModal('🗑️ Elimina Messaggio', `
+            <div style="display:flex;flex-direction:column;gap:0.65rem">
+                <p style="font-size:0.85rem;color:var(--muted)">Inserisci le credenziali ASD per eliminare questo messaggio.</p>
+                <div>
+                    <label class="form-label">Email Account ASD</label>
+                    <input class="inp" type="email" id="del-msg-asd-email" placeholder="email@asd.it">
+                </div>
+                <div>
+                    <label class="form-label">Password Account ASD</label>
+                    <input class="inp" type="password" id="del-msg-asd-pwd" placeholder="Password ASD">
+                </div>
+            </div>
+        `, [
+            {text:'Annulla', cls:'btn-ghost'},
+            {text:'🗑️ Elimina', cls:'btn-danger', fn: async () => {
+                const asdEmail = document.getElementById('del-msg-asd-email')?.value.trim();
+                const asdPwd   = document.getElementById('del-msg-asd-pwd')?.value.trim();
+                if (!asdEmail || !asdPwd) return showModal('Errore','Inserisci email e password ASD.',[{text:'OK'}]);
+                closeModal();
+                let secondApp = null;
+                try {
+                    secondApp = initializeApp(firebaseConfig, 'secondary_msg_' + Date.now());
+                    const secondAuth = getAuth(secondApp);
+                    const secondDb2  = getFirestore(secondApp);
+                    try {
+                        await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
+                    } catch(e) {
+                        showModal('❌ Credenziali ASD Errate', 'Email o password ASD non corrette.', [{text:'OK'}]);
+                        return;
+                    }
+                    await deleteDoc(doc(secondDb2, `${APP_NS}/data/asd/${S.asd.id}/messaggi/${msgId}`));
+                    window.setView('asdMessaggi');
+                } catch(e) {
+                    showModal('❌ Errore', e.message, [{text:'OK'}]);
+                } finally {
+                    if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
+                }
+            }}
+        ]);
+    } else {
+        // Account ASD diretto
+        showModal('Elimina messaggio', 'Sei sicuro di voler eliminare questo messaggio?', [
+            {text:'Annulla', cls:'btn-ghost'},
+            {text:'Elimina', cls:'btn-danger', fn: async () => {
+                try {
+                    await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/messaggi/${msgId}`));
+                    window.setView('asdMessaggi');
+                } catch(e) {
+                    showModal('❌ Errore', e.message, [{text:'OK'}]);
+                }
+            }}
+        ]);
+    }
 };
 
 // ════════════════════════════════════════════════════════════════════════════
