@@ -2165,7 +2165,9 @@ window._proceedSaveAtleta = async () => {
 };
 
 // Funzione che esegue effettivamente il salvataggio
-async function _executeSaveAtleta({ existingId, existingData, nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId, isTecnico, isAdmin, pwd, fotoBase64, asdEmail, asdPwd }) {
+async function _executeSaveAtleta({ existingId, existingData, nome, cognome, username,
+    tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId,
+    isTecnico, isAdmin, pwd, fotoBase64, asdEmail, asdPwd }) {
 
     const data = {
         nome, cognome: cognome||'', username,
@@ -2175,55 +2177,88 @@ async function _executeSaveAtleta({ existingId, existingData, nome, cognome, use
         fotoBase64: fotoBase64||'', updatedAt: new Date().toISOString()
     };
 
-    if (existingId) {
-        // ── MODIFICA atleta esistente ──────────────────────────────────────
-        if (pwd) {
-            data.pwdHash = await hashPwd(pwd);
-            data.pwdResetPending = true;
+    // Se siamo atleta-admin con credenziali ASD → usa seconda istanza per tutto
+    const useSecondApp = !!(asdEmail && asdPwd);
+    let secondApp = null;
+    let secondDb = null;
+
+    try {
+        if (useSecondApp) {
+            // Crea seconda istanza Firebase e autenticala come ASD
+            secondApp = initializeApp(firebaseConfig, 'secondary_' + Date.now());
+            const secondAuth = getAuth(secondApp);
+            secondDb = getFirestore(secondApp);
+
+            try {
+                await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
+            } catch(e) {
+                // Credenziali ASD errate
+                if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+                    showModal('❌ Credenziali ASD Errate', 'Email o password ASD non corrette. Riprova.', [{text:'OK', fn:()=>showAddAtleta(existingData)}]);
+                } else {
+                    showModal('❌ Errore Auth ASD', e.message, [{text:'OK'}]);
+                }
+                return;
+            }
         }
-        try {
-            await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
+
+        // Riferimento al db da usare (seconda istanza se atleta-admin, principale altrimenti)
+        const activeDb = secondDb || db;
+
+        if (existingId) {
+            // ── MODIFICA atleta esistente ──────────────────────────────────
+            if (pwd) {
+                data.pwdHash = await hashPwd(pwd);
+                data.pwdResetPending = true;
+            }
+            await updateDoc(
+                doc(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`),
+                data
+            );
             await loadAtleti();
             window.setView('asdAtleti');
             showModal('✅ Salvato!', `Atleta <strong>${nome} ${cognome||''}</strong> aggiornato con successo.`, [{text:'OK'}]);
-        } catch(e) {
-            showModal('❌ Errore', 'Impossibile salvare: ' + e.message, [{text:'OK'}]);
-        }
 
-    } else {
-        // ── CREA nuovo atleta ──────────────────────────────────────────────
-        data.createdAt = new Date().toISOString();
-        data.pwdHash = await hashPwd(pwd);
+        } else {
+            // ── CREA nuovo atleta ──────────────────────────────────────────
+            data.createdAt = new Date().toISOString();
+            data.pwdHash = await hashPwd(pwd);
 
-        try {
-            // 1. Crea documento Firestore
-            const docRef = await addDoc(atletiCol(S.asd.id), data);
+            // 1. Crea documento Firestore con il db autenticato come ASD
+            const colRef = collection(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti`);
+            const docRef = await addDoc(colRef, data);
             const atletaId = docRef.id;
 
-            // 2. Salva consenso GDPR
-            await saveGdprConsent(S.asd.id, atletaId);
-
-            // 3. Crea account Firebase Auth con seconda istanza
-            //    Se siamo atleta-admin usiamo le sue credenziali ASD per autenticarsi
-            //    Se siamo account ASD diretto non serve autenticarsi sulla seconda app
+            // 2. Salva consenso GDPR con lo stesso db autenticato
             try {
-                const secondApp = initializeApp(firebaseConfig, 'secondary_' + Date.now());
-                const secondAuth = getAuth(secondApp);
-
-                try {
-                    // Se atleta-admin: autentica la seconda istanza con credenziali ASD
-                    if (asdEmail && asdPwd) {
-                        await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
+                await addDoc(
+                    collection(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}/gdpr`),
+                    {
+                        consentVersion: '1.0',
+                        consentDate: new Date().toISOString(),
+                        consentedBy: S.atleta?.id || 'admin',
+                        method: 'checkbox_app',
+                        purpose: 'gestione_sportiva',
+                        privacyPolicyVersion: '1.0',
                     }
+                );
+            } catch(e) { console.warn('GDPR save failed:', e.message); }
 
-                    // Crea l'account Auth per il nuovo atleta
+            // 3. Crea account Firebase Auth per il nuovo atleta
+            //    Se useSecondApp è true, la seconda istanza è già autenticata come ASD
+            //    quindi usiamo la sua Auth per creare il nuovo utente
+            try {
+                const secondAuth2 = useSecondApp ? getAuth(secondApp) : null;
+
+                if (secondAuth2) {
+                    // Seconda istanza già autenticata → crea direttamente
                     let email = atletaEmail(S.asd.id, atletaId);
                     let attempt = 0;
                     let authUid = null, authEmail = null;
 
                     while (attempt < 5) {
                         try {
-                            const cred = await createUserWithEmailAndPassword(secondAuth, email, pwd);
+                            const cred = await createUserWithEmailAndPassword(secondAuth2, email, pwd);
                             authUid = cred.user.uid;
                             authEmail = email;
                             break;
@@ -2231,29 +2266,52 @@ async function _executeSaveAtleta({ existingId, existingData, nome, cognome, use
                             if (e2.code === 'auth/email-already-in-use') {
                                 attempt++;
                                 email = atletaEmailAlt(S.asd.id, atletaId, attempt);
-                            } else {
-                                throw e2;
-                            }
+                            } else { throw e2; }
                         }
                     }
 
                     if (authUid) {
-                        await updateDoc(docRef, { authUid, authEmail });
+                        await updateDoc(
+                            doc(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`),
+                            { authUid, authEmail }
+                        );
                     }
-                } finally {
-                    await secondApp.delete();
-                }
+                } else {
+                    // Account ASD diretto: usa terza istanza separata per non disturbare
+                    const thirdApp = initializeApp(firebaseConfig, 'third_' + Date.now());
+                    const thirdAuth = getAuth(thirdApp);
+                    try {
+                        let email = atletaEmail(S.asd.id, atletaId);
+                        let attempt = 0;
+                        let authUid = null, authEmail = null;
 
+                        while (attempt < 5) {
+                            try {
+                                const cred = await createUserWithEmailAndPassword(thirdAuth, email, pwd);
+                                authUid = cred.user.uid;
+                                authEmail = email;
+                                break;
+                            } catch(e2) {
+                                if (e2.code === 'auth/email-already-in-use') {
+                                    attempt++;
+                                    email = atletaEmailAlt(S.asd.id, atletaId, attempt);
+                                } else { throw e2; }
+                            }
+                        }
+
+                        if (authUid) {
+                            await updateDoc(
+                                doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`),
+                                { authUid, authEmail }
+                            );
+                        }
+                    } finally {
+                        await thirdApp.delete();
+                    }
+                }
             } catch(authErr) {
                 console.warn('Firebase Auth creation failed:', authErr.message);
-                // Non bloccante: atleta è già salvato su Firestore
-                if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-                    showModal('⚠️ Credenziali ASD Errate',
-                        `L'atleta è stato creato nel database ma l'account di accesso non è stato creato per credenziali ASD errate.<br><br>Usa <strong>🔐 Migra Atleti → Firebase Auth</strong> dal pannello Master per crearlo in seguito.`,
-                        [{text:'OK'}]);
-                } else {
-                    showModal('⚠️ Nota Auth', `Atleta creato correttamente. Account Auth non creato: ${authErr.message}`, [{text:'OK'}]);
-                }
+                showModal('⚠️ Nota', `Atleta creato correttamente. Account Auth non creato: ${authErr.message}`, [{text:'OK'}]);
             }
 
             // 4. Ricarica e torna alla lista
@@ -2261,9 +2319,15 @@ async function _executeSaveAtleta({ existingId, existingData, nome, cognome, use
             closeModal();
             window.setView('asdAtleti');
             showModal('✅ Creato!', `Atleta <strong>${nome} ${cognome||''}</strong> creato con successo.`, [{text:'OK'}]);
+        }
 
-        } catch(e) {
-            showModal('❌ Errore', 'Impossibile creare l\'atleta: ' + e.message, [{text:'OK'}]);
+    } catch(e) {
+        console.error('saveAtleta error:', e);
+        showModal('❌ Errore', 'Operazione fallita: ' + e.message, [{text:'OK'}]);
+    } finally {
+        // Elimina sempre la seconda istanza alla fine
+        if (secondApp) {
+            try { await secondApp.delete(); } catch(e) {}
         }
     }
 }
