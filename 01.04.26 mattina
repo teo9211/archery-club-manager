@@ -491,68 +491,23 @@ function showPrivacy() {
     `, [{text:'Chiudi', cls:'btn-ghost'}]);
 }
 
-async function showPrivacyConsent(onAccept, onRefuse) {
-    // Mostra subito il modal con uno spinner mentre carica
-    showModal('🛡️ Privacy & Consenso', `
-        <div id="privacy-content" style="display:flex;justify-content:center;padding:1rem">
-            <div class="spinner"></div>
+function showPrivacyConsent(onAccept, onRefuse) {
+    showModal('🛡️ Privacy & Consenso — TEST', `
+        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem;line-height:1.6">
+            <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700">
+                ⚠️ AMBIENTE DI TEST — Questi dati non vengono trasmessi a terzi.
+            </div>
+            <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
+            <p>I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app.</p>
+            <p>Non vengono ceduti a terzi né usati per scopi commerciali.</p>
+            <div style="background:var(--dark3);border-radius:8px;padding:0.6rem;border:1px solid var(--border);font-size:0.75rem;color:var(--muted)">
+                🧪 <em>Versione di test: le funzionalità di privacy reale saranno integrate nella versione definitiva.</em>
+            </div>
         </div>
-        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-            <button class="btn btn-danger" onclick="window._privacyRefuse()">❌ Rifiuto</button>
-            <button class="btn btn-gold" onclick="window._privacyAccept()">✅ Accetto</button>
-        </div>
-    `, []);
-
-    // Imposta i callback globali temporanei
-    window._privacyAccept = () => { closeModal(); onAccept(); };
-    window._privacyRefuse = () => { closeModal(); onRefuse(); };
-
-    // Carica il contenuto della privacy policy
-    try {
-        const resp = await fetch('privacy-policy.html');
-        const html = await resp.text();
-        // Estrai solo il body o il contenuto principale
-        const parser = new DOMParser();
-        const doc2 = parser.parseFromString(html, 'text/html');
-        // Prova a prendere il body, altrimenti tutto il testo
-        const bodyContent = doc2.body?.innerHTML || html;
-
-        const contentDiv = document.getElementById('privacy-content');
-        if (contentDiv) {
-            contentDiv.innerHTML = `
-                <div style="
-                    max-height:55vh;
-                    overflow-y:auto;
-                    font-size:0.82rem;
-                    line-height:1.6;
-                    color:var(--text);
-                    padding-right:0.5rem;
-                    border:1px solid var(--border);
-                    border-radius:8px;
-                    padding:0.75rem;
-                    background:var(--dark3)
-                ">${bodyContent}</div>
-                <p style="font-size:0.75rem;color:var(--muted);margin-top:0.6rem;text-align:center">
-                    Scorri per leggere l'intera informativa, poi accetta o rifiuta.
-                </p>
-            `;
-        }
-    } catch(e) {
-        // Fallback se il file non è raggiungibile
-        const contentDiv = document.getElementById('privacy-content');
-        if (contentDiv) {
-            contentDiv.innerHTML = `
-                <div style="font-size:0.85rem;line-height:1.6;color:var(--text)">
-                    <p><strong>Archery Club Manager</strong> è un'applicazione privata per la gestione di ASD di tiro con l'arco.</p>
-                    <p style="margin-top:0.5rem">I dati inseriti (nome, sessioni, punteggi) vengono salvati su Firebase e utilizzati esclusivamente per il funzionamento dell'app. Non vengono ceduti a terzi né usati per scopi commerciali.</p>
-                    <p style="margin-top:0.5rem">Hai diritto di accesso, rettifica e cancellazione dei tuoi dati ai sensi del GDPR (Reg. UE 2016/679).</p>
-                    <div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.4);border-radius:8px;padding:0.65rem;font-size:0.75rem;color:#fbbf24;font-weight:700;margin-top:0.75rem">
-                        ⚠️ File privacy-policy.html non trovato — testo di fallback mostrato.
-                    </div>
-                </div>
-            `;
-        }
-    }
+    `, [
+        {text:'❌ Rifiuto', cls:'btn-danger', fn: onRefuse},
+        {text:'✅ Accetto', cls:'btn-gold', fn: onAccept}
+    ]);
 }
 
 
@@ -569,8 +524,7 @@ function buildNav() {
             { icon:'🏠', label:'Home', fn:"window.setView('homeLogin')" },
             { icon:'☕', label:'Supporta il progetto', fn:"window.showDonatePayPal()" },
             { icon:'🐛', label:'Hai trovato un errore?', fn:"window.showBugReport()" },
-            { icon:'🛡️', label:'Privacy Policy', fn:"window.open('privacy-policy.html','_blank')" },
-            { icon:'ℹ️', label:'Info & Contatti', fn:"window.showPrivacy()" },
+            { icon:'🛡️', label:'Privacy, Info e contattaci', fn:"window.showPrivacy()" },
         ].map(n => `<div class="nav-item" onclick="${n.fn};closeNav()">${n.icon} ${n.label}</div>`).join('');
     } else if (S.role === 'asd') {
         userName = S.asd?.nome || 'ASD';
@@ -1113,99 +1067,32 @@ window._masterResetAsdPwd = (asdId, nomeAsd) => {
     `, [
         {text:'Annulla',cls:'btn-ghost'},
         {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
-            const p1=document.getElementById('master-atl-pwd')?.value||'';
-            const p2=document.getElementById('master-atl-pwd2')?.value||'';
-            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            try {
-                const newHash = await hashPwd(p1);
-                await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{
-                    pwdHash: newHash,
-                    pwdResetPending: false
-                });
-                showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
-            } catch(e) {
-                showModal('❌ Errore', 'Impossibile aggiornare: ' + e.message, [{text:'OK'}]);
-            }
+            const p1=document.getElementById('master-new-pwd')?.value||'';
+            const p2=document.getElementById('master-new-pwd2')?.value||'';
+            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
+            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAsdPwd(asdId,nomeAsd)}]);
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}`),{pwdHash: await hashPwd(p1)});
+            showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAsd}</strong> è stata resettata.`,[{text:'OK',fn:()=>window.setView('masterPanel')}]);
         }}
-
     ]);
 };
 
 window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
     showModal(`🔑 Reset Password — ${nomeAtleta}`, `
         <div style="display:flex;flex-direction:column;gap:0.5rem">
-            <p style="font-size:0.82rem;color:var(--muted)">
-                Imposta una nuova password per questo atleta.
-            </p>
-            <div>
-                <label class="form-label">Nuova Password Atleta</label>
-                <input class="inp" type="password" id="master-atl-pwd" placeholder="Min. 6 caratteri">
-            </div>
-            <div>
-                <label class="form-label">Conferma Password Atleta</label>
-                <input class="inp" type="password" id="master-atl-pwd2" placeholder="Ripeti la password">
-            </div>
-            <div style="border-top:1px solid var(--border);padding-top:0.5rem">
-                <label class="form-label">Password Master (per confermare)</label>
-                <input class="inp" type="password" id="master-atl-master-pwd"
-                    placeholder="La tua password master"
-                    onkeydown="if(event.key==='Enter')document.querySelector('#modal-actions .btn-gold')?.click()">
-            </div>
+            <p style="font-size:0.82rem;color:var(--muted)">Imposta una nuova password per questo atleta.</p>
+            <input class="inp" type="password" id="master-atl-pwd" placeholder="Nuova password">
+            <input class="inp" type="password" id="master-atl-pwd2" placeholder="Conferma password">
         </div>
     `, [
-        {text:'Annulla', cls:'btn-ghost'},
-        {text:'✅ Salva', cls:'btn-gold', fn: async () => {
-            const p1        = document.getElementById('master-atl-pwd')?.value || '';
-            const p2        = document.getElementById('master-atl-pwd2')?.value || '';
-            const masterPwd = document.getElementById('master-atl-master-pwd')?.value || '';
-
-            if (!p1 || p1.length < 6) return showModal('Errore','Password atleta minimo 6 caratteri.',
-                [{text:'OK', fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            if (p1 !== p2) return showModal('Errore','Le password non coincidono.',
-                [{text:'OK', fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            if (!masterPwd) return showModal('Errore','Inserisci la password master.',
-                [{text:'OK', fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-
-            let secondApp = null;
-            try {
-                // Recupera email master
-                const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
-                const masterEmail = masterSnap.data()?.email;
-                if (!masterEmail) throw new Error('Email master non trovata in Firestore.');
-
-                // Seconda istanza autenticata come master
-                secondApp = initializeApp(firebaseConfig, 'master_pwd_' + Date.now());
-                const secondAuth = getAuth(secondApp);
-                const secondDb2  = getFirestore(secondApp);
-
-                try {
-                    await signInWithEmailAndPassword(secondAuth, masterEmail, masterPwd);
-                } catch(e) {
-                    if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                        showModal('❌ Password Master Errata', 'La password master inserita non è corretta.', [{text:'OK'}]);
-                    } else {
-                        showModal('❌ Errore Auth', e.message, [{text:'OK'}]);
-                    }
-                    return;
-                }
-
-                // Aggiorna pwdHash con il db autenticato come master
-                const newHash = await hashPwd(p1);
-                await updateDoc(
-                    doc(secondDb2, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
-                    { pwdHash: newHash, pwdResetPending: false }
-                );
-
-                showModal('✅ Password Aggiornata!',
-                    `La password di <strong>${nomeAtleta}</strong> è stata resettata con successo.`,
-                    [{text:'OK'}]);
-
-            } catch(e) {
-                showModal('❌ Errore', e.message, [{text:'OK'}]);
-            } finally {
-                if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
-            }
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+            const p1=document.getElementById('master-atl-pwd')?.value||'';
+            const p2=document.getElementById('master-atl-pwd2')?.value||'';
+            if (!p1) return showModal('Errore','Inserisci la nuova password.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            if (p1!==p2) return showModal('Errore','Le password non coincidono.',[{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{pwdHash: await hashPwd(p1)});
+            showModal('✅ Password Aggiornata!',`La password di <strong>${nomeAtleta}</strong> è stata resettata.`,[{text:'OK'}]);
         }}
     ]);
 };
@@ -1213,88 +1100,30 @@ window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
 window._masterResetAtletaUsername = (asdId, atletaId, nomeAtleta, usernameAttuale) => {
     showModal(`✏️ Reset Username — ${nomeAtleta}`, `
         <div style="display:flex;flex-direction:column;gap:0.5rem">
-            <p style="font-size:0.82rem;color:var(--muted)">
-                Username attuale: <strong style="color:var(--gold)">${usernameAttuale || '—'}</strong>
-            </p>
-            <div>
-                <label class="form-label">Nuovo Username</label>
-                <input class="inp" type="text" id="master-atl-user"
-                    placeholder="Es: mario.rossi"
-                    value="${usernameAttuale || ''}"
-                    autocomplete="off" autocapitalize="none"
-                    oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
-                <p style="font-size:0.72rem;color:var(--muted);margin-top:3px">
-                    Solo lettere minuscole, numeri, punti, trattini. Niente spazi.
-                </p>
-            </div>
-            <div style="border-top:1px solid var(--border);padding-top:0.5rem">
-                <label class="form-label">Password Master (per confermare)</label>
-                <input class="inp" type="password" id="master-atl-user-pwd"
-                    placeholder="La tua password master"
-                    onkeydown="if(event.key==='Enter')document.querySelector('#modal-actions .btn-gold')?.click()">
-            </div>
+            <p style="font-size:0.82rem;color:var(--muted)">Username attuale: <strong style="color:var(--gold)">${usernameAttuale || '—'}</strong></p>
+            <input class="inp" type="text" id="master-atl-user" placeholder="Nuovo username (es: mario.rossi)"
+                value="${usernameAttuale || ''}" autocomplete="off" autocapitalize="none"
+                oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+            <p style="font-size:0.72rem;color:var(--muted)">Solo lettere minuscole, numeri, punti, trattini. Niente spazi.</p>
         </div>
     `, [
-        {text:'Annulla', cls:'btn-ghost'},
-        {text:'✅ Salva', cls:'btn-gold', fn: async () => {
-            const newUser   = document.getElementById('master-atl-user')?.value.trim().toLowerCase() || '';
-            const masterPwd = document.getElementById('master-atl-user-pwd')?.value || '';
-
-            if (!newUser) return showModal('Errore','Inserisci il nuovo username.',
-                [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-            if (newUser === usernameAttuale) return showModal('Attenzione','Lo username è uguale a quello attuale.',
-                [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-            if (!masterPwd) return showModal('Errore','Inserisci la password master.',
-                [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-
-            let secondApp = null;
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'✅ Salva',cls:'btn-gold',fn:async()=>{
+            const newUser = document.getElementById('master-atl-user')?.value.trim().toLowerCase() || '';
+            if (!newUser) return showModal('Errore','Inserisci il nuovo username.',[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+            if (newUser === usernameAttuale) return showModal('Attenzione','Lo username è uguale a quello attuale.',[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+            // Verifica unicità nella ASD
             try {
-                // Verifica unicità username prima di procedere
                 const snap = await getDocs(atletiCol(asdId));
                 const duplicato = snap.docs.find(d => d.id !== atletaId && d.data().username === newUser);
-                if (duplicato) return showModal('Errore',
-                    `Username <strong>${newUser}</strong> già in uso da un altro atleta di questa ASD.`,
-                    [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-
-                // Recupera email master da Firestore
-                const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
-                const masterEmail = masterSnap.data()?.email;
-                if (!masterEmail) throw new Error('Email master non trovata in Firestore.');
-
-                // Crea seconda istanza e autenticati come master
-                secondApp = initializeApp(firebaseConfig, 'master_user_' + Date.now());
-                const secondAuth = getAuth(secondApp);
-                const secondDb2  = getFirestore(secondApp);
-
-                try {
-                    await signInWithEmailAndPassword(secondAuth, masterEmail, masterPwd);
-                } catch(e) {
-                    if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                        showModal('❌ Password Master Errata', 'La password master inserita non è corretta.', [{text:'OK'}]);
-                    } else {
-                        showModal('❌ Errore Auth', e.message, [{text:'OK'}]);
-                    }
-                    return;
-                }
-
-                // Aggiorna username con il db autenticato come master
-                await updateDoc(
-                    doc(secondDb2, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
-                    { username: newUser }
-                );
-
-                // Aggiorna S.atleti in memoria
-                const idx = (S.atleti||[]).findIndex(a => a.id === atletaId);
-                if (idx >= 0) S.atleti[idx].username = newUser;
-
-                showModal('✅ Username Aggiornato!',
-                    `Lo username di <strong>${nomeAtleta}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,
-                    [{text:'OK'}]);
-
+                if (duplicato) return showModal('Errore',`Username <strong>${newUser}</strong> già in uso da un altro atleta di questa ASD.`,[{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+                await updateDoc(doc(db,`${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),{username: newUser});
+                // Aggiorna anche S.atleti in memoria se siamo nella stessa ASD
+                const idx = (S.atleti||[]).findIndex(a=>a.id===atletaId);
+                if (idx>=0) S.atleti[idx].username = newUser;
+                showModal('✅ Username Aggiornato!',`Lo username di <strong>${nomeAtleta}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,[{text:'OK'}]);
             } catch(e) {
                 showModal('❌ Errore', e.message, [{text:'OK'}]);
-            } finally {
-                if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
             }
         }}
     ]);
@@ -1869,16 +1698,15 @@ async function renderAsdDashboard() {
     const isMainAdmin = S.role === 'asd' || (isAtletaAdmin() && window._currentMode !== 'coach');
     setHeader(isMainAdmin ? 'Dashboard ASD' : 'Dashboard Coach', S.asd?.nome || '');
     let totalSessioni = 0, totalFrecce = 0;
-    try {
-        const allSessSnap = await getDocs(collection(db, `${APP_NS}/data/asd/${S.asd.id}/sessioni`));
-        totalSessioni = allSessSnap.size;
-        allSessSnap.forEach(d => {
+    for (const atl of S.atleti) {
+        const snap = await getDocs(query(sessioniCol(S.asd.id), where('archerId','==',atl.id)));
+        snap.forEach(d => {
             const s = d.data();
-            totalFrecce += parseInt(s.frecceAggiuntive||0) + parseInt(s.frecceTotali||0);
+            totalSessioni++;
+            totalFrecce += parseInt(s.frecceAggiuntive||0) + (s.frecceTotali||0);
         });
-    } catch(e) { console.warn('Dashboard stats error:', e); }
-    const msgSnap = await getDocs(msgCol(S.asd.id)).catch(()=>({size:0}));
-
+    }
+    const msgSnap = await getDocs(msgCol(S.asd.id));
     render(`
         <div style="padding-top:0.5rem">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem">
@@ -2175,23 +2003,6 @@ function showAddAtleta(existing=null) {
                 <div id="pwd-hint" style="font-size:0.72rem;margin-top:3px"></div>
             </div>
 
-            ${!isEdit ? `
-            <div style="background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.3);border-radius:10px;padding:0.85rem">
-                <div style="font-size:0.78rem;color:var(--gold);font-weight:700;margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.04em">
-                    🛡️ Consenso al Trattamento Dati (GDPR)
-                </div>
-                <label style="display:flex;align-items:flex-start;gap:0.6rem;cursor:pointer;font-size:0.82rem;line-height:1.5">
-                    <input type="checkbox" id="atl-gdpr-consent" style="width:18px;height:18px;flex-shrink:0;margin-top:2px">
-                    <span>
-                        Dichiaro di aver informato l'atleta (o il genitore/tutore se minorenne) del trattamento dei dati personali ai sensi del GDPR e di aver ottenuto il consenso.
-                        <a href="privacy-policy.html" target="_blank" style="color:var(--gold)">Informativa →</a>
-                    </span>
-                </label>
-                <div id="gdpr-consent-error" style="display:none;color:#e07060;font-size:0.75rem;margin-top:0.4rem">
-                    ⚠️ Il consenso è obbligatorio per registrare un atleta.
-                </div>
-            </div>` : ''}
-
         </div>
     `, [
         { text:'Annulla', cls:'btn-ghost' },
@@ -2223,230 +2034,71 @@ async function saveAtleta(existingId=null, existingData=null) {
     if (!existingId && !pwd) return showModal('Errore','Imposta una password per l\'atleta.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
     if (pwd && pwd.length < 6) return showModal('Errore','La password deve essere di almeno 6 caratteri.',[{text:'OK',fn:()=>showAddAtleta(existingData)}]);
 
-    // ── GDPR: verifica consenso (solo per nuovi atleti) ──────────────────
-    if (!existingId) {
-        const gdprCb = document.getElementById('atl-gdpr-consent');
-        if (gdprCb && !gdprCb.checked) {
-            const err = document.getElementById('gdpr-consent-error');
-            if (err) err.style.display = 'block';
-            gdprCb.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            return;
+    const data = {
+        nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro,
+        dataNascita: nascita, tipoArco, tecnicoId, isTecnico, isAdmin,
+        fotoBase64, updatedAt: new Date().toISOString()
+    };
+
+    if (existingId) {
+        // MODIFICA atleta esistente
+        if (pwd) {
+            data.pwdHash = await hashPwd(pwd);
+            // Se ha già un account Firebase Auth, aggiorna anche la password Auth
+            if (existingData?.authUid && existingData?.authEmail) {
+                try {
+                    // Aggiorna password Firebase Auth tramite Admin SDK non disponibile lato client.
+                    // Soluzione: salviamo un flag per forzare reset al prossimo login.
+                    data.pwdResetPending = true;
+                    data.pwdHash = await hashPwd(pwd); // mantieni hash come fallback
+                } catch(e) {}
+            }
         }
+        await updateDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`), data);
+    } else {
+        // CREA nuovo atleta
+        data.createdAt = new Date().toISOString();
+        data.pwdHash = await hashPwd(pwd);
+
+        // Crea prima il documento Firestore per ottenere l'ID
+        const docRef = await addDoc(atletiCol(S.asd.id), data);
+        const atletaId = docRef.id;
+
+        // Ora crea l'account Firebase Auth
+        // Salva l'utente ASD corrente per ripristinarlo dopo
+        const currentUser = auth.currentUser;
+        try {
+    const { uid: authUid, email: authEmail } = await createAtletaAuth(S.asd.id, atletaId, pwd);
+    await updateDoc(docRef, { authUid, authEmail });
+    // Dopo aver creato l'atleta, Firebase ha cambiato l'utente corrente.
+    // Dobbiamo riloggare l'ASD. Poiché non abbiamo la password ASD,
+    // forziamo un reload della pagina solo se siamo loggati come ASD Firebase Auth.
+    if (currentUser && !currentUser.isAnonymous) {
+        // Ripristina il token ASD tramite re-auth silenziosa
+        // L'ASD dovrà riloggarsi automaticamente tramite onAuthStateChanged
+        await signOut(auth);
+        showModal('⚠️ Riaccedi come ASD',
+            `Atleta <strong>${nome} ${cognome}</strong> creato con successo.<br><br>Per motivi tecnici devi rieffettuare il login ASD.`,
+            [{text:'OK', cls:'btn-gold', fn:()=>window.setView('asdLogin')}]);
+        return;
     }
+} catch(e) {
+    console.warn('Firebase Auth creation failed for atleta:', e.message);
+    showModal('⚠️ Nota', `Atleta creato correttamente. Account Auth non creato: ${e.message}`, [{text:'OK'}]);
+}
 
-    // ── Se siamo un atleta-admin (non account ASD diretto),
-    //    chiediamo le credenziali ASD per poter creare l'account Auth ──────
-    const isAtletaAdminUser = S.role === 'atleta' && isAtletaAdmin();
-    if (isAtletaAdminUser) {
-        // Chiedi email e password ASD prima di procedere
-        showModal('🔐 Credenziali ASD Richieste', `
-            <div style="display:flex;flex-direction:column;gap:0.65rem">
-                <div style="background:rgba(201,162,39,0.08);border:1px solid rgba(201,162,39,0.3);border-radius:8px;padding:0.65rem;font-size:0.82rem;color:var(--muted)">
-                    Per ${existingId ? 'modificare' : 'creare'} un atleta è necessario autenticare l'operazione con le credenziali dell'account ASD.
-                </div>
-                <div>
-                    <label class="form-label">Email Account ASD</label>
-                    <input class="inp" type="email" id="asd-cred-email" placeholder="email@asd.it" autocomplete="email">
-                </div>
-                <div>
-                    <label class="form-label">Password Account ASD</label>
-                    <input class="inp" type="password" id="asd-cred-pwd" placeholder="Password ASD"
-                        onkeydown="if(event.key==='Enter')window._proceedSaveAtleta()">
-                </div>
-            </div>
-        `, [
-            {text:'Annulla', cls:'btn-ghost'},
-            {text:'✅ Procedi', cls:'btn-gold', fn: () => window._proceedSaveAtleta()}
-        ]);
 
-        // Salva i dati in attesa delle credenziali
-        window._pendingSaveAtleta = { existingId, existingData, nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId, isTecnico, isAdmin, pwd, fotoBase64 };
+        await loadAtleti();
+        window.setView('asdAtleti');
+        showModal('✅ Creato!', `Atleta ${nome} ${cognome} creato con successo.`, [{text:'OK'}]);
         return;
     }
 
-    // ── Account ASD diretto: procedi normalmente ──────────────────────────
-    await _executeSaveAtleta({ existingId, existingData, nome, cognome, username, tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId, isTecnico, isAdmin, pwd, fotoBase64, asdEmail: null, asdPwd: null });
+    await loadAtleti();
+    window.setView('asdAtleti');
+    showModal('✅ Salvato!', `Atleta ${nome} ${cognome} aggiornato con successo.`, [{text:'OK'}]);
 }
 
-// Callback chiamato dopo inserimento credenziali ASD da atleta-admin
-window._proceedSaveAtleta = async () => {
-    const asdEmail = document.getElementById('asd-cred-email')?.value.trim();
-    const asdPwd   = document.getElementById('asd-cred-pwd')?.value.trim();
-    if (!asdEmail || !asdPwd) return showModal('Errore','Inserisci email e password ASD.',[{text:'OK'}]);
-    closeModal();
-    const p = window._pendingSaveAtleta;
-    if (!p) return;
-    window._pendingSaveAtleta = null;
-    await _executeSaveAtleta({ ...p, asdEmail, asdPwd });
-};
-
-// Funzione che esegue effettivamente il salvataggio
-async function _executeSaveAtleta({ existingId, existingData, nome, cognome, username,
-    tesseraFitarco, tesseraAltro, enteAltro, nascita, tipoArco, tecnicoId,
-    isTecnico, isAdmin, pwd, fotoBase64, asdEmail, asdPwd }) {
-
-    const data = {
-        nome, cognome: cognome||'', username,
-        tesseraFitarco: tesseraFitarco||'', tesseraAltro: tesseraAltro||'', enteAltro: enteAltro||'',
-        dataNascita: nascita||'', tipoArco: tipoArco||'', tecnicoId: tecnicoId||'',
-        isTecnico, isAdmin,
-        fotoBase64: fotoBase64||'', updatedAt: new Date().toISOString()
-    };
-
-    // Se siamo atleta-admin con credenziali ASD → usa seconda istanza per tutto
-    const useSecondApp = !!(asdEmail && asdPwd);
-    let secondApp = null;
-    let secondDb = null;
-
-    try {
-        if (useSecondApp) {
-            // Crea seconda istanza Firebase e autenticala come ASD
-            secondApp = initializeApp(firebaseConfig, 'secondary_' + Date.now());
-            const secondAuth = getAuth(secondApp);
-            secondDb = getFirestore(secondApp);
-
-            try {
-                await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
-            } catch(e) {
-                // Credenziali ASD errate
-                if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-                    showModal('❌ Credenziali ASD Errate', 'Email o password ASD non corrette. Riprova.', [{text:'OK', fn:()=>showAddAtleta(existingData)}]);
-                } else {
-                    showModal('❌ Errore Auth ASD', e.message, [{text:'OK'}]);
-                }
-                return;
-            }
-        }
-
-        // Riferimento al db da usare (seconda istanza se atleta-admin, principale altrimenti)
-        const activeDb = secondDb || db;
-
-        if (existingId) {
-            // ── MODIFICA atleta esistente ──────────────────────────────────
-            if (pwd) {
-                data.pwdHash = await hashPwd(pwd);
-                data.pwdResetPending = true;
-            }
-            await updateDoc(
-                doc(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti/${existingId}`),
-                data
-            );
-            await loadAtleti();
-            window.setView('asdAtleti');
-            showModal('✅ Salvato!', `Atleta <strong>${nome} ${cognome||''}</strong> aggiornato con successo.`, [{text:'OK'}]);
-
-        } else {
-            // ── CREA nuovo atleta ──────────────────────────────────────────
-            data.createdAt = new Date().toISOString();
-            data.pwdHash = await hashPwd(pwd);
-
-            // 1. Crea documento Firestore con il db autenticato come ASD
-            const colRef = collection(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti`);
-            const docRef = await addDoc(colRef, data);
-            const atletaId = docRef.id;
-
-            // 2. Salva consenso GDPR con lo stesso db autenticato
-            try {
-                await addDoc(
-                    collection(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}/gdpr`),
-                    {
-                        consentVersion: '1.0',
-                        consentDate: new Date().toISOString(),
-                        consentedBy: S.atleta?.id || 'admin',
-                        method: 'checkbox_app',
-                        purpose: 'gestione_sportiva',
-                        privacyPolicyVersion: '1.0',
-                    }
-                );
-            } catch(e) { console.warn('GDPR save failed:', e.message); }
-
-            // 3. Crea account Firebase Auth per il nuovo atleta
-            //    Se useSecondApp è true, la seconda istanza è già autenticata come ASD
-            //    quindi usiamo la sua Auth per creare il nuovo utente
-            try {
-                const secondAuth2 = useSecondApp ? getAuth(secondApp) : null;
-
-                if (secondAuth2) {
-                    // Seconda istanza già autenticata → crea direttamente
-                    let email = atletaEmail(S.asd.id, atletaId);
-                    let attempt = 0;
-                    let authUid = null, authEmail = null;
-
-                    while (attempt < 5) {
-                        try {
-                            const cred = await createUserWithEmailAndPassword(secondAuth2, email, pwd);
-                            authUid = cred.user.uid;
-                            authEmail = email;
-                            break;
-                        } catch(e2) {
-                            if (e2.code === 'auth/email-already-in-use') {
-                                attempt++;
-                                email = atletaEmailAlt(S.asd.id, atletaId, attempt);
-                            } else { throw e2; }
-                        }
-                    }
-
-                    if (authUid) {
-                        await updateDoc(
-                            doc(activeDb, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`),
-                            { authUid, authEmail }
-                        );
-                    }
-                } else {
-                    // Account ASD diretto: usa terza istanza separata per non disturbare
-                    const thirdApp = initializeApp(firebaseConfig, 'third_' + Date.now());
-                    const thirdAuth = getAuth(thirdApp);
-                    try {
-                        let email = atletaEmail(S.asd.id, atletaId);
-                        let attempt = 0;
-                        let authUid = null, authEmail = null;
-
-                        while (attempt < 5) {
-                            try {
-                                const cred = await createUserWithEmailAndPassword(thirdAuth, email, pwd);
-                                authUid = cred.user.uid;
-                                authEmail = email;
-                                break;
-                            } catch(e2) {
-                                if (e2.code === 'auth/email-already-in-use') {
-                                    attempt++;
-                                    email = atletaEmailAlt(S.asd.id, atletaId, attempt);
-                                } else { throw e2; }
-                            }
-                        }
-
-                        if (authUid) {
-                            await updateDoc(
-                                doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`),
-                                { authUid, authEmail }
-                            );
-                        }
-                    } finally {
-                        await thirdApp.delete();
-                    }
-                }
-            } catch(authErr) {
-                console.warn('Firebase Auth creation failed:', authErr.message);
-                showModal('⚠️ Nota', `Atleta creato correttamente. Account Auth non creato: ${authErr.message}`, [{text:'OK'}]);
-            }
-
-            // 4. Ricarica e torna alla lista
-            await loadAtleti();
-            closeModal();
-            window.setView('asdAtleti');
-            showModal('✅ Creato!', `Atleta <strong>${nome} ${cognome||''}</strong> creato con successo.`, [{text:'OK'}]);
-        }
-
-    } catch(e) {
-        console.error('saveAtleta error:', e);
-        showModal('❌ Errore', 'Operazione fallita: ' + e.message, [{text:'OK'}]);
-    } finally {
-        // Elimina sempre la seconda istanza alla fine
-        if (secondApp) {
-            try { await secondApp.delete(); } catch(e) {}
-        }
-    }
-}
 
 async function editAtleta(atletaId) {
     const atl = S.atleti.find(a => a.id === atletaId);
@@ -2454,82 +2106,15 @@ async function editAtleta(atletaId) {
 }
 
 async function deleteAtleta(atletaId, nome) {
-    const isAtletaAdminUser = S.role === 'atleta' && isAtletaAdmin();
-
-    if (isAtletaAdminUser) {
-        // Chiedi credenziali ASD prima di procedere
-        showModal('🗑️ Elimina Atleta', `
-            <div style="display:flex;flex-direction:column;gap:0.65rem">
-                <div style="background:rgba(192,57,43,0.12);border:1px solid rgba(192,57,43,0.4);border-radius:8px;padding:0.65rem;font-size:0.85rem;color:#e07060">
-                    ⚠️ Vuoi eliminare <strong>${nome}</strong>? Tutti i suoi dati verranno cancellati permanentemente.
-                </div>
-                <div style="background:rgba(201,162,39,0.08);border:1px solid rgba(201,162,39,0.3);border-radius:8px;padding:0.65rem;font-size:0.82rem;color:var(--muted)">
-                    Inserisci le credenziali ASD per autorizzare l'eliminazione.
-                </div>
-                <div>
-                    <label class="form-label">Email Account ASD</label>
-                    <input class="inp" type="email" id="del-asd-email" placeholder="email@asd.it" autocomplete="email">
-                </div>
-                <div>
-                    <label class="form-label">Password Account ASD</label>
-                    <input class="inp" type="password" id="del-asd-pwd" placeholder="Password ASD"
-                        onkeydown="if(event.key==='Enter')window._proceedDeleteAtleta('${atletaId}','${nome.replace(/'/g,"\\'")}')">
-                </div>
-            </div>
-        `, [
-            {text:'Annulla', cls:'btn-ghost'},
-            {text:'🗑️ Elimina', cls:'btn-danger', fn: () => window._proceedDeleteAtleta(atletaId, nome)}
-        ]);
-    } else {
-        // Account ASD diretto: elimina direttamente
-        showModal('🗑️ Elimina Atleta', `Vuoi eliminare <strong>${nome}</strong>? Tutti i suoi dati verranno cancellati.`, [
-            {text:'Annulla', cls:'btn-ghost'},
-            {text:'Elimina', cls:'btn-danger', fn: async () => {
-                try {
-                    await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`));
-                    await loadAtleti();
-                    window.setView('asdAtleti');
-                } catch(e) {
-                    showModal('❌ Errore', 'Impossibile eliminare: ' + e.message, [{text:'OK'}]);
-                }
-            }}
-        ]);
-    }
+    showModal('🗑️ Elimina Atleta', `Vuoi eliminare <strong>${nome}</strong>? Tutti i suoi dati verranno cancellati.`, [
+        { text:'Annulla', cls:'btn-ghost' },
+        { text:'Elimina', cls:'btn-danger', fn: async () => {
+            await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`));
+            await loadAtleti();
+            window.setView('asdAtleti');
+        }}
+    ]);
 }
-
-window._proceedDeleteAtleta = async (atletaId, nome) => {
-    const asdEmail = document.getElementById('del-asd-email')?.value.trim();
-    const asdPwd   = document.getElementById('del-asd-pwd')?.value.trim();
-    if (!asdEmail || !asdPwd) return showModal('Errore', 'Inserisci email e password ASD.', [{text:'OK'}]);
-
-    closeModal();
-
-    let secondApp = null;
-    try {
-        secondApp = initializeApp(firebaseConfig, 'secondary_del_' + Date.now());
-        const secondAuth = getAuth(secondApp);
-        const secondDb2  = getFirestore(secondApp);
-
-        // Autentica come ASD
-        try {
-            await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
-        } catch(e) {
-            showModal('❌ Credenziali ASD Errate', 'Email o password ASD non corrette.', [{text:'OK'}]);
-            return;
-        }
-
-        // Elimina con il db autenticato come ASD
-        await deleteDoc(doc(secondDb2, `${APP_NS}/data/asd/${S.asd.id}/atleti/${atletaId}`));
-        await loadAtleti();
-        window.setView('asdAtleti');
-        showModal('✅ Eliminato!', `Atleta <strong>${nome}</strong> eliminato con successo.`, [{text:'OK'}]);
-
-    } catch(e) {
-        showModal('❌ Errore', 'Impossibile eliminare: ' + e.message, [{text:'OK'}]);
-    } finally {
-        if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
-    }
-};
 window.toggleAdminCheckbox = (checked) => {
     const wrap = document.getElementById('atl-admin-wrap');
     if (wrap) wrap.style.display = checked ? 'block' : 'none';
@@ -3126,62 +2711,13 @@ async function sendMessaggio() {
 window.sendMessaggio = sendMessaggio;
 
 window.eliminaMessaggioAsd = async (msgId) => {
-    const isAtletaAdminUser = S.role === 'atleta' && isAtletaAdmin();
-
-    if (isAtletaAdminUser) {
-        showModal('🗑️ Elimina Messaggio', `
-            <div style="display:flex;flex-direction:column;gap:0.65rem">
-                <p style="font-size:0.85rem;color:var(--muted)">Inserisci le credenziali ASD per eliminare questo messaggio.</p>
-                <div>
-                    <label class="form-label">Email Account ASD</label>
-                    <input class="inp" type="email" id="del-msg-asd-email" placeholder="email@asd.it">
-                </div>
-                <div>
-                    <label class="form-label">Password Account ASD</label>
-                    <input class="inp" type="password" id="del-msg-asd-pwd" placeholder="Password ASD">
-                </div>
-            </div>
-        `, [
-            {text:'Annulla', cls:'btn-ghost'},
-            {text:'🗑️ Elimina', cls:'btn-danger', fn: async () => {
-                const asdEmail = document.getElementById('del-msg-asd-email')?.value.trim();
-                const asdPwd   = document.getElementById('del-msg-asd-pwd')?.value.trim();
-                if (!asdEmail || !asdPwd) return showModal('Errore','Inserisci email e password ASD.',[{text:'OK'}]);
-                closeModal();
-                let secondApp = null;
-                try {
-                    secondApp = initializeApp(firebaseConfig, 'secondary_msg_' + Date.now());
-                    const secondAuth = getAuth(secondApp);
-                    const secondDb2  = getFirestore(secondApp);
-                    try {
-                        await signInWithEmailAndPassword(secondAuth, asdEmail, asdPwd);
-                    } catch(e) {
-                        showModal('❌ Credenziali ASD Errate', 'Email o password ASD non corrette.', [{text:'OK'}]);
-                        return;
-                    }
-                    await deleteDoc(doc(secondDb2, `${APP_NS}/data/asd/${S.asd.id}/messaggi/${msgId}`));
-                    window.setView('asdMessaggi');
-                } catch(e) {
-                    showModal('❌ Errore', e.message, [{text:'OK'}]);
-                } finally {
-                    if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
-                }
-            }}
-        ]);
-    } else {
-        // Account ASD diretto
-        showModal('Elimina messaggio', 'Sei sicuro di voler eliminare questo messaggio?', [
-            {text:'Annulla', cls:'btn-ghost'},
-            {text:'Elimina', cls:'btn-danger', fn: async () => {
-                try {
-                    await deleteDoc(doc(db, `${APP_NS}/data/asd/${S.asd.id}/messaggi/${msgId}`));
-                    window.setView('asdMessaggi');
-                } catch(e) {
-                    showModal('❌ Errore', e.message, [{text:'OK'}]);
-                }
-            }}
-        ]);
-    }
+    showModal('Elimina messaggio','Sei sicuro di voler eliminare questo messaggio?',[
+        {text:'Annulla',cls:'btn-ghost'},
+        {text:'Elimina',cls:'btn-danger',fn:async()=>{
+            await deleteDoc(doc(db,`${APP_NS}/data/asd/${S.asd.id}/messaggi/${msgId}`));
+            window.setView('asdMessaggi');
+        }}
+    ]);
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3322,11 +2858,10 @@ async function renderAtletaSelect({ asdId }) {
     const asd = S.allAsd.find(a => a.id === asdId);
     if (!asd) return window.setView('homeLogin');
 
-    // GDPR FIX: non carichiamo più la lista completa atleti prima del login
-    // (le nuove regole Firestore lo vietano per utenti anonimi).
-    // La lista verrà caricata in loginAtletaConPassword() solo dopo verifica credenziali.
+    const snap = await getDocs(atletiCol(asd.id));
+    const atleti = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     S._tempAsd = asd;
-    S._tempAtleti = []; // lista vuota, verrà popolata dopo il login
+    S._tempAtleti = atleti;
 
     const asdInfo = `
         <div class="card card-gold" style="margin-bottom:1rem">
@@ -3418,126 +2953,97 @@ window.scriviAllAsd = (asdId, asdNome) => {
 };
 
 window.loginAtletaConPassword = async () => {
-    const asdId = S._tempAsd?.id;
-    const usernameInput = document.getElementById('atl-login-username')?.value.trim();
-    const pwd = document.getElementById('atl-login-pwd')?.value.trim();
-
-    if (!asdId || !usernameInput || !pwd) {
-        showModal('Errore', 'Inserisci username e password.', [{text:'OK'}]);
-        return;
-    }
-    const username = usernameInput.toLowerCase();
-
     // Rate limiting
-    const rlKey = `login_rl_${asdId}_${username}`;
+    const rlKey = `login_rl_${S._tempAsd?.id || 'x'}`;
     const now = Date.now();
     let attempts = JSON.parse(localStorage.getItem(rlKey) || '[]');
     attempts = attempts.filter(t => now - t < 600000);
     if (attempts.length >= 5) {
         const waitMin = Math.ceil((600000 - (now - attempts[0])) / 60000);
-        return showModal('🔒 Accesso Bloccato', `Troppi tentativi. Riprova tra ${waitMin} minuto/i.`, [{text:'OK'}]);
+        return showModal('🔒 Accesso Bloccato',
+            `Troppi tentativi errati. Riprova tra <strong>${waitMin} minuto/i</strong>.`,
+            [{text:'OK'}]);
     }
 
-    try {
-        // STEP 1: Cerca atleta per username (funziona con o senza authUid)
-        const q = query(
-            collection(db, `club_manager_v1/data/asd/${asdId}/atleti`),
-            where('username', '==', username)
-        );
-        const snap = await getDocs(q);
+    const username = $('atl-login-username')?.value.trim().toLowerCase();
+    const pwd = $('atl-login-pwd')?.value.trim();
+    if (!username) return showModal('Errore','Inserisci il tuo username.',[{text:'OK'}]);
+    if (!pwd) return showModal('Errore','Inserisci la password.',[{text:'OK'}]);
 
-        if (snap.empty) {
-            attempts.push(now);
-            localStorage.setItem(rlKey, JSON.stringify(attempts));
-            await new Promise(r => setTimeout(r, 1200));
-            return showModal('❌ Accesso Negato', 'Username o password errati.', [{text:'OK'}]);
-        }
+    const atleti = S._tempAtleti || [];
+    const trovato = atleti.find(a => a.username === username);
 
-        const trovato = { id: snap.docs[0].id, ...snap.docs[0].data() };
-
-        // STEP 2: Verifica password hash (metodo universale)
-        const hashInserita = await hashPwd(pwd);
-        if (trovato.pwdHash !== hashInserita) {
-            // STEP 3: Se ha authUid, prova anche Firebase Auth
-            if (trovato.authUid && trovato.authEmail) {
-                try {
-                    await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
-                    // Auth riuscita
-                    localStorage.removeItem(rlKey);
-                    effettuaLoginLocale(trovato, asdId);
-                    return;
-                } catch(authErr) {
-                    // Auth fallita → password sbagliata
-                }
-            }
-            attempts.push(now);
-            localStorage.setItem(rlKey, JSON.stringify(attempts));
-            await new Promise(r => setTimeout(r, 1200));
-            return showModal('❌ Accesso Negato', `Password errata. Tentativo ${attempts.length}/5.`, [{text:'OK'}]);
-        }
-
-        // Password hash corretta
-        localStorage.removeItem(rlKey);
-
-        // Se ha authUid, prova silenziosamente a loggare anche su Firebase Auth
-        if (trovato.authUid && trovato.authEmail) {
-            try {
-                await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
-            } catch(e) {
-                // Fallisce silenziosamente — usiamo il login locale
-            }
-        }
-
-        effettuaLoginLocale(trovato, asdId);
-
-    } catch (error) {
-        console.error('Errore login atleta:', error);
-        showModal('❌ Errore', 'Errore durante il login: ' + error.message, [{text:'OK'}]);
+    if (!trovato) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('❌ Credenziali non valide',
+            `Username o password errati. Tentativo ${attempts.length}/5.`,
+            [{text:'OK'}]);
     }
-};
 
+    // Se l'atleta ha un authUid (Firebase Auth), usa signInWithEmailAndPassword
+    if (trovato.authEmail) {
+        try {
+            await signInWithEmailAndPassword(auth, trovato.authEmail, pwd);
+            // onAuthStateChanged gestirà il resto
+            localStorage.removeItem(rlKey);
+            return;
+        } catch(e) {
+            // Se fallisce per password errata
+            if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+                attempts.push(now);
+                localStorage.setItem(rlKey, JSON.stringify(attempts));
+                await new Promise(r => setTimeout(r, 1200));
+                return showModal('❌ Credenziali non valide',
+                    `Username o password errati. Tentativo ${attempts.length}/5.`,
+                    [{text:'OK'}]);
+            }
+            // Altro errore: fallback al metodo hash
+        }
+    }
 
-// Funzione di supporto per pulire il codice sopra
-function effettuaLoginLocale(atletaData, asdId) {
-    S.role = 'atleta';
-    S.asd = S._tempAsd;
-    S.atleta = atletaData;
+    // Fallback: verifica password con hash (atleti non ancora migrati)
+    const pwdH = await hashPwd(pwd);
+    if (trovato.pwdHash !== pwdH) {
+        attempts.push(now);
+        localStorage.setItem(rlKey, JSON.stringify(attempts));
+        await new Promise(r => setTimeout(r, 1200));
+        return showModal('❌ Credenziali non valide',
+            `Username o password errati. Tentativo ${attempts.length}/5.`,
+            [{text:'OK'}]);
+    }
 
-    const privacyKey = `privacy_accepted_${atletaData.id}`;
+    // Login OK con hash (atleta legacy) → completa login manualmente
+    localStorage.removeItem(rlKey);
+    S.role   = 'atleta';
+    S.asd    = S._tempAsd;
+    S.atleta = trovato;
+
+    const privacyKey = `privacy_accepted_${trovato.id}`;
     const alreadyAccepted = localStorage.getItem(privacyKey);
-
-    const completaLogin = () => {
-        localStorage.setItem('acm_atleta_session', JSON.stringify({
-            asdId,
-            atletaId: atletaData.id,
-            expiresAt: Date.now() + (8 * 60 * 60 * 1000)
-        }));
-        buildNav();
-        loadAtletaSessioni().then(() => {
-            window.setView('atletaMenu');
-            setTimeout(checkDraftSession, 400);
-        });
-    };
+    const sessionData = { asdId: S._tempAsd.id, atletaId: trovato.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) };
 
     if (alreadyAccepted) {
-        completaLogin();
+        localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
+        buildNav();
+        await loadAtletaSessioni();
+        window.setView('atletaMenu');
+        setTimeout(checkDraftSession, 400);
     } else {
         showPrivacyConsent(
             async () => {
                 localStorage.setItem(privacyKey, '1');
-                // Salva consenso su Firestore
-                try {
-                    await saveGdprConsent(asdId, atletaData.id);
-                } catch(e) { console.warn('GDPR save failed:', e); }
-                completaLogin();
+                localStorage.setItem('acm_atleta_session', JSON.stringify(sessionData));
+                buildNav();
+                await loadAtletaSessioni();
+                window.setView('atletaMenu');
+                setTimeout(checkDraftSession, 400);
             },
-            () => {
-                S.role = null; S.asd = null; S.atleta = null;
-                window.setView('homeLogin');
-            }
+            () => { S.role = null; S.asd = null; S.atleta = null; window.setView('homeLogin'); }
         );
     }
-}
+};
 
 window.selectAtleta = (atletaId) => {
     const atleta = S._tempAtleti?.find(a => a.id === atletaId);
@@ -3656,7 +3162,7 @@ window.doAtletaLogin = async function() {
         window.setView('atletaMenu');
         setTimeout(checkDraftSession, 400);
     } else {
-                   await showPrivacyConsent(
+        showPrivacyConsent(
             async () => {
                 localStorage.setItem(privacyKey, '1');
                 localStorage.setItem('acm_atleta_session', JSON.stringify({ asdId: asd.id, atletaId: atleta.id, expiresAt: Date.now() + (8 * 60 * 60 * 1000) }));
@@ -3670,7 +3176,6 @@ window.doAtletaLogin = async function() {
                 window.setView('homeLogin');
             }
         );
-
     }
 
 };
@@ -5264,45 +4769,23 @@ onAuthStateChanged(auth, async user => {
     }
 
     // 3. Controlla se è un atleta con Firebase Auth
-    // GDPR FIX: non iteriamo più su tutte le ASD con getDocs (bloccato dalle nuove regole).
-    // Invece cerchiamo il documento atleta tramite il campo authUid usando una query
-    // su ogni ASD — oppure usiamo la sessione salvata nel localStorage come hint
-    // per sapere in quale ASD cercare, evitando letture non autorizzate.
-        // 3. Controlla se è un atleta con Firebase Auth (solo se ha authUid)
     if (!user.isAnonymous) {
-        const sessHint = localStorage.getItem('acm_atleta_session');
-        const hintAsdIds = [];
-        if (sessHint) {
-            try { hintAsdIds.push(JSON.parse(sessHint).asdId); } catch(e) {}
-        }
-        const allAsdIds = S.allAsd.map(a => a.id);
-        const searchOrder = [...new Set([...hintAsdIds, ...allAsdIds])];
-
-        for (const asdId of searchOrder) {
-            // Salta se questo uid è già un'ASD
-            if (asdId === user.uid) continue;
+        for (const asd of S.allAsd) {
             try {
-                const q = query(atletiCol(asdId), where('authUid', '==', user.uid));
-                const snap = await getDocs(q);
-                if (!snap.empty) {
-                    const atl = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                    const asd = S.allAsd.find(a => a.id === asdId);
-                    if (asd) {
-                        S.role = 'atleta';
-                        S.asd = asd;
-                        S.atleta = atl;
-                        buildNav();
-                        await loadAtletaSessioni();
-                        window.setView('atletaMenu');
-                        return;
-                    }
+                const snap = await getDocs(atletiCol(asd.id));
+                const atl = snap.docs.map(d => ({id:d.id,...d.data()})).find(a => a.authUid === user.uid);
+                if (atl) {
+                    S.role = 'atleta';
+                    S.asd = asd;
+                    S.atleta = atl;
+                    buildNav();
+                    await loadAtletaSessioni();
+                    window.setView('atletaMenu');
+                    return;
                 }
-            } catch(e) {
-                continue;
-            }
+            } catch(e) {}
         }
     }
-
 
     // 4. Sessione atleta legacy (localStorage)
     const atlSess = localStorage.getItem('acm_atleta_session');
@@ -6782,198 +6265,19 @@ async function renderContatoreFrecce() {
 // ═══════════════════════════════════════════════════════════════════════════
 // ── ESPORTA & BACKUP ────────────────────────────────────────────────────────
 async function renderEsportaDati() {
-    setHeader('📥 Privacy & Dati', S.atleta?.nome || '');
+    setHeader('📥 Esporta Dati', S.atleta?.nome||'');
     await loadAtletaSessioniCached();
     render(`
-        <!-- Esporta CSV -->
         <div class="card card-gold" style="margin-bottom:1rem">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">
-                📊 Esporta Sessioni in CSV
-            </div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">
-                Esporta tutte le sessioni in formato CSV per Excel o altri strumenti.
-            </p>
+            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.5rem">📊 Esporta in CSV</div>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Esporta tutte le sessioni in formato CSV per Excel o altri strumenti.</p>
             <button class="btn btn-gold btn-full" onclick="window.esportaCSV()">📄 Scarica CSV</button>
         </div>
-
-        <!-- Portabilità dati completa -->
-        <div class="card" style="margin-bottom:1rem;border-color:#3b82f6">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#60a5fa;margin-bottom:0.5rem">
-                📦 Esporta Tutti i Miei Dati (GDPR art. 20)
-            </div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">
-                Scarica una copia completa di tutti i tuoi dati personali in formato JSON leggibile e trasferibile.
-            </p>
-            <button class="btn btn-full" style="background:#1d4ed8;color:white;font-family:'Rajdhani',sans-serif;font-weight:700"
-                    onclick="window.esportaTuttiDati()">
-                📦 Scarica i Miei Dati
-            </button>
-        </div>
-
-        <!-- Informativa Privacy -->
-        <div class="card" style="margin-bottom:1rem">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--text);margin-bottom:0.5rem">
-                🛡️ Informativa Privacy
-            </div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">
-                Leggi come vengono trattati i tuoi dati e quali sono i tuoi diritti ai sensi del GDPR.
-            </p>
-            <a href="privacy-policy.html" target="_blank"
-               class="btn btn-outline btn-full" style="text-decoration:none;text-align:center">
-                📄 Leggi l'Informativa Privacy
-            </a>
-        </div>
-
-        <!-- Eliminazione account -->
-        <div class="card" style="margin-bottom:1rem;border-color:var(--danger)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--danger);margin-bottom:0.5rem">
-                🗑️ Elimina il Mio Account (art. 17 GDPR)
-            </div>
-            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">
-                Richiedi la cancellazione permanente di tutti i tuoi dati. Operazione irreversibile.
-            </p>
-            <button class="btn btn-danger btn-full" onclick="window.richiestaEliminazioneAccount()">
-                🗑️ Richiedi Cancellazione Dati
-            </button>
-        </div>
-
-        <p style="font-size:0.76rem;color:var(--muted);text-align:center;padding:0.5rem;line-height:1.5">
-            Ai sensi del Reg. UE 2016/679 (GDPR), hai diritto di accesso, rettifica,
-            cancellazione e portabilità dei tuoi dati. Il Titolare del Trattamento è la tua ASD.
+        <p style="font-size:0.78rem;color:var(--muted);text-align:center;padding:1rem;line-height:1.5">
+            Nota: Le opzioni di <strong>Stampa Report</strong> e <strong>Agenda PDF</strong> sono state spostate nella sezione <strong>Riepilogo Sessioni</strong>.
         </p>
     `);
 }
-
-// ── GDPR: Esporta tutti i dati personali (art. 20) ──────────────────────────
-window.esportaTuttiDati = async function() {
-    if (!S.atleta || !S.asd) return;
-    try {
-        showModal('⏳ Elaborazione...', 'Raccolta dati in corso, attendi...', []);
-        const asdId    = S.asd.id;
-        const atletaId = S.atleta.id;
-
-        // Profilo atleta
-        const atletaSnap = await getDoc(doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`));
-        const profilo = atletaSnap.exists() ? { ...atletaSnap.data() } : {};
-        delete profilo.pwdHash;
-        delete profilo.authUid;
-        delete profilo.authEmail;
-        delete profilo.fotoBase64;
-
-        // Sessioni
-        const sessSnap = await getDocs(
-            query(collection(db, `${APP_NS}/data/asd/${asdId}/sessioni`),
-                  where('archerId', '==', atletaId))
-        );
-        const sessioni = sessSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        // Goals / Obiettivi
-        const goalsSnap = await getDocs(
-            collection(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}/goals`)
-        );
-        const obiettivi = goalsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        // Materiale
-        const eqSnap = await getDoc(
-            doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}/equipment/current`)
-        );
-        const materiale = eqSnap.exists() ? eqSnap.data() : null;
-
-        const exportData = {
-            _meta: {
-                exportDate:            new Date().toISOString(),
-                gdprBasis:             'Articolo 20 GDPR — Diritto alla portabilità dei dati',
-                titolareTrattamento:   S.asd?.nome || asdId,
-                platform:              'Archery Club Manager',
-                formatVersion:         '1.0',
-            },
-            profilo,
-            sessioni,
-            obiettivi,
-            materiale,
-        };
-
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = `miei-dati-${(S.atleta.nome || 'atleta').toLowerCase().replace(/\s/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        closeModal();
-        showModal('✅ Export Completato',
-            'I tuoi dati sono stati scaricati in formato JSON.',
-            [{ text: 'OK', cls: 'btn-gold' }]);
-    } catch(e) {
-        closeModal();
-        showModal('❌ Errore', 'Impossibile esportare: ' + e.message, [{ text: 'OK' }]);
-    }
-};
-
-// ── GDPR: Richiesta eliminazione account (art. 17) ───────────────────────────
-window.richiestaEliminazioneAccount = function() {
-    showModal('🗑️ Elimina Account', `
-        <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.88rem">
-            <div style="background:rgba(192,57,43,0.12);border:1px solid rgba(192,57,43,0.4);border-radius:8px;padding:0.75rem;color:#e07060;font-weight:700">
-                ⚠️ Attenzione: questa operazione è irreversibile.
-            </div>
-            <p>Tutti i tuoi dati (profilo, sessioni, obiettivi, materiale) verranno eliminati dalla piattaforma.</p>
-            <p>La richiesta verrà inoltrata alla tua ASD (<strong>${S.asd?.nome || 'ASD'}</strong>), che provvederà entro 30 giorni ai sensi dell'art. 17 GDPR.</p>
-            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:0.25rem">
-                <input type="checkbox" id="confirm-delete-cb" style="width:18px;height:18px">
-                <span style="font-size:0.82rem">Confermo di voler eliminare definitivamente il mio account</span>
-            </label>
-        </div>
-    `, [
-        { text: 'Annulla', cls: 'btn-ghost' },
-        { text: '🗑️ Conferma Richiesta', cls: 'btn-danger', fn: async () => {
-            if (!document.getElementById('confirm-delete-cb')?.checked) {
-                return showModal('Attenzione', 'Spunta la casella di conferma per procedere.', [{ text: 'OK' }]);
-            }
-            try {
-                const msgRef = collection(db, `${APP_NS}/data/asd/${S.asd.id}/messaggi_esterni`);
-                await addDoc(msgRef, {
-                    tipo:        'gdpr_cancellazione',
-                    mittente:    `${S.atleta?.nome || ''} ${S.atleta?.cognome || ''}`.trim(),
-                    atletaId:    S.atleta?.id,
-                    testo:       "Richiesta di cancellazione dati ai sensi dell'art. 17 GDPR. L'atleta chiede l'eliminazione di tutti i propri dati entro 30 giorni.",
-                    createdAt:   serverTimestamp(),
-                    gdprRequest: true,
-                    gdprType:    'deletion',
-                });
-                showModal('✅ Richiesta Inviata',
-                    `La richiesta è stata inviata a <strong>${S.asd?.nome || 'ASD'}</strong>. Riceverai conferma entro 30 giorni.`,
-                    [{ text: 'OK', cls: 'btn-gold', fn: () => window.setView('atletaMenu') }]);
-            } catch(e) {
-                showModal('❌ Errore', 'Impossibile inviare la richiesta: ' + e.message, [{ text: 'OK' }]);
-            }
-        }}
-    ]);
-};
-
-// ── GDPR: Salvataggio consenso su Firestore ──────────────────────────────────
-async function saveGdprConsent(asdId, atletaId) {
-    try {
-        await addDoc(
-            collection(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}/gdpr`),
-            {
-                consentVersion:       '1.0',
-                consentDate:          new Date().toISOString(),
-                consentedBy:          atletaId,
-                method:               'checkbox_app_atleta',
-                purpose:              'gestione_sportiva',
-                privacyPolicyVersion: '1.0',
-            }
-        );
-    } catch(e) {
-        console.warn('GDPR consent save failed:', e.message);
-    }
-}
-
-window.saveGdprConsent = saveGdprConsent;
 
 window.drawMultiChart = function(allSeries, chartType) {
     const h = 220, w = 340, padL = 35, padB = 40, padT = 20, padR = 20;
@@ -7838,25 +7142,6 @@ async function renderImpostazioni() {
                 </div>
             </div>
             <button class="btn btn-gold btn-full" style="margin-top:0.75rem" onclick="window.applyBulk()">💾 Applica alle Sessioni Selezionate</button>
-        </div>
-
-        <div class="card" style="margin-top:1rem;border-color:rgba(201,162,39,0.4)">
-            <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:var(--gold);margin-bottom:0.75rem">
-                🛡️ Privacy & GDPR
-            </div>
-            <div style="display:flex;flex-direction:column;gap:0.5rem">
-                <button class="btn btn-outline btn-full" onclick="window.setView('esportaDati')">
-                    📦 Gestisci i Miei Dati
-                </button>
-                <a href="privacy-policy.html" target="_blank"
-                   class="btn btn-ghost btn-full" style="text-decoration:none;text-align:center">
-                    📄 Informativa Privacy
-                </a>
-            </div>
-            <div style="font-size:0.72rem;color:var(--muted);margin-top:0.6rem;line-height:1.5">
-                Hai diritto di accesso, rettifica, cancellazione e portabilità dei tuoi dati
-                ai sensi del Regolamento UE 2016/679 (GDPR). Il Titolare del Trattamento è la tua ASD.
-            </div>
         </div>
     `);
 }
