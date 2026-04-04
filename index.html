@@ -1135,170 +1135,106 @@ window._masterResetAsdPwd = (asdId, nomeAsd) => {
 window._masterResetAtletaPwd = (asdId, atletaId, nomeAtleta) => {
     showModal(`🔑 Reset Password — ${nomeAtleta}`, `
         <div style="display:flex;flex-direction:column;gap:0.5rem">
-            <p style="font-size:0.82rem;color:var(--muted)">
-                Imposta una nuova password per questo atleta.
-            </p>
-            <div>
-                <label class="form-label">Nuova Password Atleta</label>
-                <input class="inp" type="password" id="master-atl-pwd" placeholder="Min. 6 caratteri">
-            </div>
-            <div>
-                <label class="form-label">Conferma Password Atleta</label>
-                <input class="inp" type="password" id="master-atl-pwd2" placeholder="Ripeti la password">
-            </div>
-            <div style="border-top:1px solid var(--border);padding-top:0.5rem">
-                <label class="form-label">Password Master (per confermare)</label>
-                <input class="inp" type="password" id="master-atl-master-pwd"
-                    placeholder="La tua password master"
-                    onkeydown="if(event.key==='Enter')document.querySelector('#modal-actions .btn-gold')?.click()">
-            </div>
+            <p style="font-size:0.82rem;color:var(--muted)">Imposta una nuova password per questo atleta.</p>
+            <label class="form-label">Nuova Password Atleta</label>
+            <input class="inp" type="password" id="master-atl-pwd" placeholder="Min. 6 caratteri">
+            <label class="form-label">Conferma Password</label>
+            <input class="inp" type="password" id="master-atl-pwd2" placeholder="Ripeti">
         </div>
     `, [
         {text:'Annulla', cls:'btn-ghost'},
         {text:'✅ Salva', cls:'btn-gold', fn: async () => {
-            const p1        = document.getElementById('master-atl-pwd')?.value || '';
-            const p2        = document.getElementById('master-atl-pwd2')?.value || '';
-            const masterPwd = document.getElementById('master-atl-master-pwd')?.value || '';
-
-            if (!p1 || p1.length < 6) return showModal('Errore','Password atleta minimo 6 caratteri.',
-                [{text:'OK', fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
+            const p1 = document.getElementById('master-atl-pwd')?.value || '';
+            const p2 = document.getElementById('master-atl-pwd2')?.value || '';
+            if (!p1 || p1.length < 6) return showModal('Errore','Password minimo 6 caratteri.',
+                [{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
             if (p1 !== p2) return showModal('Errore','Le password non coincidono.',
-                [{text:'OK', fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-            if (!masterPwd) return showModal('Errore','Inserisci la password master.',
-                [{text:'OK', fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
-
-            let secondApp = null;
+                [{text:'OK',fn:()=>window._masterResetAtletaPwd(asdId,atletaId,nomeAtleta)}]);
             try {
-                // Recupera email master
-                const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
-                const masterEmail = masterSnap.data()?.email;
-                if (!masterEmail) throw new Error('Email master non trovata in Firestore.');
-
-                // Seconda istanza autenticata come master
-                secondApp = initializeApp(firebaseConfig, 'master_pwd_' + Date.now());
-                const secondAuth = getAuth(secondApp);
-                const secondDb2  = getFirestore(secondApp);
-
-                try {
-                    await signInWithEmailAndPassword(secondAuth, masterEmail, masterPwd);
-                } catch(e) {
-                    if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                        showModal('❌ Password Master Errata', 'La password master inserita non è corretta.', [{text:'OK'}]);
-                    } else {
-                        showModal('❌ Errore Auth', e.message, [{text:'OK'}]);
-                    }
-                    return;
-                }
-
-                // Aggiorna pwdHash con il db autenticato come master
                 const newHash = await hashPwd(p1);
                 await updateDoc(
-                    doc(secondDb2, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                    doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
                     { pwdHash: newHash, pwdResetPending: false }
                 );
-
                 showModal('✅ Password Aggiornata!',
-                    `La password di <strong>${nomeAtleta}</strong> è stata resettata con successo.`,
+                    `La password di <strong>${nomeAtleta}</strong> è stata resettata.`,
                     [{text:'OK'}]);
-
             } catch(e) {
-                showModal('❌ Errore', e.message, [{text:'OK'}]);
-            } finally {
-                if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
+                try {
+                    await auth.currentUser?.getIdToken(true);
+                    const newHash = await hashPwd(p1);
+                    await updateDoc(
+                        doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                        { pwdHash: newHash, pwdResetPending: false }
+                    );
+                    showModal('✅ Password Aggiornata!',
+                        `La password di <strong>${nomeAtleta}</strong> è stata resettata.`,
+                        [{text:'OK'}]);
+                } catch(e2) {
+                    showModal('❌ Errore', e2.message + '<br><br><small>Prova a fare logout e login di nuovo come master.</small>', [{text:'OK'}]);
+                }
             }
         }}
     ]);
 };
 
-window._masterResetAtletaUsername = (asdId, atletaId, nomeAtleta, usernameAttuale) => {
+window._masterResetAtletaUsername = async (asdId, atletaId, nomeAtleta, usernameAttuale) => {
     showModal(`✏️ Reset Username — ${nomeAtleta}`, `
         <div style="display:flex;flex-direction:column;gap:0.5rem">
             <p style="font-size:0.82rem;color:var(--muted)">
                 Username attuale: <strong style="color:var(--gold)">${usernameAttuale || '—'}</strong>
             </p>
-            <div>
-                <label class="form-label">Nuovo Username</label>
-                <input class="inp" type="text" id="master-atl-user"
-                    placeholder="Es: mario.rossi"
-                    value="${usernameAttuale || ''}"
-                    autocomplete="off" autocapitalize="none"
-                    oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
-                <p style="font-size:0.72rem;color:var(--muted);margin-top:3px">
-                    Solo lettere minuscole, numeri, punti, trattini. Niente spazi.
-                </p>
-            </div>
-            <div style="border-top:1px solid var(--border);padding-top:0.5rem">
-                <label class="form-label">Password Master (per confermare)</label>
-                <input class="inp" type="password" id="master-atl-user-pwd"
-                    placeholder="La tua password master"
-                    onkeydown="if(event.key==='Enter')document.querySelector('#modal-actions .btn-gold')?.click()">
-            </div>
+            <label class="form-label">Nuovo Username</label>
+            <input class="inp" type="text" id="master-atl-user"
+                value="${usernameAttuale || ''}" autocomplete="off" autocapitalize="none"
+                placeholder="Es: mario.rossi"
+                oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9._-]/g,'')">
+            <p style="font-size:0.72rem;color:var(--muted)">Solo lettere minuscole, numeri, punti, trattini.</p>
         </div>
     `, [
         {text:'Annulla', cls:'btn-ghost'},
         {text:'✅ Salva', cls:'btn-gold', fn: async () => {
-            const newUser   = document.getElementById('master-atl-user')?.value.trim().toLowerCase() || '';
-            const masterPwd = document.getElementById('master-atl-user-pwd')?.value || '';
-
+            const newUser = document.getElementById('master-atl-user')?.value.trim().toLowerCase() || '';
             if (!newUser) return showModal('Errore','Inserisci il nuovo username.',
-                [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-            if (newUser === usernameAttuale) return showModal('Attenzione','Lo username è uguale a quello attuale.',
-                [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-            if (!masterPwd) return showModal('Errore','Inserisci la password master.',
-                [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
-
-            let secondApp = null;
+                [{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+            if (newUser === usernameAttuale) return showModal('Attenzione','Username uguale a quello attuale.',
+                [{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
             try {
-                // Verifica unicità username prima di procedere
                 const snap = await getDocs(atletiCol(asdId));
-                const duplicato = snap.docs.find(d => d.id !== atletaId && d.data().username === newUser);
-                if (duplicato) return showModal('Errore',
-                    `Username <strong>${newUser}</strong> già in uso da un altro atleta di questa ASD.`,
-                    [{text:'OK', fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
+                const dup = snap.docs.find(d => d.id !== atletaId && d.data().username === newUser);
+                if (dup) return showModal('Errore',`Username <strong>${newUser}</strong> già in uso.`,
+                    [{text:'OK',fn:()=>window._masterResetAtletaUsername(asdId,atletaId,nomeAtleta,usernameAttuale)}]);
 
-                // Recupera email master da Firestore
-                const masterSnap = await getDoc(doc(db, 'club_manager_v1_config', 'master'));
-                const masterEmail = masterSnap.data()?.email;
-                if (!masterEmail) throw new Error('Email master non trovata in Firestore.');
-
-                // Crea seconda istanza e autenticati come master
-                secondApp = initializeApp(firebaseConfig, 'master_user_' + Date.now());
-                const secondAuth = getAuth(secondApp);
-                const secondDb2  = getFirestore(secondApp);
-
-                try {
-                    await signInWithEmailAndPassword(secondAuth, masterEmail, masterPwd);
-                } catch(e) {
-                    if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
-                        showModal('❌ Password Master Errata', 'La password master inserita non è corretta.', [{text:'OK'}]);
-                    } else {
-                        showModal('❌ Errore Auth', e.message, [{text:'OK'}]);
-                    }
-                    return;
-                }
-
-                // Aggiorna username con il db autenticato come master
+                // Usa direttamente db — il master è già autenticato con isMaster()
                 await updateDoc(
-                    doc(secondDb2, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                    doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
                     { username: newUser }
                 );
-
-                // Aggiorna S.atleti in memoria
                 const idx = (S.atleti||[]).findIndex(a => a.id === atletaId);
                 if (idx >= 0) S.atleti[idx].username = newUser;
-
-                showModal('✅ Username Aggiornato!',
-                    `Lo username di <strong>${nomeAtleta}</strong> è ora <strong style="color:var(--gold)">${newUser}</strong>.`,
+                showModal('✅ Aggiornato!',
+                    `Username di <strong>${nomeAtleta}</strong> → <strong style="color:var(--gold)">${newUser}</strong>`,
                     [{text:'OK'}]);
-
             } catch(e) {
-                showModal('❌ Errore', e.message, [{text:'OK'}]);
-            } finally {
-                if (secondApp) { try { await secondApp.delete(); } catch(e) {} }
+                // Se fallisce con db principale, il token master potrebbe essere scaduto
+                // Forza il refresh del token e riprova
+                try {
+                    await auth.currentUser?.getIdToken(true); // forza refresh token
+                    await updateDoc(
+                        doc(db, `${APP_NS}/data/asd/${asdId}/atleti/${atletaId}`),
+                        { username: newUser }
+                    );
+                    showModal('✅ Aggiornato!',
+                        `Username di <strong>${nomeAtleta}</strong> → <strong style="color:var(--gold)">${newUser}</strong>`,
+                        [{text:'OK'}]);
+                } catch(e2) {
+                    showModal('❌ Errore', e2.message + '<br><br><small>Prova a fare logout e login di nuovo come master.</small>', [{text:'OK'}]);
+                }
             }
         }}
     ]);
 };
+
 
 window._masterResetAsdUsername = (asdId, nomeAsd, usernameAttuale) => {
     showModal(`✏️ Reset Username ASD — ${nomeAsd}`, `
